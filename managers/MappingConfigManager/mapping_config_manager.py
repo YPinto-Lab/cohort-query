@@ -66,15 +66,15 @@ class MappingConfigManager:
         
         # Target field: Textarea (rows=1 for better paste support) + optional dropdown for quick select
         target_input = Textarea(
-            placeholder='Target field',
+            placeholder='Type field',
             rows=1,
-            layout=Layout(width='160px', height='28px')
+            layout=Layout(width='200px', height='28px')
         )
         
         # Dropdown for quick selection from Metalog fields
         target_quick_select = Dropdown(
-            options=[('▼', '')] + metalog_options,
-            layout=Layout(width='45px'),
+            options=[('Select field', '')] + metalog_options,
+            layout=Layout(width='200px'),
             style={'description_width': '0px'}
         )
         
@@ -107,7 +107,7 @@ class MappingConfigManager:
             options=[('🔑 Source', 'source'), ('📌 Static', 'static')],
             value='source',
             layout=Layout(width='160px'),
-            style={'button_width': '75px'}
+            style={'button_width': '100px'}
         )
         
         # Source key: Textarea (rows=1 for better paste support) + optional dropdown for quick select
@@ -276,13 +276,39 @@ class MappingConfigManager:
         mode_toggle.observe(on_mode_change, names='value')
         
         # Arrow separator
-        arrow_html = HTML("<span style='font-size: 18px; color: #666; margin: 0 8px;'>→</span>")
+        arrow_html = HTML("<span style='font-size: 18px; color: #666;'>→</span>")
         
-        # Main row - clean horizontal layout with text inputs and quick-select dropdowns
+        # Split into two rows for better layout
+        # Row 1: Target field selection
+        row1 = HBox(
+            [target_input, target_quick_select, doc_button, arrow_html],
+            layout=Layout(align_items='center', margin='4px 0')
+        )
+        
+        # Row 2: Mode toggle and source/static value
+        row2 = HBox(
+            [mode_toggle, source_input, source_quick_select, static_value_input, value_map_button],
+            layout=Layout(align_items='center', margin='4px 0', padding='0 0 0 20px')
+        )
+        
+        # Left side: two rows stacked
+        left_content = VBox([row1, row2], layout=Layout(flex='1'))
+        
+        # Delete button on the right, vertically centered to span both rows
+        delete_button.layout.height = '60px'
+        delete_button.layout.width = '40px'
+        
+        # Main row: content on left, delete on right
         main_row = HBox(
-            [target_input, target_quick_select, doc_button, arrow_html, 
-             mode_toggle, source_input, source_quick_select, static_value_input, value_map_button, delete_button],
-            layout=Layout(margin='8px 0', align_items='center')
+            [left_content, delete_button],
+            layout=Layout(
+                margin='8px 0', 
+                align_items='center',
+                border='1px solid #e0e0e0',
+                border_radius='8px',
+                padding='8px',
+                background='#fafafa'
+            )
         )
         
         # Combined row container (main row + value mappings panel)
