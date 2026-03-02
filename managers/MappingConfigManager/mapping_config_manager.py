@@ -66,15 +66,15 @@ class MappingConfigManager:
         
         # Target field: Textarea (rows=1 for better paste support) + optional dropdown for quick select
         target_input = Textarea(
-            placeholder='Enter target field or select →',
+            placeholder='Target field',
             rows=1,
-            layout=Layout(width='200px', height='32px')
+            layout=Layout(width='160px', height='28px')
         )
         
         # Dropdown for quick selection from Metalog fields
         target_quick_select = Dropdown(
-            options=[('▼ Select', '')] + metalog_options,
-            layout=Layout(width='100px'),
+            options=[('▼', '')] + metalog_options,
+            layout=Layout(width='45px'),
             style={'description_width': '0px'}
         )
         
@@ -104,22 +104,22 @@ class MappingConfigManager:
         
         # Mode toggle: Map from source OR Set static value
         mode_toggle = ToggleButtons(
-            options=[('🔑 From Source', 'source'), ('📌 Static', 'static')],
+            options=[('🔑 Source', 'source'), ('📌 Static', 'static')],
             value='source',
-            layout=Layout(width='auto'),
-            button_style=''
+            layout=Layout(width='160px'),
+            style={'button_width': '75px'}
         )
         
         # Source key: Textarea (rows=1 for better paste support) + optional dropdown for quick select
         source_input = Textarea(
-            placeholder='Enter source key or select →',
+            placeholder='Source key',
             rows=1,
-            layout=Layout(width='200px', height='32px')
+            layout=Layout(width='160px', height='28px')
         )
         
         source_quick_select = Dropdown(
-            options=[('▼ Select', '')] + [(k, k) for k in source_keys],
-            layout=Layout(width='100px'),
+            options=[('▼', '')] + [(k, k) for k in source_keys],
+            layout=Layout(width='45px'),
             style={'description_width': '0px'}
         )
         
@@ -132,9 +132,9 @@ class MappingConfigManager:
         
         # Static value input (hidden by default)
         static_value_input = Textarea(
-            placeholder='Value for all samples',
+            placeholder='Static value',
             rows=1,
-            layout=Layout(width='200px', height='32px', display='none')
+            layout=Layout(width='160px', height='28px', display='none')
         )
         
         # Value mapping toggle button
@@ -275,11 +275,14 @@ class MappingConfigManager:
         
         mode_toggle.observe(on_mode_change, names='value')
         
+        # Arrow separator
+        arrow_html = HTML("<span style='font-size: 18px; color: #666; margin: 0 8px;'>→</span>")
+        
         # Main row - clean horizontal layout with text inputs and quick-select dropdowns
         main_row = HBox(
-            [target_input, target_quick_select, doc_button, HTML("→", layout=Layout(width='20px')), 
+            [target_input, target_quick_select, doc_button, arrow_html, 
              mode_toggle, source_input, source_quick_select, static_value_input, value_map_button, delete_button],
-            layout=Layout(margin='8px 0', align_items='center', gap='6px', flex_wrap='wrap')
+            layout=Layout(margin='8px 0', align_items='center')
         )
         
         # Combined row container (main row + value mappings panel)
