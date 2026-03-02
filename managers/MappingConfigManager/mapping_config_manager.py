@@ -254,9 +254,16 @@ class MappingConfigManager:
             display_vals = [str(v)[:30] + '...' if len(str(v)) > 30 else str(v) for v in top_vals[:3]]
             vals_str = ', '.join(f"<code>{v}</code>" for v in display_vals)
             badge_html = f"<span style='background: #e0e0e0; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; margin-left: 8px;'>{source_badge}</span>" if source_badge else ""
+            # Copy button with JavaScript onclick handler
+            copy_btn = (
+                f"<button onclick=\"navigator.clipboard.writeText('{key_name}').then(() => "
+                f"{{ this.textContent = '✓'; setTimeout(() => this.textContent = '📋', 1000); }})\" "
+                f"style='border: none; background: transparent; cursor: pointer; padding: 2px 4px; "
+                f"font-size: 0.9em; margin-left: 4px;' title='Copy field name'>📋</button>"
+            )
             return HTML(
                 f"<div style='margin: 4px 0; padding: 4px 8px; background: #f5f5f5; border-radius: 4px;'>"
-                f"<b>{key_name}</b>{badge_html}<br/>"
+                f"<b>{key_name}</b>{copy_btn}{badge_html}<br/>"
                 f"<span style='color: #666; font-size: 0.9em;'>Examples: {vals_str}</span>"
                 f"</div>"
             )
