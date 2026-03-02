@@ -78,7 +78,7 @@ class MappingConfigManager:
             value=init_target,
             placeholder='Target field',
             rows=1,
-            layout=Layout(width='160px', height='28px')
+            layout=Layout(width='200px', height='28px')
         )
         
         # Dropdown for quick selection from Metalog fields
@@ -116,8 +116,8 @@ class MappingConfigManager:
         mode_toggle = ToggleButtons(
             options=[('🔑 Source', 'source'), ('📌 Static', 'static')],
             value=init_mode,
-            layout=Layout(width='160px'),
-            style={'button_width': '100px'}
+            layout=Layout(width='180px'),
+            style={'button_width': '85px'}
         )
         
         # Source key: Textarea (rows=1 for better paste support) + optional dropdown for quick select
@@ -130,7 +130,7 @@ class MappingConfigManager:
         
         source_quick_select = Dropdown(
             options=[('▼', '')] + [(k, k) for k in source_keys],
-            layout=Layout(width='45px', display='none' if init_mode == 'static' else 'block'),
+            layout=Layout(width='50px', display='none' if init_mode == 'static' else 'block'),
             style={'description_width': '0px'}
         )
         
@@ -294,13 +294,13 @@ class MappingConfigManager:
         # Row 1: Target field selection
         row1 = HBox(
             [target_input, target_quick_select, doc_button, arrow_html],
-            layout=Layout(align_items='center', margin='4px 0')
+            layout=Layout(align_items='center', margin='4px 0', gap='6px')
         )
         
         # Row 2: Mode toggle and source/static value
         row2 = HBox(
             [mode_toggle, source_input, source_quick_select, static_value_input, value_map_button],
-            layout=Layout(align_items='center', margin='4px 0', padding='0 0 0 20px')
+            layout=Layout(align_items='center', margin='4px 0', padding='0 0 0 20px', gap='6px')
         )
         
         # Left side: two rows stacked
