@@ -130,8 +130,20 @@ class MappingConfigManager:
         
         source_quick_select = Dropdown(
             options=[('▼', '')] + [(k, k) for k in source_keys],
-            layout=Layout(width='50px', display='none' if init_mode == 'static' else 'block'),
+            layout=Layout(width='40px'),
             style={'description_width': '0px'}
+        )
+        
+        # Wrap in fixed container to prevent expansion
+        source_quick_wrapper = HBox(
+            [source_quick_select],
+            layout=Layout(
+                width='150px', 
+                max_width='150px', 
+                overflow='hidden', 
+                flex='0 0 150px',
+                display='none' if init_mode == 'static' else 'flex'
+            )
         )
         
         def on_source_quick_select(change):
@@ -273,13 +285,13 @@ class MappingConfigManager:
         def on_mode_change(change):
             if change.new == 'static':
                 source_input.layout.display = 'none'
-                source_quick_select.layout.display = 'none'
+                source_quick_wrapper.layout.display = 'none'
                 static_value_input.layout.display = 'block'
                 value_map_button.layout.display = 'none'
                 value_mappings_container.layout.display = 'none'
             else:
                 source_input.layout.display = 'block'
-                source_quick_select.layout.display = 'block'
+                source_quick_wrapper.layout.display = 'flex'
                 static_value_input.layout.display = 'none'
                 source_val = get_source_value()
                 if source_val:
@@ -299,12 +311,12 @@ class MappingConfigManager:
         
         # Row 2: Mode toggle and source/static value
         row2 = HBox(
-            [mode_toggle, source_input, source_quick_select, static_value_input, value_map_button],
-            layout=Layout(align_items='center', margin='4px 0', padding='0 0 0 20px', gap='6px')
+            [mode_toggle, source_input, source_quick_wrapper, static_value_input, value_map_button],
+            layout=Layout(align_items='center', margin='4px 0', padding='0 0 0 20px', gap='6px', overflow='visible')
         )
         
         # Left side: two rows stacked
-        left_content = VBox([row1, row2], layout=Layout(flex='1'))
+        left_content = VBox([row1, row2], layout=Layout(flex='1', overflow='visible'))
         
         # Delete button on the right, vertically centered to span both rows
         delete_button.layout.height = '60px'
@@ -319,7 +331,8 @@ class MappingConfigManager:
                 border='1px solid #e0e0e0',
                 border_radius='8px',
                 padding='8px',
-                background='#fafafa'
+                background='#fafafa',
+                overflow='visible'
             )
         )
         
