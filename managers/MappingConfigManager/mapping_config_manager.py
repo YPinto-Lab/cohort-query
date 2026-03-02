@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import ipywidgets as widgets
-from ipywidgets import VBox, HBox, Layout, Dropdown, Text, Button, Output, Accordion, HTML
+from ipywidgets import VBox, HBox, Layout, Dropdown, Text, Button, Output, Accordion, HTML, Combobox, ToggleButtons
 from IPython.display import display
 
 from Accessors.MetalogAccessor.metalog_accessor import MetalogAccessor, MetalogField
@@ -61,16 +61,15 @@ class MappingConfigManager:
             key_values_map: Dict mapping source key names to their top sample values.
         """
         
-        # Build metalog options
-        metalog_options = [
-            (f"📋 {f.field_name}", f.field_name) 
-            for f in self._metalog_fields
-        ]
+        # Build metalog field names for Combobox
+        metalog_field_names = [f.field_name for f in self._metalog_fields]
         
-        target_dropdown = Dropdown(
-            options=[('— Select Target Field —', '')] + metalog_options + [('✏️ Custom Field...', 'CUSTOM')],
-            layout=Layout(width='250px'),
-            style={'description_width': '0px'}
+        # Searchable target field combobox
+        target_combobox = Combobox(
+            placeholder='Type to search target field...',
+            options=metalog_field_names,
+            ensure_option=False,  # Allow custom values
+            layout=Layout(width='250px')
         )
         
         # Documentation link button - initially hidden
@@ -89,15 +88,27 @@ class MappingConfigManager:
                 webbrowser.open(current_doc_url['url'])
         doc_button.on_click(open_documentation)
         
-        custom_field_input = Text(
-            placeholder='Enter custom field name',
-            layout=Layout(width='180px', display='none')
+        # Mode toggle: Map from source OR Set static value
+        mode_toggle = ToggleButtons(
+            options=[('🔑 Map from Source', 'source'), ('📌 Static Value', 'static')],
+            value='source',
+            layout=Layout(width='auto'),
+            button_style='',
+            style={'button_width': '130px'}
         )
         
-        source_dropdown = Dropdown(
-            options=[('— Select Source Key —', '')] + [(f"🔑 {k}", k) for k in source_keys],
-            layout=Layout(width='250px'),
-            style={'description_width': '0px'}
+        # Searchable source key combobox
+        source_combobox = Combobox(
+            placeholder='Type to search source key...',
+            options=source_keys,
+            ensure_option=True,
+            layout=Layout(width='250px')
+        )
+        
+        # Static value input (hidden by default)
+        static_value_input = Text(
+            placeholder='Enter value for all samples',
+            layout=Layout(width='250px', display='none')
         )
         
         # Value mapping toggle button
@@ -163,8 +174,8 @@ class MappingConfigManager:
                 value_map_button.button_style = 'info'
                 value_map_button.description = '📝 Hide Values'
                 # Build panel if source is selected
-                if source_dropdown.value:
-                    build_value_mapping_panel(source_dropdown.value)
+                if source_combobox.value:
+                    build_value_mapping_panel(source_combobox.value)
             else:
                 value_mappings_container.layout.display = 'none'
                 value_map_button.button_style = ''
@@ -173,24 +184,19 @@ class MappingConfigManager:
         value_map_button.on_click(toggle_value_mappings)
         
         def on_target_change(change):
-            if change.new == 'CUSTOM':
-                custom_field_input.layout.display = 'block'
-                doc_button.layout.display = 'none'
-                current_doc_url['url'] = ''
-            elif change.new and change.new in self._metalog_docs:
-                custom_field_input.layout.display = 'none'
+            field_name = change.new.strip() if change.new else ''
+            if field_name and field_name in self._metalog_docs:
                 doc_button.layout.display = 'block'
-                current_doc_url['url'] = self._metalog_docs[change.new]
-                doc_button.tooltip = f'Open documentation for {change.new}'
+                current_doc_url['url'] = self._metalog_docs[field_name]
+                doc_button.tooltip = f'Open documentation for {field_name}'
             else:
-                custom_field_input.layout.display = 'none'
                 doc_button.layout.display = 'none'
                 current_doc_url['url'] = ''
                 
-        target_dropdown.observe(on_target_change, names='value')
+        target_combobox.observe(on_target_change, names='value')
         
         def on_source_change(change):
-            if change.new:
+            if change.new and mode_toggle.value == 'source':
                 value_map_button.layout.display = 'block'
                 # Rebuild value mapping panel if visible
                 if value_mappings_container.layout.display == 'block':
@@ -199,12 +205,26 @@ class MappingConfigManager:
                 value_map_button.layout.display = 'none'
                 value_mappings_container.layout.display = 'none'
                 
-        source_dropdown.observe(on_source_change, names='value')
+        source_combobox.observe(on_source_change, names='value')
+        
+        def on_mode_change(change):
+            if change.new == 'static':
+                source_combobox.layout.display = 'none'
+                static_value_input.layout.display = 'block'
+                value_map_button.layout.display = 'none'
+                value_mappings_container.layout.display = 'none'
+            else:
+                source_combobox.layout.display = 'block'
+                static_value_input.layout.display = 'none'
+                if source_combobox.value:
+                    value_map_button.layout.display = 'block'
+        
+        mode_toggle.observe(on_mode_change, names='value')
         
         # Main row
         main_row = HBox(
-            [target_dropdown, doc_button, custom_field_input, HTML("→"), source_dropdown, value_map_button, delete_button],
-            layout=Layout(margin='5px 0', align_items='center', gap='10px')
+            [target_combobox, doc_button, HTML("→"), mode_toggle, source_combobox, static_value_input, value_map_button, delete_button],
+            layout=Layout(margin='5px 0', align_items='center', gap='8px')
         )
         
         # Combined row container (main row + value mappings panel)
@@ -212,9 +232,10 @@ class MappingConfigManager:
         
         # Store references for retrieval
         row_container._mapping_widgets = {
-            'target_dropdown': target_dropdown,
-            'custom_field_input': custom_field_input,
-            'source_dropdown': source_dropdown,
+            'target_combobox': target_combobox,
+            'mode_toggle': mode_toggle,
+            'source_combobox': source_combobox,
+            'static_value_input': static_value_input,
             'value_mapping_inputs': value_mapping_inputs
         }
         
@@ -352,33 +373,40 @@ class MappingConfigManager:
                 
                 for row_container in rows_container.children:
                     # Access stored widget references
-                    widgets = row_container._mapping_widgets
-                    target_dd = widgets['target_dropdown']
-                    custom_input = widgets['custom_field_input']
-                    source_dd = widgets['source_dropdown']
-                    value_mapping_inputs = widgets['value_mapping_inputs']
+                    widgets_ref = row_container._mapping_widgets
+                    target_combobox = widgets_ref['target_combobox']
+                    mode_toggle = widgets_ref['mode_toggle']
+                    source_combobox = widgets_ref['source_combobox']
+                    static_value_input = widgets_ref['static_value_input']
+                    value_mapping_inputs = widgets_ref['value_mapping_inputs']
                     
-                    target = target_dd.value
-                    source = source_dd.value
+                    target = target_combobox.value.strip() if target_combobox.value else ''
                     
-                    if target == 'CUSTOM':
-                        target = custom_input.value.strip()
-                        if not target:
-                            print("❌ Custom field name cannot be empty")
-                            return
+                    if not target:
+                        continue  # Skip rows without target field
                     
-                    if target and source:
-                        # Extract value mappings from inputs
-                        value_mappings = {}
-                        for source_val, text_input in value_mapping_inputs.items():
-                            target_val = text_input.value.strip()
-                            if target_val:  # Only add if user specified a target value
-                                value_mappings[source_val] = target_val
-                        
-                        mappings[target] = {
-                            "key_name": source,
-                            "value_mappings": value_mappings
-                        }
+                    if mode_toggle.value == 'static':
+                        # Static value mode
+                        static_val = static_value_input.value.strip()
+                        if static_val:
+                            mappings[target] = {
+                                "static_value": static_val
+                            }
+                    else:
+                        # Map from source mode
+                        source = source_combobox.value.strip() if source_combobox.value else ''
+                        if source:
+                            # Extract value mappings from inputs
+                            value_mappings = {}
+                            for source_val, text_input in value_mapping_inputs.items():
+                                target_val = text_input.value.strip()
+                                if target_val:  # Only add if user specified a target value
+                                    value_mappings[source_val] = target_val
+                            
+                            mappings[target] = {
+                                "key_name": source,
+                                "value_mappings": value_mappings
+                            }
                 
                 if not mappings:
                     print("❌ Please create at least one valid mapping")

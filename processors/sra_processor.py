@@ -130,6 +130,13 @@ class SRAProcessor:
         mappings = self._get_mappings(config)
 
         for target_col, mapping_rules in mappings.items():
+            # Check for static value first
+            static_value = mapping_rules.get("static_value")
+            if static_value:
+                # Apply static value to all rows
+                processed_df[target_col] = static_value
+                continue
+            
             source_key = mapping_rules.get("key_name")
             value_map = mapping_rules.get("value_mappings", {})
 
