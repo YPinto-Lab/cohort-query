@@ -112,14 +112,14 @@ class MappingConfigManager:
         
         # Source key: Textarea (rows=1 for better paste support) + optional dropdown for quick select
         source_input = Textarea(
-            placeholder='Source key',
+            placeholder='Type Source key',
             rows=1,
-            layout=Layout(width='160px', height='28px')
+            layout=Layout(width='200px', height='28px')
         )
         
         source_quick_select = Dropdown(
-            options=[('▼', '')] + [(k, k) for k in source_keys],
-            layout=Layout(width='45px'),
+            options=[('Select Source key', '')] + [(k, k) for k in source_keys],
+            layout=Layout(width='200px'),
             style={'description_width': '0px'}
         )
         
