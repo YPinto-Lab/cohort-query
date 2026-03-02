@@ -107,35 +107,26 @@ class SRAProcessor:
 
     def _generate_mapping_template(self, df: pd.DataFrame, template_path: Path):
         """Generates a .json.template file with source-separated sample values."""
+        project_id = df['bioproject'].iloc[0] if not df.empty else "unknown_project"
         discovered_keys = self._scan_for_keys_and_values(df)
 
         template_content = {
             "_comment": "This is a template for mapping raw metadata keys to standardized columns. "
-                        "Discovered keys are now separated by their source ('from_jattr', 'from_attributes'). "
                         "Please edit the 'suggested_mappings' section below. Then, rename this file to remove the '.template' extension.",
+            "project_id": project_id,
             "discovered_keys": discovered_keys,
             "suggested_mappings": {
-                "tissue_type": {
-                    "source_keys": [
-                        "EDIT_ME: copy relevant key_name(s) from 'discovered_keys' above (e.g., 'organism_part_sam')"
-                    ],
-                    "value_map": {
-                        "plasma": "Plasma",
-                        "serum": "Serum",
-                        "whole blood": "Whole Blood",
-                        "cfdna": "cfDNA",
-                        "ctdna": "cfDNA"
+                "EDIT_ME_TARGET_FIELD (e.g., tissue_type)": {
+                    "key_name": "EDIT_ME: copy a key_name from 'discovered_keys' above",
+                    "value_mappings": {
+                        "EDIT_ME_RAW_VALUE (e.g., Human serum)": "EDIT_ME_TARGET_VALUE (e.g., Serum)"
                     }
-                },
-                "disease_stage": {
-                    "source_keys": ["EDIT_ME: e.g., 'disease_staging_sam'"],
-                    "value_map": {}
                 }
             }
         }
 
         with open(template_path, 'w') as f:
-            json.dump(template_content, f, indent=2)
+            json.dump(template_content, f, indent=4)
 
     def _apply_mappings(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
         """Applies the transformations based on the loaded config file."""
@@ -143,42 +134,44 @@ class SRAProcessor:
         mappings = config.get("suggested_mappings", {})
 
         for target_col, mapping_rules in mappings.items():
-            source_keys = mapping_rules.get("source_keys", [])
-            value_map = mapping_rules.get("value_map", {})
+            source_key = mapping_rules.get("key_name")
+            value_map = mapping_rules.get("value_mappings", {})
 
             # Skip if the user hasn't edited the template
-            if not source_keys or "EDIT_ME" in source_keys[0]:
+            if not source_key or "EDIT_ME" in source_key:
                 continue
 
             def find_value(row: pd.Series) -> Optional[str]:
+                raw_value = None
                 # 1. Check jattr
                 if pd.notna(row['jattr']):
                     try:
                         jattr_data = json.loads(row['jattr'])
-                        for key in source_keys:
-                            if key in jattr_data:
-                                value = jattr_data[key]
-                                if isinstance(value, list):
-                                    value = " ".join(value)
-                                for map_key, map_val in value_map.items():
-                                    if map_key in str(value).lower():
-                                        return map_val
+                        if source_key in jattr_data:
+                            value = jattr_data[source_key]
+                            raw_value = " ".join(value) if isinstance(value, list) else str(value)
                     except (json.JSONDecodeError, TypeError):
                         pass
                 
-                # 2. Check attributes
-                if pd.notna(row['attributes']):
+                # 2. Check attributes if not found in jattr
+                if raw_value is None and pd.notna(row['attributes']):
                     try:
-                        attr_str = row['attributes']
-                        for key in source_keys:
-                            match = re.search(f"k={key}, v=([^}}]+)", attr_str)
-                            if match:
-                                value = match.group(1)
-                                for map_key, map_val in value_map.items():
-                                    if map_key in value.lower():
-                                        return map_val
+                        match = re.search(f"k={re.escape(source_key)}, v=([^}}]+)", row['attributes'])
+                        if match:
+                            raw_value = match.group(1).strip()
                     except Exception:
                         pass
+                
+                # 3. Apply value mapping if a raw value was found
+                if raw_value is not None:
+                    # If a value map exists, use it. Otherwise, return the raw value.
+                    if value_map:
+                        for map_from, map_to in value_map.items():
+                            if map_from.lower() in raw_value.lower():
+                                return map_to
+                    else:
+                        return raw_value # Return the original value if no mapping is defined
+                
                 return None
 
             processed_df[target_col] = processed_df.apply(find_value, axis=1)
