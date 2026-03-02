@@ -1,11 +1,24 @@
+"""Utility script to scrape Metalog metadata schema from metalog.embl.de.
+
+Usage:
+    python scripts/scrape_metalog.py
+
+Generates:
+    Accessors/MetalogAccessor/metalog_human_schema.json
+"""
 import requests
 from lxml import html
 import json
 import re
+from pathlib import Path
 
 BASE_URL = 'https://metalog.embl.de'
 METADATA_URL = f'{BASE_URL}/metadata/human'
-OUTPUT_FILE = 'metalog_human_schema.json'
+
+# Output to the MetalogAccessor directory
+SCRIPT_DIR = Path(__file__).parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+OUTPUT_FILE = PROJECT_ROOT / 'Accessors/MetalogAccessor/metalog_human_schema.json'
 
 
 def scrape_metalog_fields():
