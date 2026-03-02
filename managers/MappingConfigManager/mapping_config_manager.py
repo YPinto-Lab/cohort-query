@@ -51,8 +51,15 @@ class MappingConfigManager:
             print(f"❌ {e}")
             return False
     
-    def _create_mapping_row(self, source_keys: List[str], rows_container: VBox) -> HBox:
-        """Creates a single row of widgets for mapping a target field to a source key."""
+    def _create_mapping_row(self, source_keys: List[str], rows_container: VBox, 
+                           key_values_map: Dict[str, List[str]]) -> VBox:
+        """Creates a single row of widgets for mapping a target field to a source key.
+        
+        Args:
+            source_keys: List of available source key names.
+            rows_container: Parent container for deletion callback.
+            key_values_map: Dict mapping source key names to their top sample values.
+        """
         
         # Build metalog options
         metalog_options = [
@@ -93,11 +100,77 @@ class MappingConfigManager:
             style={'description_width': '0px'}
         )
         
+        # Value mapping toggle button
+        value_map_button = Button(
+            description='📝 Map Values',
+            button_style='',
+            tooltip='Define value transformations for this field',
+            layout=Layout(width='120px', display='none')
+        )
+        
         delete_button = Button(
             description='✕',
             button_style='danger',
             layout=Layout(width='40px')
         )
+        
+        # Value mapping panel (initially hidden)
+        value_mappings_container = VBox([], layout=Layout(
+            display='none',
+            padding='10px',
+            margin='5px 0 10px 20px',
+            border='1px dashed #ccc',
+            border_radius='5px',
+            background_color='#fafafa'
+        ))
+        
+        # Store value mapping text inputs for later retrieval
+        value_mapping_inputs: Dict[str, Text] = {}
+        
+        def build_value_mapping_panel(source_key: str):
+            """Build the value mapping panel for the selected source key."""
+            value_mappings_container.children = []
+            value_mapping_inputs.clear()
+            
+            sample_values = key_values_map.get(source_key, [])
+            if not sample_values:
+                value_mappings_container.children = [
+                    HTML("<p style='color: #666;'>No sample values found for this key.</p>")
+                ]
+                return
+            
+            rows = [HTML("<p style='margin: 0 0 8px; color: #666; font-size: 0.9em;'>"
+                        "<b>Value Mappings</b> — Leave target blank to keep original value</p>")]
+            
+            for val in sample_values:
+                source_label = HTML(
+                    f"<code style='background: #e8e8e8; padding: 2px 6px; border-radius: 3px;'>{val[:40]}{'...' if len(val) > 40 else ''}</code>",
+                    layout=Layout(width='200px')
+                )
+                arrow = HTML("→", layout=Layout(width='30px'))
+                target_input = Text(
+                    placeholder='Target value (or leave blank)',
+                    layout=Layout(width='200px')
+                )
+                value_mapping_inputs[val] = target_input
+                rows.append(HBox([source_label, arrow, target_input], layout=Layout(margin='3px 0', align_items='center')))
+            
+            value_mappings_container.children = rows
+        
+        def toggle_value_mappings(b):
+            if value_mappings_container.layout.display == 'none':
+                value_mappings_container.layout.display = 'block'
+                value_map_button.button_style = 'info'
+                value_map_button.description = '📝 Hide Values'
+                # Build panel if source is selected
+                if source_dropdown.value:
+                    build_value_mapping_panel(source_dropdown.value)
+            else:
+                value_mappings_container.layout.display = 'none'
+                value_map_button.button_style = ''
+                value_map_button.description = '📝 Map Values'
+        
+        value_map_button.on_click(toggle_value_mappings)
         
         def on_target_change(change):
             if change.new == 'CUSTOM':
@@ -116,16 +189,40 @@ class MappingConfigManager:
                 
         target_dropdown.observe(on_target_change, names='value')
         
-        row = HBox(
-            [target_dropdown, doc_button, custom_field_input, HTML("→"), source_dropdown, delete_button],
+        def on_source_change(change):
+            if change.new:
+                value_map_button.layout.display = 'block'
+                # Rebuild value mapping panel if visible
+                if value_mappings_container.layout.display == 'block':
+                    build_value_mapping_panel(change.new)
+            else:
+                value_map_button.layout.display = 'none'
+                value_mappings_container.layout.display = 'none'
+                
+        source_dropdown.observe(on_source_change, names='value')
+        
+        # Main row
+        main_row = HBox(
+            [target_dropdown, doc_button, custom_field_input, HTML("→"), source_dropdown, value_map_button, delete_button],
             layout=Layout(margin='5px 0', align_items='center', gap='10px')
         )
         
+        # Combined row container (main row + value mappings panel)
+        row_container = VBox([main_row, value_mappings_container], layout=Layout(width='100%'))
+        
+        # Store references for retrieval
+        row_container._mapping_widgets = {
+            'target_dropdown': target_dropdown,
+            'custom_field_input': custom_field_input,
+            'source_dropdown': source_dropdown,
+            'value_mapping_inputs': value_mapping_inputs
+        }
+        
         def on_delete(b):
-            rows_container.children = tuple(c for c in rows_container.children if c is not row)
+            rows_container.children = tuple(c for c in rows_container.children if c is not row_container)
         delete_button.on_click(on_delete)
         
-        return row
+        return row_container
 
     def _build_discovered_keys_display(self, template_data: dict) -> VBox:
         """Creates a nicely formatted display of discovered keys with sample values."""
@@ -196,10 +293,23 @@ class MappingConfigManager:
         
         project_id = template_path.stem.split('.')[0]
         
-        # Collect all source keys
-        jattr_keys = [k['key_name'] for k in template_data['discovered_keys'].get('from_jattr', [])]
-        attr_keys = [k['key_name'] for k in template_data['discovered_keys'].get('from_attributes', [])]
-        all_source_keys = sorted(set(jattr_keys + attr_keys))
+        # Collect all source keys and build key-to-values map
+        jattr_keys = template_data['discovered_keys'].get('from_jattr', [])
+        attr_keys = template_data['discovered_keys'].get('from_attributes', [])
+        
+        # Build key_values_map: key_name -> list of top values
+        key_values_map: Dict[str, List[str]] = {}
+        for key_info in jattr_keys + attr_keys:
+            key_name = key_info['key_name']
+            top_values = key_info.get('top_values', [])
+            if key_name in key_values_map:
+                # Merge values from both sources
+                existing = set(key_values_map[key_name])
+                key_values_map[key_name] = list(existing.union(top_values))
+            else:
+                key_values_map[key_name] = top_values
+        
+        all_source_keys = sorted(set(k['key_name'] for k in jattr_keys + attr_keys))
         
         # --- UI Components ---
         header = HTML(
@@ -221,7 +331,7 @@ class MappingConfigManager:
         )
         
         def add_row(b):
-            rows_container.children += (self._create_mapping_row(all_source_keys, rows_container),)
+            rows_container.children += (self._create_mapping_row(all_source_keys, rows_container, key_values_map),)
         add_button.on_click(add_row)
         
         # Save button and output
@@ -240,11 +350,13 @@ class MappingConfigManager:
                 output.clear_output()
                 mappings = {}
                 
-                for row in rows_container.children:
-                    children = row.children
-                    target_dd = children[0]
-                    custom_input = children[2]
-                    source_dd = children[4]
+                for row_container in rows_container.children:
+                    # Access stored widget references
+                    widgets = row_container._mapping_widgets
+                    target_dd = widgets['target_dropdown']
+                    custom_input = widgets['custom_field_input']
+                    source_dd = widgets['source_dropdown']
+                    value_mapping_inputs = widgets['value_mapping_inputs']
                     
                     target = target_dd.value
                     source = source_dd.value
@@ -256,14 +368,24 @@ class MappingConfigManager:
                             return
                     
                     if target and source:
-                        mappings[target] = {"key_name": source, "value_mappings": {}}
+                        # Extract value mappings from inputs
+                        value_mappings = {}
+                        for source_val, text_input in value_mapping_inputs.items():
+                            target_val = text_input.value.strip()
+                            if target_val:  # Only add if user specified a target value
+                                value_mappings[source_val] = target_val
+                        
+                        mappings[target] = {
+                            "key_name": source,
+                            "value_mappings": value_mappings
+                        }
                 
                 if not mappings:
                     print("❌ Please create at least one valid mapping")
                     return
                 
                 # Save config
-                config = {"project_id": project_id, "suggested_mappings": mappings}
+                config = {"project_id": project_id, "mappings": mappings}
                 output_path = self.config_dir / f"{project_id}.json"
                 
                 with open(output_path, 'w') as f:
@@ -271,11 +393,10 @@ class MappingConfigManager:
                 
                 print(f"✅ Saved {len(mappings)} mappings to: {output_path}")
                 
-                # Hide UI and remove template
+                # Hide UI (keep template for reference)
                 if ui_container_ref['widget']:
                     ui_container_ref['widget'].layout.display = 'none'
-                template_path.unlink()
-                print("🗑️ Template file removed")
+                print("📋 Template file kept for reference")
         
         save_button.on_click(on_save)
         

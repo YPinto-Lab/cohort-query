@@ -60,6 +60,10 @@ class SRAProcessor:
         print(f"✅ Found configuration for project [bold]{project_id}[/bold]. Applying mappings...")
         return self._apply_mappings(df, config)
 
+    def _get_mappings(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Get mappings from config, supporting both 'mappings' and legacy 'suggested_mappings' keys."""
+        return config.get("mappings", config.get("suggested_mappings", {}))
+
     def _scan_for_keys_and_values(self, df: pd.DataFrame) -> Dict[str, List[Dict[str, Any]]]:
         """
         Scans 'jattr' and 'attributes' columns separately to find all unique
@@ -111,18 +115,10 @@ class SRAProcessor:
         discovered_keys = self._scan_for_keys_and_values(df)
 
         template_content = {
-            "_comment": "This is a template for mapping raw metadata keys to standardized columns. "
-                        "Please edit the 'suggested_mappings' section below. Then, rename this file to remove the '.template' extension.",
+            "_comment": "This template contains discovered metadata keys and sample values. "
+                        "Use the interactive UI in the notebook to create mappings, or manually create a .json config file.",
             "project_id": project_id,
-            "discovered_keys": discovered_keys,
-            "suggested_mappings": {
-                "EDIT_ME_TARGET_FIELD (e.g., tissue_type)": {
-                    "key_name": "EDIT_ME: copy a key_name from 'discovered_keys' above",
-                    "value_mappings": {
-                        "EDIT_ME_RAW_VALUE (e.g., Human serum)": "EDIT_ME_TARGET_VALUE (e.g., Serum)"
-                    }
-                }
-            }
+            "discovered_keys": discovered_keys
         }
 
         with open(template_path, 'w') as f:
@@ -131,7 +127,7 @@ class SRAProcessor:
     def _apply_mappings(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
         """Applies the transformations based on the loaded config file."""
         processed_df = df.copy()
-        mappings = config.get("suggested_mappings", {})
+        mappings = self._get_mappings(config)
 
         for target_col, mapping_rules in mappings.items():
             source_key = mapping_rules.get("key_name")
