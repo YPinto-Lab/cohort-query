@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import ipywidgets as widgets
-from ipywidgets import VBox, HBox, Layout, Dropdown, Text, Button, Output, Accordion, HTML, Combobox, ToggleButtons
+from ipywidgets import VBox, HBox, Layout, Dropdown, Text, Button, Output, Accordion, HTML, ToggleButtons
 from IPython.display import display
 
 from Accessors.MetalogAccessor.metalog_accessor import MetalogAccessor, MetalogField
@@ -64,13 +64,44 @@ class MappingConfigManager:
         # Build metalog field names for Combobox
         metalog_field_names = [f.field_name for f in self._metalog_fields]
         
-        # Searchable target field combobox
-        target_combobox = Combobox(
-            placeholder='Type to search target field...',
-            options=metalog_field_names,
-            ensure_option=False,  # Allow custom values
-            layout=Layout(width='250px')
+        # Searchable target field - using Text + Dropdown combination for paste support
+        target_input = Text(
+            placeholder='Type or paste target field...',
+            layout=Layout(width='250px'),
+            continuous_update=True
         )
+        
+        # Dropdown for suggestions (shown below text input when typing)
+        target_suggestions = Dropdown(
+            options=[],
+            layout=Layout(width='250px', display='none'),
+            style={'description_width': '0px'}
+        )
+        
+        # Container to stack input and suggestions vertically
+        target_container = VBox([target_input, target_suggestions], layout=Layout(width='250px'))
+        
+        # Filter and show suggestions as user types
+        def on_target_input_change(change):
+            query = change.new.lower().strip()
+            if query:
+                matches = [f for f in metalog_field_names if query in f.lower()][:8]
+                if matches:
+                    target_suggestions.options = [(m, m) for m in matches]
+                    target_suggestions.layout.display = 'block'
+                else:
+                    target_suggestions.layout.display = 'none'
+            else:
+                target_suggestions.layout.display = 'none'
+        
+        target_input.observe(on_target_input_change, names='value')
+        
+        def on_suggestion_select(change):
+            if change.new:
+                target_input.value = change.new
+                target_suggestions.layout.display = 'none'
+        
+        target_suggestions.observe(on_suggestion_select, names='value')
         
         # Documentation link button - initially hidden
         doc_button = Button(
@@ -94,16 +125,45 @@ class MappingConfigManager:
             value='source',
             layout=Layout(width='auto'),
             button_style='',
-            style={'button_width': '130px'}
+            style={'button_width': '140px'}
         )
         
-        # Searchable source key combobox
-        source_combobox = Combobox(
-            placeholder='Type to search source key...',
-            options=source_keys,
-            ensure_option=True,
-            layout=Layout(width='250px')
+        # Searchable source key - using Text + Dropdown for paste support
+        source_input = Text(
+            placeholder='Type or paste source key...',
+            layout=Layout(width='250px'),
+            continuous_update=True
         )
+        
+        source_suggestions = Dropdown(
+            options=[],
+            layout=Layout(width='250px', display='none'),
+            style={'description_width': '0px'}
+        )
+        
+        # Container to stack source input and suggestions vertically
+        source_container = VBox([source_input, source_suggestions], layout=Layout(width='250px'))
+        
+        def on_source_input_change(change):
+            query = change.new.lower().strip()
+            if query:
+                matches = [k for k in source_keys if query in k.lower()][:8]
+                if matches:
+                    source_suggestions.options = [(m, m) for m in matches]
+                    source_suggestions.layout.display = 'block'
+                else:
+                    source_suggestions.layout.display = 'none'
+            else:
+                source_suggestions.layout.display = 'none'
+        
+        source_input.observe(on_source_input_change, names='value')
+        
+        def on_source_suggestion_select(change):
+            if change.new:
+                source_input.value = change.new
+                source_suggestions.layout.display = 'none'
+        
+        source_suggestions.observe(on_source_suggestion_select, names='value')
         
         # Static value input (hidden by default)
         static_value_input = Text(
@@ -174,8 +234,8 @@ class MappingConfigManager:
                 value_map_button.button_style = 'info'
                 value_map_button.description = '📝 Hide Values'
                 # Build panel if source is selected
-                if source_combobox.value:
-                    build_value_mapping_panel(source_combobox.value)
+                if source_input.value:
+                    build_value_mapping_panel(source_input.value)
             else:
                 value_mappings_container.layout.display = 'none'
                 value_map_button.button_style = ''
@@ -193,7 +253,7 @@ class MappingConfigManager:
                 doc_button.layout.display = 'none'
                 current_doc_url['url'] = ''
                 
-        target_combobox.observe(on_target_change, names='value')
+        target_input.observe(on_target_change, names='value')
         
         def on_source_change(change):
             if change.new and mode_toggle.value == 'source':
@@ -205,26 +265,27 @@ class MappingConfigManager:
                 value_map_button.layout.display = 'none'
                 value_mappings_container.layout.display = 'none'
                 
-        source_combobox.observe(on_source_change, names='value')
+        source_input.observe(on_source_change, names='value')
         
         def on_mode_change(change):
             if change.new == 'static':
-                source_combobox.layout.display = 'none'
+                source_container.layout.display = 'none'
                 static_value_input.layout.display = 'block'
                 value_map_button.layout.display = 'none'
                 value_mappings_container.layout.display = 'none'
             else:
-                source_combobox.layout.display = 'block'
+                source_container.layout.display = 'flex'
                 static_value_input.layout.display = 'none'
-                if source_combobox.value:
+                if source_input.value:
                     value_map_button.layout.display = 'block'
         
         mode_toggle.observe(on_mode_change, names='value')
         
-        # Main row
+        # Main row with text inputs and suggestion dropdowns stacked in containers
         main_row = HBox(
-            [target_combobox, doc_button, HTML("→"), mode_toggle, source_combobox, static_value_input, value_map_button, delete_button],
-            layout=Layout(margin='5px 0', align_items='center', gap='8px')
+            [target_container, doc_button, HTML("→"), mode_toggle, 
+             source_container, static_value_input, value_map_button, delete_button],
+            layout=Layout(margin='5px 0', align_items='flex-start', gap='8px')
         )
         
         # Combined row container (main row + value mappings panel)
@@ -232,9 +293,9 @@ class MappingConfigManager:
         
         # Store references for retrieval
         row_container._mapping_widgets = {
-            'target_combobox': target_combobox,
+            'target_input': target_input,
             'mode_toggle': mode_toggle,
-            'source_combobox': source_combobox,
+            'source_input': source_input,
             'static_value_input': static_value_input,
             'value_mapping_inputs': value_mapping_inputs
         }
@@ -381,13 +442,13 @@ class MappingConfigManager:
                 for row_container in rows_container.children:
                     # Access stored widget references
                     widgets_ref = row_container._mapping_widgets
-                    target_combobox = widgets_ref['target_combobox']
+                    target_input = widgets_ref['target_input']
                     mode_toggle = widgets_ref['mode_toggle']
-                    source_combobox = widgets_ref['source_combobox']
+                    source_input = widgets_ref['source_input']
                     static_value_input = widgets_ref['static_value_input']
                     value_mapping_inputs = widgets_ref['value_mapping_inputs']
                     
-                    target = target_combobox.value.strip() if target_combobox.value else ''
+                    target = target_input.value.strip() if target_input.value else ''
                     
                     if not target:
                         continue  # Skip rows without target field
@@ -401,7 +462,7 @@ class MappingConfigManager:
                             }
                     else:
                         # Map from source mode
-                        source = source_combobox.value.strip() if source_combobox.value else ''
+                        source = source_input.value.strip() if source_input.value else ''
                         if source:
                             # Extract value mappings from inputs
                             value_mappings = {}
