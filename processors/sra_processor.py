@@ -124,9 +124,111 @@ class SRAProcessor:
         with open(template_path, 'w') as f:
             json.dump(template_content, f, indent=4)
 
+    def _get_field_value(self, row: pd.Series, key: str) -> Optional[str]:
+        """Extract a field value from a row by searching jattr and attributes."""
+        value = None
+        
+        # Check jattr first
+        if pd.notna(row['jattr']):
+            try:
+                jattr_data = json.loads(row['jattr'])
+                if key in jattr_data:
+                    v = jattr_data[key]
+                    value = " ".join(v) if isinstance(v, list) else str(v)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        
+        # Check attributes if not found
+        if value is None and pd.notna(row['attributes']):
+            try:
+                match = re.search(f"k={re.escape(key)}, v=([^}}]+)", row['attributes'])
+                if match:
+                    value = match.group(1).strip()
+            except Exception:
+                pass
+        
+        return value
+
+    def _apply_filters(self, df: pd.DataFrame, filters: Dict[str, Any]) -> pd.DataFrame:
+        """Apply sample filters to the DataFrame.
+        
+        Args:
+            df: Input DataFrame
+            filters: Filter configuration containing:
+                - exclude_project: bool - if True, exclude all samples
+                - sample_filters: list of filter rules
+        
+        Returns:
+            Filtered DataFrame
+        """
+        # Check if entire project should be excluded
+        if filters.get("exclude_project", False):
+            print("🚫 Project excluded by filter configuration")
+            return df.iloc[0:0]  # Return empty df with same columns
+        
+        sample_filters = filters.get("sample_filters", [])
+        if not sample_filters:
+            return df
+        
+        print(f"🔧 Applying {len(sample_filters)} filter(s)...")
+        
+        # Build a mask for each row
+        result_df = df.copy()
+        
+        for filter_rule in sample_filters:
+            action = filter_rule.get("action", "include")
+            key = filter_rule.get("key")
+            operator = filter_rule.get("operator", "equals")
+            value = filter_rule.get("value", "")
+            
+            if not key:
+                continue
+            
+            # Create mask based on operator
+            def check_condition(row):
+                field_value = self._get_field_value(row, key)
+                
+                if operator == "is_empty":
+                    return field_value is None or field_value == ""
+                elif operator == "is_not_empty":
+                    return field_value is not None and field_value != ""
+                elif field_value is None:
+                    return False
+                elif operator == "equals":
+                    return field_value.lower() == value.lower()
+                elif operator == "contains":
+                    return value.lower() in field_value.lower()
+                elif operator == "starts_with":
+                    return field_value.lower().startswith(value.lower())
+                elif operator == "ends_with":
+                    return field_value.lower().endswith(value.lower())
+                return False
+            
+            mask = result_df.apply(check_condition, axis=1)
+            
+            if action == "include":
+                # Keep only rows matching the condition
+                result_df = result_df[mask]
+            else:  # exclude
+                # Remove rows matching the condition
+                result_df = result_df[~mask]
+            
+            print(f"   Filter '{key} {operator} {value}' ({action}): {len(result_df)} samples remaining")
+        
+        return result_df
+
     def _apply_mappings(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
         """Applies the transformations based on the loaded config file."""
         processed_df = df.copy()
+        
+        # Apply filters first
+        filters = config.get("filters", {})
+        if filters:
+            processed_df = self._apply_filters(processed_df, filters)
+            if processed_df.empty:
+                print("⚠️ All samples were filtered out")
+                return processed_df
+        
         mappings = self._get_mappings(config)
 
         for target_col, mapping_rules in mappings.items():

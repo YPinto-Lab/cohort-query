@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import ipywidgets as widgets
-from ipywidgets import VBox, HBox, Layout, Dropdown, Text, Button, Output, Accordion, HTML, ToggleButtons, Textarea
+from ipywidgets import VBox, HBox, Layout, Dropdown, Text, Button, Output, Accordion, HTML, ToggleButtons, Textarea, Checkbox
 from IPython.display import display
 
 from Accessors.MetalogAccessor.metalog_accessor import MetalogAccessor, MetalogField
@@ -329,6 +329,119 @@ class MappingConfigManager:
         
         return row_container
 
+    def _create_filter_row(self, source_keys: List[str], filters_container: VBox,
+                           key_values_map: Dict[str, List[str]]) -> HBox:
+        """Creates a single filter row for sample filtering.
+        
+        Args:
+            source_keys: List of available source key names.
+            filters_container: Parent container for deletion callback.
+            key_values_map: Dict mapping source key names to their sample values.
+        """
+        # Action: include or exclude matching samples
+        action_dropdown = Dropdown(
+            options=[('Include only', 'include'), ('Exclude', 'exclude')],
+            value='include',
+            layout=Layout(width='110px'),
+            style={'description_width': '0px'}
+        )
+        
+        # "where" label
+        where_label = HTML("<span style='margin: 0 8px; color: #666;'>samples where</span>")
+        
+        # Key dropdown
+        key_dropdown = Dropdown(
+            options=[('Select key...', '')] + [(k, k) for k in source_keys],
+            layout=Layout(width='180px'),
+            style={'description_width': '0px'}
+        )
+        
+        # Operator dropdown
+        operator_dropdown = Dropdown(
+            options=[
+                ('equals', 'equals'),
+                ('contains', 'contains'),
+                ('starts with', 'starts_with'),
+                ('ends with', 'ends_with'),
+                ('is empty', 'is_empty'),
+                ('is not empty', 'is_not_empty')
+            ],
+            value='equals',
+            layout=Layout(width='110px'),
+            style={'description_width': '0px'}
+        )
+        
+        # Value input (textarea for paste support) + value suggestions dropdown
+        value_input = Textarea(
+            placeholder='Value',
+            rows=1,
+            layout=Layout(width='150px', height='28px')
+        )
+        
+        # Value suggestions dropdown (populated based on selected key)
+        value_suggestions = Dropdown(
+            options=[('▼', '')],
+            layout=Layout(width='45px'),
+            style={'description_width': '0px'}
+        )
+        
+        def on_key_change(change):
+            """Update value suggestions when key changes."""
+            key = change.new
+            if key and key in key_values_map:
+                values = key_values_map[key]
+                value_suggestions.options = [('▼', '')] + [(str(v)[:25], v) for v in values[:20]]
+            else:
+                value_suggestions.options = [('▼', '')]
+        
+        key_dropdown.observe(on_key_change, names='value')
+        
+        def on_suggestion_select(change):
+            """Populate value input when suggestion is selected."""
+            if change.new:
+                value_input.value = str(change.new)
+                value_suggestions.value = ''
+        
+        value_suggestions.observe(on_suggestion_select, names='value')
+        
+        # Hide value input for is_empty/is_not_empty operators
+        def on_operator_change(change):
+            if change.new in ['is_empty', 'is_not_empty']:
+                value_input.layout.display = 'none'
+                value_suggestions.layout.display = 'none'
+            else:
+                value_input.layout.display = 'block'
+                value_suggestions.layout.display = 'block'
+        
+        operator_dropdown.observe(on_operator_change, names='value')
+        
+        # Delete button
+        delete_button = Button(
+            description='✕',
+            button_style='danger',
+            layout=Layout(width='35px')
+        )
+        
+        # Row container
+        filter_row = HBox(
+            [action_dropdown, where_label, key_dropdown, operator_dropdown, value_input, value_suggestions, delete_button],
+            layout=Layout(margin='4px 0', align_items='center')
+        )
+        
+        # Store widget references for retrieval
+        filter_row._filter_widgets = {
+            'action': action_dropdown,
+            'key': key_dropdown,
+            'operator': operator_dropdown,
+            'value': value_input
+        }
+        
+        def on_delete(b):
+            filters_container.children = tuple(c for c in filters_container.children if c is not filter_row)
+        delete_button.on_click(on_delete)
+        
+        return filter_row
+
     def _build_discovered_keys_display(self, template_data: dict) -> VBox:
         """Creates a nicely formatted display of discovered keys with sample values."""
         
@@ -460,6 +573,31 @@ class MappingConfigManager:
         def on_save(b):
             with output:
                 output.clear_output()
+                
+                # Collect filters
+                filters_config = {
+                    "exclude_project": exclude_project_toggle.value,
+                    "sample_filters": []
+                }
+                
+                for filter_row in filters_container.children:
+                    filter_widgets = filter_row._filter_widgets
+                    key = filter_widgets['key'].value
+                    operator = filter_widgets['operator'].value
+                    value = filter_widgets['value'].value.strip()
+                    action = filter_widgets['action'].value
+                    
+                    if key:  # Only add if key is selected
+                        filter_entry = {
+                            "action": action,
+                            "key": key,
+                            "operator": operator
+                        }
+                        # Only include value for operators that need it
+                        if operator not in ['is_empty', 'is_not_empty']:
+                            filter_entry["value"] = value
+                        filters_config["sample_filters"].append(filter_entry)
+                
                 mappings = {}
                 
                 for row_container in rows_container.children:
@@ -499,18 +637,29 @@ class MappingConfigManager:
                                 "value_mappings": value_mappings
                             }
                 
-                if not mappings:
-                    print("❌ Please create at least one valid mapping")
+                # Allow saving with filters only if project is excluded
+                if not mappings and not filters_config["exclude_project"]:
+                    print("❌ Please create at least one valid mapping (or exclude the entire project)")
                     return
                 
-                # Save config
-                config = {"project_id": project_id, "mappings": mappings}
+                # Save config with filters
+                config = {
+                    "project_id": project_id,
+                    "filters": filters_config,
+                    "mappings": mappings
+                }
                 output_path = self.config_dir / f"{project_id}.json"
                 
                 with open(output_path, 'w') as f:
                     json.dump(config, f, indent=4)
                 
-                print(f"✅ Saved {len(mappings)} mappings to: {output_path}")
+                filter_text = ""
+                if filters_config["exclude_project"]:
+                    filter_text = " (project excluded)"
+                elif filters_config["sample_filters"]:
+                    filter_text = f" with {len(filters_config['sample_filters'])} filter(s)"
+                
+                print(f"✅ Saved {len(mappings)} mappings{filter_text} to: {output_path}")
                 
                 # Hide UI (keep template for reference)
                 if ui_container_ref['widget']:
@@ -524,6 +673,54 @@ class MappingConfigManager:
         accordion = Accordion(children=[keys_display], selected_index=None)
         accordion.set_title(0, '🔍 View Discovered Keys & Sample Values (click to expand)')
         
+        # --- Filter Section ---
+        
+        # Exclude entire project toggle
+        exclude_project_toggle = Checkbox(
+            value=False,
+            description='🚫 Exclude entire project from processing',
+            indent=False,
+            layout=Layout(margin='5px 0')
+        )
+        
+        # Filter rows container
+        filters_container = VBox([], layout=Layout(margin='10px 0'))
+        
+        # Add filter button
+        add_filter_button = Button(
+            description='+ Add Filter',
+            button_style='warning',
+            icon='filter',
+            layout=Layout(width='130px')
+        )
+        
+        def add_filter(b):
+            filters_container.children += (self._create_filter_row(all_source_keys, filters_container, key_values_map),)
+        add_filter_button.on_click(add_filter)
+        
+        # Hide filter rows when exclude_project is checked
+        def on_exclude_project_change(change):
+            if change.new:
+                filters_container.layout.display = 'none'
+                add_filter_button.layout.display = 'none'
+            else:
+                filters_container.layout.display = 'block'
+                add_filter_button.layout.display = 'block'
+        
+        exclude_project_toggle.observe(on_exclude_project_change, names='value')
+        
+        # Filter section wrapper (collapsible via accordion)
+        filter_content = VBox([
+            exclude_project_toggle,
+            HTML("<p style='color: #666; font-size: 0.9em; margin: 5px 0;'>"
+                 "Add filters to include/exclude specific samples based on their metadata values.</p>"),
+            filters_container,
+            add_filter_button
+        ])
+        
+        filter_accordion = Accordion(children=[filter_content], selected_index=None)
+        filter_accordion.set_title(0, '🔧 Sample Filters (optional)')
+        
         # Mapping section
         mapping_section = VBox([
             HTML("<h4 style='margin: 15px 0 10px;'>Create Field Mappings</h4>"),
@@ -536,6 +733,7 @@ class MappingConfigManager:
         ui_container = VBox([
             header,
             accordion,
+            filter_accordion,
             mapping_section,
             HBox([save_button]),
             output
