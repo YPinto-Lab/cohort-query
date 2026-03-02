@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import ipywidgets as widgets
-from ipywidgets import VBox, HBox, Layout, Dropdown, Text, Button, Output, Accordion, HTML, ToggleButtons
+from ipywidgets import VBox, HBox, Layout, Dropdown, Text, Button, Output, Accordion, HTML, ToggleButtons, Textarea
 from IPython.display import display
 
 from Accessors.MetalogAccessor.metalog_accessor import MetalogAccessor, MetalogField
@@ -64,10 +64,11 @@ class MappingConfigManager:
         # Build metalog options for dropdown (for quick selection)
         metalog_options = [(f.field_name, f.field_name) for f in self._metalog_fields]
         
-        # Target field: Text input (supports paste) + optional dropdown for quick select
-        target_input = Text(
+        # Target field: Textarea (rows=1 for better paste support) + optional dropdown for quick select
+        target_input = Textarea(
             placeholder='Enter target field or select →',
-            layout=Layout(width='200px')
+            rows=1,
+            layout=Layout(width='200px', height='32px')
         )
         
         # Dropdown for quick selection from Metalog fields
@@ -109,10 +110,11 @@ class MappingConfigManager:
             button_style=''
         )
         
-        # Source key: Text input (supports paste) + optional dropdown for quick select
-        source_input = Text(
+        # Source key: Textarea (rows=1 for better paste support) + optional dropdown for quick select
+        source_input = Textarea(
             placeholder='Enter source key or select →',
-            layout=Layout(width='200px')
+            rows=1,
+            layout=Layout(width='200px', height='32px')
         )
         
         source_quick_select = Dropdown(
@@ -129,9 +131,10 @@ class MappingConfigManager:
         source_quick_select.observe(on_source_quick_select, names='value')
         
         # Static value input (hidden by default)
-        static_value_input = Text(
+        static_value_input = Textarea(
             placeholder='Value for all samples',
-            layout=Layout(width='200px', display='none')
+            rows=1,
+            layout=Layout(width='200px', height='32px', display='none')
         )
         
         # Value mapping toggle button
