@@ -61,21 +61,29 @@ class MappingConfigManager:
             key_values_map: Dict mapping source key names to their top sample values.
         """
         
-        # Build metalog options for dropdown
+        # Build metalog options for dropdown (for quick selection)
         metalog_options = [(f.field_name, f.field_name) for f in self._metalog_fields]
         
-        # Target field dropdown
-        target_dropdown = Dropdown(
-            options=[('— Select Target Field —', '')] + metalog_options + [('✏️ Custom...', '__CUSTOM__')],
-            layout=Layout(width='220px'),
+        # Target field: Text input (supports paste) + optional dropdown for quick select
+        target_input = Text(
+            placeholder='Enter target field or select →',
+            layout=Layout(width='200px')
+        )
+        
+        # Dropdown for quick selection from Metalog fields
+        target_quick_select = Dropdown(
+            options=[('▼ Select', '')] + metalog_options,
+            layout=Layout(width='100px'),
             style={'description_width': '0px'}
         )
         
-        # Custom target input (hidden by default)
-        target_custom = Text(
-            placeholder='Enter or paste custom field',
-            layout=Layout(width='180px', display='none')
-        )
+        def on_quick_select(change):
+            if change.new:
+                target_input.value = change.new
+                # Reset dropdown after selection
+                target_quick_select.value = ''
+        
+        target_quick_select.observe(on_quick_select, names='value')
         
         # Documentation link button - initially hidden
         doc_button = Button(
@@ -101,18 +109,24 @@ class MappingConfigManager:
             button_style=''
         )
         
-        # Source key dropdown
-        source_dropdown = Dropdown(
-            options=[('— Select Source Key —', '')] + [(k, k) for k in source_keys] + [('✏️ Custom...', '__CUSTOM__')],
-            layout=Layout(width='220px'),
+        # Source key: Text input (supports paste) + optional dropdown for quick select
+        source_input = Text(
+            placeholder='Enter source key or select →',
+            layout=Layout(width='200px')
+        )
+        
+        source_quick_select = Dropdown(
+            options=[('▼ Select', '')] + [(k, k) for k in source_keys],
+            layout=Layout(width='100px'),
             style={'description_width': '0px'}
         )
         
-        # Custom source input (hidden by default)
-        source_custom = Text(
-            placeholder='Enter or paste source key',
-            layout=Layout(width='180px', display='none')
-        )
+        def on_source_quick_select(change):
+            if change.new:
+                source_input.value = change.new
+                source_quick_select.value = ''
+        
+        source_quick_select.observe(on_source_quick_select, names='value')
         
         # Static value input (hidden by default)
         static_value_input = Text(
@@ -148,16 +162,12 @@ class MappingConfigManager:
         value_mapping_inputs: Dict[str, Text] = {}
         
         def get_target_value() -> str:
-            """Get the effective target field value."""
-            if target_dropdown.value == '__CUSTOM__':
-                return target_custom.value.strip()
-            return target_dropdown.value
+            """Get the target field value from text input."""
+            return target_input.value.strip()
         
         def get_source_value() -> str:
-            """Get the effective source key value."""
-            if source_dropdown.value == '__CUSTOM__':
-                return source_custom.value.strip()
-            return source_dropdown.value
+            """Get the source key value from text input."""
+            return source_input.value.strip()
         
         def build_value_mapping_panel(source_key: str):
             """Build the value mapping panel for the selected source key."""
@@ -204,49 +214,57 @@ class MappingConfigManager:
         
         value_map_button.on_click(toggle_value_mappings)
         
-        def on_target_dropdown_change(change):
-            if change.new == '__CUSTOM__':
-                target_custom.layout.display = 'block'
+        def on_target_input_change(change):
+            """Show doc button if target matches a Metalog field."""
+            field_name = change.new.strip() if change.new else ''
+            if field_name and field_name in self._metalog_docs:
+                doc_button.layout.display = 'block'
+                current_doc_url['url'] = self._metalog_docs[field_name]
+            else:
                 doc_button.layout.display = 'none'
                 current_doc_url['url'] = ''
-            else:
-                target_custom.layout.display = 'none'
-                if change.new and change.new in self._metalog_docs:
-                    doc_button.layout.display = 'block'
-                    current_doc_url['url'] = self._metalog_docs[change.new]
-                else:
-                    doc_button.layout.display = 'none'
-                    current_doc_url['url'] = ''
                 
-        target_dropdown.observe(on_target_dropdown_change, names='value')
+        target_input.observe(on_target_input_change, names='value')
         
-        def on_source_dropdown_change(change):
-            if change.new == '__CUSTOM__':
-                source_custom.layout.display = 'block'
-            else:
-                source_custom.layout.display = 'none'
-            
-            if change.new and change.new != '__CUSTOM__' and mode_toggle.value == 'source':
+        def on_source_input_change(change):
+            """Show value mapping button when source is entered."""
+            source_val = change.new.strip() if change.new else ''
+            if source_val and mode_toggle.value == 'source':
                 value_map_button.layout.display = 'block'
                 if value_mappings_container.layout.display == 'block':
-                    build_value_mapping_panel(change.new)
+                    build_value_mapping_panel(source_val)
             elif mode_toggle.value == 'source':
                 value_map_button.layout.display = 'none'
                 value_mappings_container.layout.display = 'none'
                 
-        source_dropdown.observe(on_source_dropdown_change, names='value')
+        source_input.observe(on_source_input_change, names='value')
+        
+        def on_target_quick_select(change):
+            """When a Metalog field is selected from quick-select, set in text input."""
+            if change.new and change.new != '':
+                target_input.value = change.new
+                target_quick_select.value = ''  # Reset dropdown after selection
+        
+        target_quick_select.observe(on_target_quick_select, names='value')
+        
+        def on_source_quick_select(change):
+            """When a source key is selected from quick-select, set in text input."""
+            if change.new and change.new != '':
+                source_input.value = change.new
+                source_quick_select.value = ''  # Reset dropdown after selection
+        
+        source_quick_select.observe(on_source_quick_select, names='value')
         
         def on_mode_change(change):
             if change.new == 'static':
-                source_dropdown.layout.display = 'none'
-                source_custom.layout.display = 'none'
+                source_input.layout.display = 'none'
+                source_quick_select.layout.display = 'none'
                 static_value_input.layout.display = 'block'
                 value_map_button.layout.display = 'none'
                 value_mappings_container.layout.display = 'none'
             else:
-                source_dropdown.layout.display = 'block'
-                if source_dropdown.value == '__CUSTOM__':
-                    source_custom.layout.display = 'block'
+                source_input.layout.display = 'block'
+                source_quick_select.layout.display = 'block'
                 static_value_input.layout.display = 'none'
                 source_val = get_source_value()
                 if source_val:
@@ -254,10 +272,10 @@ class MappingConfigManager:
         
         mode_toggle.observe(on_mode_change, names='value')
         
-        # Main row - clean horizontal layout
+        # Main row - clean horizontal layout with text inputs and quick-select dropdowns
         main_row = HBox(
-            [target_dropdown, target_custom, doc_button, HTML("→", layout=Layout(width='20px')), 
-             mode_toggle, source_dropdown, source_custom, static_value_input, value_map_button, delete_button],
+            [target_input, target_quick_select, doc_button, HTML("→", layout=Layout(width='20px')), 
+             mode_toggle, source_input, source_quick_select, static_value_input, value_map_button, delete_button],
             layout=Layout(margin='8px 0', align_items='center', gap='6px', flex_wrap='wrap')
         )
         
