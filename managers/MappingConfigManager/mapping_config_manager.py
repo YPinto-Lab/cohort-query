@@ -52,23 +52,33 @@ class MappingConfigManager:
             return False
     
     def _create_mapping_row(self, source_keys: List[str], rows_container: VBox, 
-                           key_values_map: Dict[str, List[str]]) -> VBox:
+                           key_values_map: Dict[str, List[str]],
+                           initial_values: Optional[Dict[str, Any]] = None) -> VBox:
         """Creates a single row of widgets for mapping a target field to a source key.
         
         Args:
             source_keys: List of available source key names.
             rows_container: Parent container for deletion callback.
             key_values_map: Dict mapping source key names to their top sample values.
+            initial_values: Optional dict with 'target', 'mode', 'source'/'static_value', 'value_mappings'
         """
         
         # Build metalog options for dropdown (for quick selection)
         metalog_options = [(f.field_name, f.field_name) for f in self._metalog_fields]
         
+        # Get initial values
+        init_target = initial_values.get('target', '') if initial_values else ''
+        init_mode = initial_values.get('mode', 'source') if initial_values else 'source'
+        init_source = initial_values.get('source', '') if initial_values else ''
+        init_static = initial_values.get('static_value', '') if initial_values else ''
+        init_value_mappings = initial_values.get('value_mappings', {}) if initial_values else {}
+        
         # Target field: Textarea (rows=1 for better paste support) + optional dropdown for quick select
         target_input = Textarea(
-            placeholder='Type field',
+            value=init_target,
+            placeholder='Target field',
             rows=1,
-            layout=Layout(width='200px', height='28px')
+            layout=Layout(width='160px', height='28px')
         )
         
         # Dropdown for quick selection from Metalog fields
@@ -105,21 +115,22 @@ class MappingConfigManager:
         # Mode toggle: Map from source OR Set static value
         mode_toggle = ToggleButtons(
             options=[('🔑 Source', 'source'), ('📌 Static', 'static')],
-            value='source',
+            value=init_mode,
             layout=Layout(width='160px'),
             style={'button_width': '100px'}
         )
         
         # Source key: Textarea (rows=1 for better paste support) + optional dropdown for quick select
         source_input = Textarea(
-            placeholder='Type Source key',
+            value=init_source,
+            placeholder='Source key',
             rows=1,
-            layout=Layout(width='200px', height='28px')
+            layout=Layout(width='160px', height='28px', display='none' if init_mode == 'static' else 'block')
         )
         
         source_quick_select = Dropdown(
-            options=[('Select Source key', '')] + [(k, k) for k in source_keys],
-            layout=Layout(width='200px'),
+            options=[('▼', '')] + [(k, k) for k in source_keys],
+            layout=Layout(width='45px', display='none' if init_mode == 'static' else 'block'),
             style={'description_width': '0px'}
         )
         
@@ -130,11 +141,12 @@ class MappingConfigManager:
         
         source_quick_select.observe(on_source_quick_select, names='value')
         
-        # Static value input (hidden by default)
+        # Static value input (hidden by default unless in static mode)
         static_value_input = Textarea(
+            value=init_static,
             placeholder='Static value',
             rows=1,
-            layout=Layout(width='160px', height='28px', display='none')
+            layout=Layout(width='160px', height='28px', display='block' if init_mode == 'static' else 'none')
         )
         
         # Value mapping toggle button
@@ -327,21 +339,37 @@ class MappingConfigManager:
             rows_container.children = tuple(c for c in rows_container.children if c is not row_container)
         delete_button.on_click(on_delete)
         
+        # Initialize UI state based on initial values
+        if init_target and init_target in self._metalog_docs:
+            doc_button.layout.display = 'block'
+            current_doc_url['url'] = self._metalog_docs[init_target]
+        
+        if init_source and init_mode == 'source':
+            value_map_button.layout.display = 'block'
+        
         return row_container
 
     def _create_filter_row(self, source_keys: List[str], filters_container: VBox,
-                           key_values_map: Dict[str, List[str]]) -> HBox:
+                           key_values_map: Dict[str, List[str]],
+                           initial_values: Optional[Dict[str, Any]] = None) -> HBox:
         """Creates a single filter row for sample filtering.
         
         Args:
             source_keys: List of available source key names.
             filters_container: Parent container for deletion callback.
             key_values_map: Dict mapping source key names to their sample values.
+            initial_values: Optional dict with 'action', 'key', 'operator', 'value'
         """
+        # Get initial values
+        init_action = initial_values.get('action', 'include') if initial_values else 'include'
+        init_key = initial_values.get('key', '') if initial_values else ''
+        init_operator = initial_values.get('operator', 'equals') if initial_values else 'equals'
+        init_value = initial_values.get('value', '') if initial_values else ''
+        
         # Action: include or exclude matching samples
         action_dropdown = Dropdown(
             options=[('Include only', 'include'), ('Exclude', 'exclude')],
-            value='include',
+            value=init_action,
             layout=Layout(width='110px'),
             style={'description_width': '0px'}
         )
@@ -352,6 +380,7 @@ class MappingConfigManager:
         # Key dropdown
         key_dropdown = Dropdown(
             options=[('Select key...', '')] + [(k, k) for k in source_keys],
+            value=init_key if init_key in source_keys else '',
             layout=Layout(width='180px'),
             style={'description_width': '0px'}
         )
@@ -366,22 +395,32 @@ class MappingConfigManager:
                 ('is empty', 'is_empty'),
                 ('is not empty', 'is_not_empty')
             ],
-            value='equals',
+            value=init_operator,
             layout=Layout(width='110px'),
             style={'description_width': '0px'}
         )
         
+        # Determine if value input should be hidden
+        hide_value = init_operator in ['is_empty', 'is_not_empty']
+        
         # Value input (textarea for paste support) + value suggestions dropdown
         value_input = Textarea(
+            value=init_value,
             placeholder='Value',
             rows=1,
-            layout=Layout(width='150px', height='28px')
+            layout=Layout(width='150px', height='28px', display='none' if hide_value else 'block')
         )
         
         # Value suggestions dropdown (populated based on selected key)
+        # Build initial options if key is set
+        initial_suggestions = [('▼', '')]
+        if init_key and init_key in key_values_map:
+            values = key_values_map[init_key]
+            initial_suggestions = [('▼', '')] + [(str(v)[:25], v) for v in values[:20]]
+        
         value_suggestions = Dropdown(
-            options=[('▼', '')],
-            layout=Layout(width='45px'),
+            options=initial_suggestions,
+            layout=Layout(width='45px', display='none' if hide_value else 'block'),
             style={'description_width': '0px'}
         )
         
@@ -518,6 +557,16 @@ class MappingConfigManager:
         
         project_id = template_path.stem.split('.')[0]
         
+        # Check if existing config exists
+        config_path = self.config_dir / f"{project_id}.json"
+        existing_config = None
+        if config_path.exists():
+            try:
+                with open(config_path, 'r') as f:
+                    existing_config = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                existing_config = None
+        
         # Collect all source keys and build key-to-values map
         jattr_keys = template_data['discovered_keys'].get('from_jattr', [])
         attr_keys = template_data['discovered_keys'].get('from_attributes', [])
@@ -537,10 +586,16 @@ class MappingConfigManager:
         all_source_keys = sorted(set(k['key_name'] for k in jattr_keys + attr_keys))
         
         # --- UI Components ---
+        status_badge = ""
+        if existing_config:
+            status_badge = "<span style='background: #4CAF50; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; margin-left: 10px;'>✓ Configured</span>"
+        else:
+            status_badge = "<span style='background: #FF9800; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; margin-left: 10px;'>New</span>"
+        
         header = HTML(
             f"<div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); "
             f"color: white; padding: 15px; border-radius: 8px 8px 0 0; margin: -10px -10px 10px -10px;'>"
-            f"<h3 style='margin: 0;'>🧬 Configure Mapping: {project_id}</h3>"
+            f"<h3 style='margin: 0;'>🧬 Configure Mapping: {project_id}{status_badge}</h3>"
             f"</div>"
         )
         
@@ -660,11 +715,7 @@ class MappingConfigManager:
                     filter_text = f" with {len(filters_config['sample_filters'])} filter(s)"
                 
                 print(f"✅ Saved {len(mappings)} mappings{filter_text} to: {output_path}")
-                
-                # Hide UI (keep template for reference)
-                if ui_container_ref['widget']:
-                    ui_container_ref['widget'].layout.display = 'none'
-                print("📋 Template file kept for reference")
+                print("📝 You can continue editing. Changes will overwrite the config on next save.")
         
         save_button.on_click(on_save)
         
@@ -675,23 +726,28 @@ class MappingConfigManager:
         
         # --- Filter Section ---
         
+        # Get existing filter config
+        existing_filters = existing_config.get('filters', {}) if existing_config else {}
+        existing_exclude_project = existing_filters.get('exclude_project', False)
+        existing_sample_filters = existing_filters.get('sample_filters', [])
+        
         # Exclude entire project toggle
         exclude_project_toggle = Checkbox(
-            value=False,
+            value=existing_exclude_project,
             description='🚫 Exclude entire project from processing',
             indent=False,
             layout=Layout(margin='5px 0')
         )
         
         # Filter rows container
-        filters_container = VBox([], layout=Layout(margin='10px 0'))
+        filters_container = VBox([], layout=Layout(margin='10px 0', display='none' if existing_exclude_project else 'block'))
         
         # Add filter button
         add_filter_button = Button(
             description='+ Add Filter',
             button_style='warning',
             icon='filter',
-            layout=Layout(width='130px')
+            layout=Layout(width='130px', display='none' if existing_exclude_project else 'block')
         )
         
         def add_filter(b):
@@ -748,8 +804,41 @@ class MappingConfigManager:
         # Store reference for closure
         ui_container_ref['widget'] = ui_container
         
-        # Start with one row
-        add_row(None)
+        # Populate from existing config or start with empty rows
+        if existing_config:
+            # Populate existing mappings
+            existing_mappings = existing_config.get('mappings', {})
+            for target_field, mapping_data in existing_mappings.items():
+                if 'static_value' in mapping_data:
+                    # Static value mapping
+                    initial_values = {
+                        'target': target_field,
+                        'mode': 'static',
+                        'source': '',
+                        'static_value': mapping_data['static_value'],
+                        'value_mappings': {}
+                    }
+                else:
+                    # Source key mapping
+                    initial_values = {
+                        'target': target_field,
+                        'mode': 'source',
+                        'source': mapping_data.get('key_name', ''),
+                        'static_value': '',
+                        'value_mappings': mapping_data.get('value_mappings', {})
+                    }
+                rows_container.children += (self._create_mapping_row(all_source_keys, rows_container, key_values_map, initial_values),)
+            
+            # Populate existing filters
+            for filter_data in existing_sample_filters:
+                filters_container.children += (self._create_filter_row(all_source_keys, filters_container, key_values_map, filter_data),)
+            
+            # If no mappings exist yet, add one empty row
+            if not existing_mappings:
+                rows_container.children += (self._create_mapping_row(all_source_keys, rows_container, key_values_map),)
+        else:
+            # No existing config, start with one empty row
+            rows_container.children += (self._create_mapping_row(all_source_keys, rows_container, key_values_map),)
         
         return ui_container
 
@@ -757,7 +846,8 @@ class MappingConfigManager:
         """
         Run the interactive mapping configuration UI.
         
-        Displays a UI for each project with a pending .json.template file.
+        Displays a UI for each project with a .json.template file.
+        If a .json config already exists, loads it for editing.
         """
         # Load schema
         if not self._load_schema():
@@ -767,10 +857,27 @@ class MappingConfigManager:
         template_files = list(self.config_dir.glob('*.json.template'))
         
         if not template_files:
-            print("✅ All configurations are complete. No pending templates found.")
+            print("✅ No project templates found. Run the processing cell first to discover projects.")
             return
         
-        print(f"📋 Found {len(template_files)} project(s) needing configuration:\n")
+        # Check which have existing configs
+        new_count = 0
+        existing_count = 0
+        for template_path in template_files:
+            project_id = template_path.stem.split('.')[0]
+            config_path = self.config_dir / f"{project_id}.json"
+            if config_path.exists():
+                existing_count += 1
+            else:
+                new_count += 1
+        
+        status_msg = []
+        if new_count > 0:
+            status_msg.append(f"{new_count} new")
+        if existing_count > 0:
+            status_msg.append(f"{existing_count} existing (editable)")
+        
+        print(f"📋 Found {len(template_files)} project(s): {', '.join(status_msg)}\n")
         
         for template_path in template_files:
             ui = self._create_project_ui(template_path)
