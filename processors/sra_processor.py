@@ -99,9 +99,16 @@ class SRAProcessor:
         def format_source(key_values: defaultdict) -> List[Dict[str, Any]]:
             discovered_keys = []
             for key, value_counts in sorted(key_values.items()):
-                top_values = sorted(value_counts.items(), key=lambda item: item[1], reverse=True)
-                top_values = [v[0] for v in top_values[:self.top_n_values]]
-                discovered_keys.append({"key_name": key, "top_values": top_values})
+                # Sort by count (descending), include ALL values with their counts
+                sorted_values = sorted(value_counts.items(), key=lambda item: item[1], reverse=True)
+                # Keep top_values for backwards compatibility, but also add values_with_counts
+                top_values = [v[0] for v in sorted_values[:self.top_n_values]]
+                values_with_counts = [{"value": v, "count": c} for v, c in sorted_values]
+                discovered_keys.append({
+                    "key_name": key, 
+                    "top_values": top_values,
+                    "values_with_counts": values_with_counts
+                })
             return discovered_keys
 
         return {

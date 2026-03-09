@@ -10,7 +10,7 @@ to standardized Metalog fields.
 import json
 import webbrowser
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 import ipywidgets as widgets
 from ipywidgets import VBox, HBox, Layout, Dropdown, Text, Button, Output, Accordion, HTML, ToggleButtons, Textarea, Checkbox
@@ -499,9 +499,22 @@ class MappingConfigManager:
         
         def format_key_item(key_info: dict, source_badge: str = "") -> HTML:
             key_name = key_info['key_name']
-            top_vals = key_info.get('top_values', [])
-            display_vals = [str(v)[:30] + '...' if len(str(v)) > 30 else str(v) for v in top_vals[:3]]
-            vals_str = ', '.join(f"<code>{v}</code>" for v in display_vals)
+            # Use values_with_counts if available, otherwise fall back to top_values
+            values_with_counts = key_info.get('values_with_counts', [])
+            if values_with_counts:
+                # Show ALL values with counts
+                display_items = []
+                for vc in values_with_counts:
+                    val = str(vc['value'])
+                    count = vc['count']
+                    truncated = val[:30] + '...' if len(val) > 30 else val
+                    display_items.append(f"<code>{truncated}</code> <span style='color:#888;font-size:0.8em;'>({count})</span>")
+                vals_str = ', '.join(display_items)
+            else:
+                # Fallback for old templates without counts
+                top_vals = key_info.get('top_values', [])
+                display_vals = [str(v)[:30] + '...' if len(str(v)) > 30 else str(v) for v in top_vals]
+                vals_str = ', '.join(f"<code>{v}</code>" for v in display_vals)
             badge_html = f"<span style='background: #e0e0e0; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; margin-left: 8px;'>{source_badge}</span>" if source_badge else ""
             # Copy button with JavaScript onclick handler
             copy_btn = (
