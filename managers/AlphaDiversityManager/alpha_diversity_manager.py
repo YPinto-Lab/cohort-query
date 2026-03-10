@@ -328,7 +328,7 @@ class AlphaDiversityManager:
                     rows=2, cols=1,
                     subplot_titles=[f'{selected_rank.title()} Richness{title_filter}',
                                    f'Shannon Index{title_filter}'],
-                    vertical_spacing=0.15
+                    vertical_spacing=0.25
                 )
                 
                 # Plot 1: Richness
@@ -368,12 +368,14 @@ class AlphaDiversityManager:
                     )
                 
                 fig.update_layout(
-                    height=700,
+                    height=900,
                     title_text=f"Alpha Diversity at {selected_rank.title()} Level{title_filter}",
                     showlegend=bool(color_col),
                     template='plotly_white'
                 )
                 
+                fig.update_xaxes(tickangle=-30, row=1, col=1)
+                fig.update_xaxes(tickangle=-30, row=2, col=1)
                 fig.update_yaxes(title_text=f"# of {selected_rank.title()}s", row=1, col=1)
                 fig.update_yaxes(title_text="Shannon Index (H')", row=2, col=1)
                 
