@@ -647,21 +647,24 @@ class MappingConfigManager:
 
                 # Sort by count descending
                 for val, count in sorted(aggregated.items(), key=lambda x: -x[1]):
-                    truncated = val[:20] + '...' if len(val) > 20 else val
                     if count > 0:
                         values_display.append(
-                            f"<code>{truncated}</code> "
+                            f"<code>{val}</code> "
                             f"<span style='color:#888;font-size:0.8em;'>({count})</span>"
                         )
                     else:
-                        values_display.append(f"<code>{truncated}</code>")
+                        values_display.append(f"<code>{val}</code>")
                 
                 vals_str = ', '.join(values_display) if values_display else "<i>no examples</i>"
+                num_values = len(aggregated)
                 
                 rows.append(HTML(
                     f"<div style='margin: 3px 0; padding: 4px 8px; background: #f5f5f5; border-radius: 4px;'>"
-                    f"<b>{key_name}</b> — <span style='color: {coverage_color};'>{coverage_text}</span><br/>"
-                    f"<span style='color: #666; font-size: 12px;'>Values: {vals_str}</span>"
+                    f"<b>{key_name}</b> — <span style='color: {coverage_color};'>{coverage_text}</span>"
+                    f"<details style='margin-top: 2px;'>"
+                    f"<summary style='color: #666; font-size: 12px; cursor: pointer;'>Values ({num_values})</summary>"
+                    f"<span style='color: #666; font-size: 12px;'>{vals_str}</span>"
+                    f"</details>"
                     f"</div>"
                 ))
             
