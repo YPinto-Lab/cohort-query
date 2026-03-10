@@ -270,68 +270,81 @@ class AlphaDiversityManager:
                 # Start with full data
                 working_df = self.enriched_df.copy()
                 
+                # Get ALL unique samples BEFORE filtering (to ensure all appear in plot)
+                all_samples = working_df['acc'].unique()
+                total_samples = len(all_samples)
+                
                 # Apply taxon filter if selected
                 if filter_rank != 'No Filter' and filter_taxon != 'All Taxa':
                     print(f"🔍 Filtering to {filter_taxon} ({filter_rank})...")
                     
                     matching_tax_ids = self._get_matching_tax_ids(filter_rank, filter_taxon)
                     working_df = working_df[working_df['tax_id'].astype(str).isin(matching_tax_ids)]
-                    print(f"   → Kept {len(working_df):,} rows from {len(self.enriched_df):,} total")
-                    
-                    if working_df.empty:
-                        print(f"⚠️ No data remaining after filter. Try a different taxon.")
-                        return
+                    samples_with_data = working_df['acc'].nunique()
+                    print(f"   → {samples_with_data}/{total_samples} samples have {filter_taxon} taxa")
                 
                 print(f"🔄 Counting unique taxa at {selected_rank} level...")
                 
-                # Aggregate at selected rank
-                aggregated_df = self.tax_accessor.aggregate_counts_at_rank(
-                    working_df,
-                    target_rank=selected_rank,
-                    tax_id_col='tax_id',
-                    count_col='total_count',
-                    sample_col='acc'
-                )
+                # Aggregate at selected rank (may have fewer samples if filtering removed some)
+                if working_df.empty:
+                    # No data after filter - create empty diversity_df
+                    diversity_df = pd.DataFrame({'sample': all_samples, 'richness': 0, 'shannon': 0.0})
+                else:
+                    aggregated_df = self.tax_accessor.aggregate_counts_at_rank(
+                        working_df,
+                        target_rank=selected_rank,
+                        tax_id_col='tax_id',
+                        count_col='total_count',
+                        sample_col='acc'
+                    )
+                    
+                    # Compute alpha diversity
+                    diversity_df = self.compute_alpha_diversity(aggregated_df)
                 
-                # Compute alpha diversity
-                diversity_df = self.compute_alpha_diversity(aggregated_df)
+                # Ensure ALL samples are included (even if they have 0 taxa after filtering)
+                all_samples_df = pd.DataFrame({'sample': all_samples})
+                diversity_df = all_samples_df.merge(diversity_df, on='sample', how='left')
+                diversity_df['richness'] = diversity_df['richness'].fillna(0).astype(int)
+                diversity_df['shannon'] = diversity_df['shannon'].fillna(0.0)
                 
-                if diversity_df.empty:
-                    print("⚠️ No diversity data computed. Check your filters.")
-                    return
-                
-                # Merge with grouping variable if selected
+                # Merge with grouping variable from ORIGINAL data (before filter)
                 if group_var:
-                    sample_groups = working_df[['acc', group_var]].drop_duplicates()
+                    sample_groups = self.enriched_df[['acc', group_var]].drop_duplicates()
                     diversity_df = diversity_df.merge(sample_groups, left_on='sample', right_on='acc', how='left')
                     color_col = group_var
                 else:
                     color_col = None
                 
                 filter_text = f" within {filter_taxon}" if filter_taxon != 'All Taxa' else ""
-                print(f"✅ Computed diversity for {len(diversity_df)} samples{filter_text}")
+                samples_with_zero = (diversity_df['richness'] == 0).sum()
+                if samples_with_zero > 0:
+                    print(f"✅ Computed diversity for {len(diversity_df)} samples{filter_text} ({samples_with_zero} samples have 0 taxa)")
+                else:
+                    print(f"✅ Computed diversity for {len(diversity_df)} samples{filter_text}")
                 
-                # Create subplot figure
+                # Create subplot figure (vertical layout - one plot per row)
                 title_filter = f" ({filter_taxon})" if filter_taxon != 'All Taxa' else ""
                 fig = make_subplots(
-                    rows=1, cols=2,
+                    rows=2, cols=1,
                     subplot_titles=[f'{selected_rank.title()} Richness{title_filter}',
                                    f'Shannon Index{title_filter}'],
-                    horizontal_spacing=0.12
+                    vertical_spacing=0.15
                 )
                 
                 # Plot 1: Richness
                 if color_col:
                     for group_name in diversity_df[color_col].unique():
                         group_data = diversity_df[diversity_df[color_col] == group_name]
+                        n_samples = len(group_data)
                         fig.add_trace(
-                            go.Box(y=group_data['richness'], name=str(group_name), 
+                            go.Box(y=group_data['richness'], name=f"{group_name} (n={n_samples})", 
                                    boxmean=True, showlegend=True),
                             row=1, col=1
                         )
                 else:
+                    n_samples = len(diversity_df)
                     fig.add_trace(
-                        go.Box(y=diversity_df['richness'], name='All Samples', 
+                        go.Box(y=diversity_df['richness'], name=f'All Samples (n={n_samples})', 
                                boxmean=True, marker_color='#667eea'),
                         row=1, col=1
                     )
@@ -340,27 +353,29 @@ class AlphaDiversityManager:
                 if color_col:
                     for group_name in diversity_df[color_col].unique():
                         group_data = diversity_df[diversity_df[color_col] == group_name]
+                        n_samples = len(group_data)
                         fig.add_trace(
-                            go.Box(y=group_data['shannon'], name=str(group_name),
+                            go.Box(y=group_data['shannon'], name=f"{group_name} (n={n_samples})",
                                    boxmean=True, showlegend=False),
-                            row=1, col=2
+                            row=2, col=1
                         )
                 else:
+                    n_samples = len(diversity_df)
                     fig.add_trace(
-                        go.Box(y=diversity_df['shannon'], name='All Samples',
+                        go.Box(y=diversity_df['shannon'], name=f'All Samples (n={n_samples})',
                                boxmean=True, marker_color='#764ba2'),
-                        row=1, col=2
+                        row=2, col=1
                     )
                 
                 fig.update_layout(
-                    height=450,
+                    height=700,
                     title_text=f"Alpha Diversity at {selected_rank.title()} Level{title_filter}",
                     showlegend=bool(color_col),
                     template='plotly_white'
                 )
                 
                 fig.update_yaxes(title_text=f"# of {selected_rank.title()}s", row=1, col=1)
-                fig.update_yaxes(title_text="Shannon Index (H')", row=1, col=2)
+                fig.update_yaxes(title_text="Shannon Index (H')", row=2, col=1)
                 
                 fig.show()
                 

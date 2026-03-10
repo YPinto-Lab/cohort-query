@@ -66,55 +66,73 @@ class SRAProcessor:
 
     def _scan_for_keys_and_values(self, df: pd.DataFrame) -> Dict[str, List[Dict[str, Any]]]:
         """
-        Scans 'jattr' and 'attributes' columns separately to find all unique
-        metadata keys and a sample of their most common values for each source.
-        """
-        jattr_key_values = defaultdict(lambda: defaultdict(int))
-        attr_key_values = defaultdict(lambda: defaultdict(int))
+        Scans 'jattr' and 'attributes' columns to find all unique metadata keys
+        and count how many unique samples (accession IDs) have each value.
 
-        # Pass 1: Collect all values and their counts for each key from each source
+        Counts are deduplicated: if a key appears in both jattr and attributes
+        for the same sample, the sample is counted only once.
+        """
+        # key -> value -> set of accession IDs (for unique sample counting)
+        jattr_key_samples: Dict[str, Dict[str, set]] = defaultdict(lambda: defaultdict(set))
+        attr_key_samples: Dict[str, Dict[str, set]] = defaultdict(lambda: defaultdict(set))
+
         for _, row in df.iterrows():
-            # Scan jattr (JSON)
+            acc = str(row.get('acc', ''))
+
             if pd.notna(row['jattr']):
                 try:
                     data = json.loads(row['jattr'])
                     for key, value in data.items():
                         if isinstance(value, list):
-                            for v in value: jattr_key_values[key][str(v)] += 1
+                            for v in value:
+                                jattr_key_samples[key][str(v)].add(acc)
                         elif value is not None:
-                            jattr_key_values[key][str(value)] += 1
+                            jattr_key_samples[key][str(value)].add(acc)
                 except (json.JSONDecodeError, TypeError):
                     continue
-            
-            # Scan attributes (custom string)
+
             if pd.notna(row['attributes']):
                 try:
                     matches = re.findall(r"k=([^,]+), v=([^}]+)", row['attributes'])
                     for key, value in matches:
-                        attr_key_values[key][value] += 1
+                        attr_key_samples[key][value].add(acc)
                 except Exception:
                     continue
-        
-        # Pass 2: Format the output for both sources
-        def format_source(key_values: defaultdict) -> List[Dict[str, Any]]:
+
+        def format_source(key_samples: Dict[str, Dict[str, set]], other_source: Dict[str, Dict[str, set]]) -> List[Dict[str, Any]]:
             discovered_keys = []
-            for key, value_counts in sorted(key_values.items()):
-                # Sort by count (descending), include ALL values with their counts
+            for key, value_acc_sets in sorted(key_samples.items()):
+                value_counts = {}
+                for value, acc_set in value_acc_sets.items():
+                    # Union with the other source to deduplicate across jattr/attributes
+                    combined = acc_set | other_source.get(key, {}).get(value, set())
+                    value_counts[value] = len(combined)
                 sorted_values = sorted(value_counts.items(), key=lambda item: item[1], reverse=True)
-                # Keep top_values for backwards compatibility, but also add values_with_counts
                 top_values = [v[0] for v in sorted_values[:self.top_n_values]]
                 values_with_counts = [{"value": v, "count": c} for v, c in sorted_values]
                 discovered_keys.append({
-                    "key_name": key, 
+                    "key_name": key,
                     "top_values": top_values,
                     "values_with_counts": values_with_counts
                 })
             return discovered_keys
 
         return {
-            "from_jattr": format_source(jattr_key_values),
-            "from_attributes": format_source(attr_key_values)
+            "from_jattr": format_source(jattr_key_samples, attr_key_samples),
+            "from_attributes": format_source(attr_key_samples, jattr_key_samples)
         }
+
+    def refresh_template(self, df: pd.DataFrame, project_id: str) -> Path:
+        """
+        (Re)generate the .json.template file so discovered keys and value counts
+        are always up to date.  Safe to call at any time — only the template is
+        touched; existing .json configs are never modified.
+
+        Returns the path to the template file.
+        """
+        template_path = self.config_dir / f"{project_id}.json.template"
+        self._generate_mapping_template(df, template_path)
+        return template_path
 
     def _generate_mapping_template(self, df: pd.DataFrame, template_path: Path):
         """Generates a .json.template file with source-separated sample values."""

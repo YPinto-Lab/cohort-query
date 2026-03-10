@@ -58,6 +58,9 @@ class MappingConfigManager:
         # UI components
         self._output: Optional[Output] = None
         self._target_fields_container: Optional[VBox] = None
+        
+        # Filter components (per project)
+        self._filter_widgets: Dict[str, dict] = {}  # project_id -> {exclude_toggle, filters_container, ...}
     
     def _load_schema(self) -> bool:
         """Load the Metalog schema. Returns True if successful."""
@@ -101,12 +104,10 @@ class MappingConfigManager:
                 if 'values_with_counts' in key_info:
                     values_with_counts = key_info['values_with_counts']
                     if key_name in key_values_with_counts:
+                        # Same key from both jattr & attributes — take max count (already deduplicated by processor)
                         existing = {vc['value']: vc['count'] for vc in key_values_with_counts[key_name]}
                         for vc in values_with_counts:
-                            if vc['value'] in existing:
-                                existing[vc['value']] += vc['count']
-                            else:
-                                existing[vc['value']] = vc['count']
+                            existing[vc['value']] = max(existing.get(vc['value'], 0), vc['count'])
                         key_values_with_counts[key_name] = [{'value': v, 'count': c} for v, c in sorted(existing.items(), key=lambda x: -x[1])]
                     else:
                         key_values_with_counts[key_name] = values_with_counts
@@ -625,28 +626,35 @@ class MappingConfigManager:
                     coverage_text = f"{project_count}/{total_projects} projects"
                     coverage_color = 'green' if project_count == total_projects else '#666'
                 
-                # Get values with counts from projects (prefer selected ones if filtering)
+                # Aggregate value counts across relevant projects
                 values_display = []
-                search_order = list(selected_projects) if selected_projects else list(projects)
-                for pid in search_order:
-                    if pid in projects:
-                        # Try to get values with counts first
-                        vals_with_counts = self._project_key_values_with_counts.get(pid, {}).get(key_name, [])
-                        if vals_with_counts:
-                            for vc in vals_with_counts:
-                                val = str(vc['value'])
-                                count = vc['count']
-                                truncated = val[:20] + '...' if len(val) > 20 else val
-                                values_display.append(f"<code>{truncated}</code> <span style='color:#888;font-size:0.8em;'>({count})</span>")
-                            break
-                        else:
-                            # Fallback to old format without counts
-                            vals = self._project_key_values.get(pid, {}).get(key_name, [])
-                            if vals:
-                                for v in vals:
-                                    truncated = str(v)[:20] + '...' if len(str(v)) > 20 else str(v)
-                                    values_display.append(f"<code>{truncated}</code>")
-                                break
+                aggregate_projects = list(selected_projects) if selected_projects else list(projects)
+                aggregated: Dict[str, int] = {}  # value -> total sample count across projects
+
+                for pid in aggregate_projects:
+                    if pid not in projects:
+                        continue
+                    vals_with_counts = self._project_key_values_with_counts.get(pid, {}).get(key_name, [])
+                    if vals_with_counts:
+                        for vc in vals_with_counts:
+                            val = str(vc['value'])
+                            aggregated[val] = aggregated.get(val, 0) + vc['count']
+                    else:
+                        # Fallback: old format without counts
+                        vals = self._project_key_values.get(pid, {}).get(key_name, [])
+                        for v in vals:
+                            aggregated.setdefault(str(v), 0)
+
+                # Sort by count descending
+                for val, count in sorted(aggregated.items(), key=lambda x: -x[1]):
+                    truncated = val[:20] + '...' if len(val) > 20 else val
+                    if count > 0:
+                        values_display.append(
+                            f"<code>{truncated}</code> "
+                            f"<span style='color:#888;font-size:0.8em;'>({count})</span>"
+                        )
+                    else:
+                        values_display.append(f"<code>{truncated}</code>")
                 
                 vals_str = ', '.join(values_display) if values_display else "<i>no examples</i>"
                 
@@ -692,6 +700,282 @@ class MappingConfigManager:
         
         return accordion
     
+    def _create_filter_row(
+        self, 
+        project_id: str,
+        filters_container: VBox,
+        initial_values: Optional[Dict[str, Any]] = None
+    ) -> HBox:
+        """Create a single filter row for sample filtering."""
+        
+        source_keys = self._project_source_keys.get(project_id, [])
+        key_values_map = self._project_key_values.get(project_id, {})
+        
+        # Get initial values
+        init_action = initial_values.get('action', 'include') if initial_values else 'include'
+        init_key = initial_values.get('key', '') if initial_values else ''
+        init_operator = initial_values.get('operator', 'equals') if initial_values else 'equals'
+        init_value = initial_values.get('value', '') if initial_values else ''
+        
+        # Action: include or exclude matching samples
+        action_dropdown = Dropdown(
+            options=[('Include only', 'include'), ('Exclude', 'exclude')],
+            value=init_action,
+            layout=Layout(width='110px'),
+            style={'description_width': '0px'}
+        )
+        
+        where_label = HTML("<span style='margin: 0 8px; color: #666;'>samples where</span>")
+        
+        # Key dropdown
+        key_dropdown = Dropdown(
+            options=[('Select key...', '')] + [(k, k) for k in source_keys],
+            value=init_key if init_key in source_keys else '',
+            layout=Layout(width='180px'),
+            style={'description_width': '0px'}
+        )
+        
+        # Operator dropdown
+        operator_dropdown = Dropdown(
+            options=[
+                ('equals', 'equals'),
+                ('contains', 'contains'),
+                ('starts with', 'starts_with'),
+                ('ends with', 'ends_with'),
+                ('is empty', 'is_empty'),
+                ('is not empty', 'is_not_empty')
+            ],
+            value=init_operator,
+            layout=Layout(width='110px'),
+            style={'description_width': '0px'}
+        )
+        
+        hide_value = init_operator in ['is_empty', 'is_not_empty']
+        
+        # Value input
+        value_input = Textarea(
+            value=init_value,
+            placeholder='Value',
+            rows=1,
+            layout=Layout(width='150px', height='28px', display='none' if hide_value else 'block')
+        )
+        
+        # Value suggestions dropdown
+        initial_suggestions = [('▼', '')]
+        if init_key and init_key in key_values_map:
+            values = key_values_map[init_key]
+            initial_suggestions = [('▼', '')] + [(str(v)[:25], v) for v in values[:20]]
+        
+        value_suggestions = Dropdown(
+            options=initial_suggestions,
+            layout=Layout(width='45px', display='none' if hide_value else 'block'),
+            style={'description_width': '0px'}
+        )
+        
+        def on_key_change(change):
+            key = change.new
+            if key and key in key_values_map:
+                values = key_values_map[key]
+                value_suggestions.options = [('▼', '')] + [(str(v)[:25], v) for v in values[:20]]
+            else:
+                value_suggestions.options = [('▼', '')]
+        
+        key_dropdown.observe(on_key_change, names='value')
+        
+        def on_suggestion_select(change):
+            if change.new:
+                value_input.value = str(change.new)
+                value_suggestions.value = ''
+        
+        value_suggestions.observe(on_suggestion_select, names='value')
+        
+        def on_operator_change(change):
+            if change.new in ['is_empty', 'is_not_empty']:
+                value_input.layout.display = 'none'
+                value_suggestions.layout.display = 'none'
+            else:
+                value_input.layout.display = 'block'
+                value_suggestions.layout.display = 'block'
+        
+        operator_dropdown.observe(on_operator_change, names='value')
+        
+        # Delete button
+        delete_button = Button(
+            description='✕',
+            button_style='danger',
+            layout=Layout(width='35px')
+        )
+        
+        filter_row = HBox(
+            [action_dropdown, where_label, key_dropdown, operator_dropdown, value_input, value_suggestions, delete_button],
+            layout=Layout(margin='4px 0', align_items='center')
+        )
+        
+        # Store widget references
+        filter_row._filter_widgets = {
+            'action': action_dropdown,
+            'key': key_dropdown,
+            'operator': operator_dropdown,
+            'value': value_input
+        }
+        
+        def on_delete(b):
+            filters_container.children = tuple(c for c in filters_container.children if c is not filter_row)
+        delete_button.on_click(on_delete)
+        
+        return filter_row
+    
+    def _create_filters_section(self) -> VBox:
+        """Create the filters section for all projects."""
+        
+        project_panels = []
+        
+        for project_id in sorted(self._projects.keys()):
+            existing_config = self._existing_configs.get(project_id, {})
+            existing_filters = existing_config.get('filters', {})
+            existing_exclude = existing_filters.get('exclude_project', False)
+            existing_sample_filters = existing_filters.get('sample_filters', [])
+            
+            # Exclude project toggle
+            exclude_toggle = Checkbox(
+                value=existing_exclude,
+                description='🚫 Exclude entire project',
+                indent=False,
+                layout=Layout(margin='5px 0')
+            )
+            
+            # Filters container
+            filters_container = VBox([], layout=Layout(
+                margin='5px 0',
+                display='none' if existing_exclude else 'block'
+            ))
+            
+            # Add filter button
+            add_filter_btn = Button(
+                description='+ Add Filter',
+                button_style='warning',
+                layout=Layout(width='120px', display='none' if existing_exclude else 'block')
+            )
+            
+            def make_add_filter_handler(pid, container):
+                def handler(b):
+                    row = self._create_filter_row(pid, container)
+                    container.children += (row,)
+                return handler
+            
+            add_filter_btn.on_click(make_add_filter_handler(project_id, filters_container))
+            
+            def make_exclude_handler(container, btn):
+                def handler(change):
+                    if change.new:
+                        container.layout.display = 'none'
+                        btn.layout.display = 'none'
+                    else:
+                        container.layout.display = 'block'
+                        btn.layout.display = 'block'
+                return handler
+            
+            exclude_toggle.observe(make_exclude_handler(filters_container, add_filter_btn), names='value')
+            
+            # Populate existing filters
+            for filter_data in existing_sample_filters:
+                row = self._create_filter_row(project_id, filters_container, filter_data)
+                filters_container.children += (row,)
+            
+            # Store references for saving
+            self._filter_widgets[project_id] = {
+                'exclude_toggle': exclude_toggle,
+                'filters_container': filters_container
+            }
+            
+            # Project panel
+            panel_content = VBox([
+                exclude_toggle,
+                filters_container,
+                add_filter_btn
+            ], layout=Layout(padding='10px'))
+            
+            # Create accordion item for this project
+            project_accordion = Accordion(children=[panel_content], selected_index=None)
+            project_accordion.set_title(0, f'🧬 {project_id}')
+            project_panels.append(project_accordion)
+        
+        # Save filters button
+        save_filters_btn = Button(
+            description='💾 Save All Filters',
+            button_style='success',
+            layout=Layout(width='150px', margin='10px 0')
+        )
+        save_output = Output()
+        
+        def on_save_filters(b):
+            with save_output:
+                clear_output()
+                
+                for project_id, widgets in self._filter_widgets.items():
+                    exclude_toggle = widgets['exclude_toggle']
+                    filters_container = widgets['filters_container']
+                    
+                    # Build filters config
+                    filters_config = {
+                        "exclude_project": exclude_toggle.value,
+                        "sample_filters": []
+                    }
+                    
+                    for filter_row in filters_container.children:
+                        fw = filter_row._filter_widgets
+                        key = fw['key'].value
+                        if key:
+                            filter_entry = {
+                                "action": fw['action'].value,
+                                "key": key,
+                                "operator": fw['operator'].value
+                            }
+                            if fw['operator'].value not in ['is_empty', 'is_not_empty']:
+                                filter_entry["value"] = fw['value'].value.strip()
+                            filters_config["sample_filters"].append(filter_entry)
+                    
+                    # Load existing config or create new
+                    config_path = self.config_dir / f"{project_id}.json"
+                    if config_path.exists():
+                        with open(config_path, 'r') as f:
+                            config = json.load(f)
+                    else:
+                        config = {
+                            "project_id": project_id,
+                            "filters": {},
+                            "mappings": {}
+                        }
+                    
+                    config['filters'] = filters_config
+                    
+                    with open(config_path, 'w') as f:
+                        json.dump(config, f, indent=4)
+                    
+                    # Update cached config
+                    self._existing_configs[project_id] = config
+                
+                print(f"✅ Saved filters for {len(self._filter_widgets)} project(s)")
+        
+        save_filters_btn.on_click(on_save_filters)
+        
+        # Main section
+        header = HTML(
+            f"<div style='background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); "
+            f"color: white; padding: 15px; border-radius: 8px; margin-bottom: 10px;'>"
+            f"<h3 style='margin: 0;'>🔧 Project Filters</h3>"
+            f"<p style='margin: 5px 0 0 0; opacity: 0.9; font-size: 13px;'>"
+            f"Exclude entire projects or filter specific samples before mapping</p>"
+            f"</div>"
+        )
+        
+        return VBox([
+            header,
+            *project_panels,
+            HBox([save_filters_btn]),
+            save_output
+        ], layout=Layout(margin='0 0 20px 0'))
+
     def run(self) -> None:
         """
         Run the interactive mapping configuration UI.
@@ -709,6 +993,12 @@ class MappingConfigManager:
         
         print()
         
+        # Discovered keys summary
+        keys_accordion = self._create_discovered_keys_summary()
+        
+        # Filters section (before mapping)
+        filters_section = self._create_filters_section()
+        
         # Main header
         header = HTML(
             f"<div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); "
@@ -718,9 +1008,6 @@ class MappingConfigManager:
             f"Define target fields once, configure per-project mappings below</p>"
             f"</div>"
         )
-        
-        # Discovered keys summary
-        keys_accordion = self._create_discovered_keys_summary()
         
         # Add target field UI
         add_target_ui = self._create_add_target_ui()
@@ -765,8 +1052,9 @@ class MappingConfigManager:
         
         # Main UI
         main_ui = VBox([
-            header,
             keys_accordion,
+            filters_section,
+            header,
             add_target_ui,
             self._target_fields_container,
             HBox([save_all_btn]),
