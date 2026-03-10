@@ -59,6 +59,9 @@ class MappingConfigManager:
         self._output: Optional[Output] = None
         self._target_fields_container: Optional[VBox] = None
         
+        # Project descriptions
+        self._project_descriptions: Dict[str, str] = {}  # project_id -> description
+        
         # Filter components (per project)
         self._filter_widgets: Dict[str, dict] = {}  # project_id -> {exclude_toggle, filters_container, ...}
     
@@ -135,6 +138,12 @@ class MappingConfigManager:
                 except (json.JSONDecodeError, IOError):
                     pass
         
+        # Load project descriptions from configs
+        for project_id, config in self._existing_configs.items():
+            desc = config.get('description', '')
+            if desc:
+                self._project_descriptions[project_id] = desc
+        
         # Extract existing target fields from all configs
         existing_targets: Set[str] = set()
         for config in self._existing_configs.values():
@@ -148,6 +157,11 @@ class MappingConfigManager:
         
         return True
     
+    def _project_label(self, project_id: str) -> str:
+        """Return project ID with its description if available."""
+        desc = self._project_descriptions.get(project_id, '')
+        return f"{project_id} ({desc})" if desc else project_id
+
     def _get_all_source_keys(self) -> List[str]:
         """Get union of all source keys across all projects."""
         all_keys: Set[str] = set()
@@ -190,10 +204,11 @@ class MappingConfigManager:
         # Project label with status indicator
         status_icon = "✓" if existing_mapping else "○"
         status_color = "#4CAF50" if existing_mapping else "#999"
+        label_text = self._project_label(project_id)
         project_label = HTML(
-            f"<span style='font-weight: bold; color: {status_color}; width: 120px; display: inline-block;'>"
-            f"{status_icon} {project_id}</span>",
-            layout=Layout(width='140px')
+            f"<span style='font-weight: bold; color: {status_color}; display: inline-block;'>"
+            f"{status_icon} {label_text}</span>",
+            layout=Layout(width='auto', min_width='140px')
         )
         
         # Mode toggle
@@ -561,6 +576,80 @@ class MappingConfigManager:
         print(f"🗑️ Removed target field: {target_field}")
         print("   Note: To remove from project configs, save each project or manually edit JSON files.")
     
+    def _create_descriptions_section(self) -> VBox:
+        """Create editable project description inputs, saved to JSON configs."""
+        
+        desc_inputs: Dict[str, Text] = {}
+        rows = []
+        
+        for project_id in sorted(self._projects.keys()):
+            existing_desc = self._project_descriptions.get(project_id, '')
+            
+            label = HTML(
+                f"<b style='width: 130px; display: inline-block;'>{project_id}</b>",
+                layout=Layout(width='140px')
+            )
+            desc_input = Textarea(
+                value=existing_desc,
+                placeholder='e.g. # samples, tissue, etc.',
+                rows=1,
+                layout=Layout(width='400px', height='32px')
+            )
+            desc_inputs[project_id] = desc_input
+            rows.append(HBox([label, desc_input], layout=Layout(align_items='center', margin='3px 0')))
+        
+        save_btn = Button(
+            description='💾 Save Descriptions',
+            button_style='success',
+            layout=Layout(width='160px', margin='8px 0')
+        )
+        save_output = Output()
+        
+        def on_save(b):
+            with save_output:
+                clear_output()
+                for project_id, text_widget in desc_inputs.items():
+                    desc = text_widget.value.strip()
+                    self._project_descriptions[project_id] = desc
+                    
+                    # Save to JSON config
+                    config_path = self.config_dir / f"{project_id}.json"
+                    if config_path.exists():
+                        with open(config_path, 'r') as f:
+                            config = json.load(f)
+                    else:
+                        config = {
+                            "project_id": project_id,
+                            "filters": {"exclude_project": False, "sample_filters": []},
+                            "mappings": {}
+                        }
+                    
+                    config['description'] = desc
+                    
+                    with open(config_path, 'w') as f:
+                        json.dump(config, f, indent=4)
+                    self._existing_configs[project_id] = config
+                
+                print("✅ Descriptions saved!")
+        
+        save_btn.on_click(on_save)
+        
+        header = HTML(
+            "<div style='background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); "
+            "color: #333; padding: 15px; border-radius: 8px; margin-bottom: 10px;'>"
+            "<h3 style='margin: 0;'>📋 Project Descriptions</h3>"
+            "<p style='margin: 5px 0 0 0; opacity: 0.8; font-size: 13px;'>"
+            "Add a short description to each project so you don't have to remember project IDs</p>"
+            "</div>"
+        )
+        
+        return VBox([
+            header,
+            *rows,
+            HBox([save_btn]),
+            save_output
+        ], layout=Layout(margin='0 0 20px 0'))
+
     def _create_discovered_keys_summary(self) -> Accordion:
         """Create summary of discovered keys across all projects with project filter buttons."""
         
@@ -577,7 +666,7 @@ class MappingConfigManager:
         project_buttons: Dict[str, Button] = {}
         for project_id in sorted(self._projects.keys()):
             btn = Button(
-                description=project_id,
+                description=self._project_label(project_id),
                 button_style='',  # Not pressed initially
                 layout=Layout(width='auto', margin='2px')
             )
@@ -900,7 +989,7 @@ class MappingConfigManager:
             
             # Create accordion item for this project
             project_accordion = Accordion(children=[panel_content], selected_index=None)
-            project_accordion.set_title(0, f'🧬 {project_id}')
+            project_accordion.set_title(0, f'🧬 {self._project_label(project_id)}')
             project_panels.append(project_accordion)
         
         # Save filters button
@@ -996,6 +1085,9 @@ class MappingConfigManager:
         
         print()
         
+        # Project descriptions section
+        descriptions_section = self._create_descriptions_section()
+        
         # Discovered keys summary
         keys_accordion = self._create_discovered_keys_summary()
         
@@ -1055,6 +1147,7 @@ class MappingConfigManager:
         
         # Main UI
         main_ui = VBox([
+            descriptions_section,
             keys_accordion,
             filters_section,
             header,
