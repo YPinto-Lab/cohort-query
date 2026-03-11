@@ -279,10 +279,11 @@ class MappingConfigManager:
                     layout=Layout(width='160px')
                 )
                 arrow = HTML("→", layout=Layout(width='20px'))
-                map_input = Text(
+                map_input = Textarea(
                     value=existing_target,
                     placeholder='Target value',
-                    layout=Layout(width='120px')
+                    rows=1,
+                    layout=Layout(width='120px', height='32px')
                 )
                 map_input.observe(lambda c: on_change_callback(), names='value')
                 value_mapping_inputs[val] = map_input
@@ -595,8 +596,14 @@ class MappingConfigManager:
                 rows=1,
                 layout=Layout(width='400px', height='32px')
             )
+            ncbi_link = HTML(
+                f"<a href='https://www.ncbi.nlm.nih.gov/bioproject/?term={project_id}' "
+                f"target='_blank' style='display: inline-block; padding: 4px 10px; "
+                f"background: #2196F3; color: white; border-radius: 4px; font-size: 12px; "
+                f"text-decoration: none; line-height: 1.5;'>🔗 NCBI</a>"
+            )
             desc_inputs[project_id] = desc_input
-            rows.append(HBox([label, desc_input], layout=Layout(align_items='center', margin='3px 0')))
+            rows.append(HBox([label, desc_input, ncbi_link], layout=Layout(align_items='center', margin='3px 0')))
         
         save_btn = Button(
             description='💾 Save Descriptions',
