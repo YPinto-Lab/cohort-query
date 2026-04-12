@@ -1,0 +1,107 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+Ask-SLM is an interactive query engine for microbiome/metagenomic analysis that leverages STAT, LOGEN, and MetaLog to extract statistical insights from SRA (Sequence Read Archive) datasets. It's a Jupyter-notebook-based Python application.
+
+## Setup
+
+```bash
+pip install -r requirements.txt
+```
+
+The main entry point is `runner.ipynb` — open and run it in Jupyter.
+
+For command-line usage:
+```bash
+python cli.py alpha-diversity --view PhagesInBlood --rank species --group Group
+python cli.py taxonomic-abundance --view PhagesInBlood --rank genus --taxon Prevotella --group Group
+python cli.py feature-matrix --view PhagesInBlood
+# Outputs go to results/<view>/
+```
+
+## Architecture (iDesign Layered Pattern)
+
+The codebase follows a strict three-layer architecture:
+
+```
+Two CSV files → Accessors → Processors → Managers → Jupyter UI (ipywidgets)
+                                       ↓
+                               analysis/ functions → CLI (cli.py)
+```
+
+**Core design principle**: `metadata.csv` (1 row per acc) and `taxonomy.csv` (many rows per acc, one per taxon) flow as **two separate DataFrames** throughout the entire pipeline. They are never merged — the old SQL JOIN that duplicated metadata columns across every taxon row has been removed. Grouping joins only happen narrowly on small per-sample summary DataFrames inside managers.
+
+### Layer 1: Accessors (`/Accessors/`)
+Fetch and validate raw data at system boundaries. Each Accessor reads exactly one source.
+- **SRAMetadataAccessor** (`Accessors/SraAccessor/sra_metadata_accessor.py`): Reads `metadata.csv`, validates against `SRAMetadataSchema`
+- **SRATaxonomyAccessor** (`Accessors/SraAccessor/sra_taxonomy_accessor.py`): Reads `taxonomy.csv`, validates against `SRATaxonomySchema`
+- **TaxonomyAccessor** (`Accessors/TaxonomyAccessor/`): Builds an in-memory nested-set lineage DB from a taxonomy DataFrame — enables O(1) ancestor queries. Distinct from SRATaxonomyAccessor (which only reads files).
+- **MetalogAccessor**: Loads `metalog_human_schema.json` (1000+ standardized field definitions scraped from metalog.embl.de)
+
+### Layer 2: Processors (`/processors/`)
+Transform data using a "Guided Configuration" pattern. Receives only `metadata_df` (no taxonomy columns).
+1. First run: discovers all metadata keys in `jattr` (JSON) and `attributes` (CSV) columns → writes a `mapping_configs/<PROJECT_ID>.json.template` with sample values
+2. User manually creates `mapping_configs/<PROJECT_ID>.json` defining field mappings
+3. Subsequent runs: applies the mapping config to produce `enriched_metadata_df` with standardized columns (sex, Group, subject_id, etc.)
+
+### Layer 3: Managers (`/managers/`)
+Orchestrate analysis and present interactive Jupyter widget UIs. Each accepts `(taxonomy_df, metadata_df)`.
+- **MappingConfigManager**: Target-field-first UI for creating/editing mapping configs; supports static values, source key references, and value remapping
+- **AlphaDiversityManager**: Richness (# taxa) and Shannon index; taxon filtering; group comparison
+- **TaxonomicAbundanceManager**: Relative abundance, prevalence stats, CSV export
+- **LongitudinalAnalysisManager**: Trajectory visualization, paired comparisons, change-point detection. *(Pending refactor to (taxonomy_df, metadata_df) signature)*
+
+### Layer 4: Analysis functions + CLI (`/analysis/`, `cli.py`)
+Pure computation functions extracted from managers — no UI dependencies, usable from the CLI or notebooks.
+- `analysis/alpha_diversity.py` — `compute_alpha_diversity(taxonomy_df, metadata_df, rank, ...)`
+- `analysis/taxonomic_abundance.py` — `compute_taxonomic_abundance(taxonomy_df, metadata_df, rank, taxon, ...)`
+- `cli.py` — command-line entry point: `alpha-diversity`, `taxonomic-abundance`, `feature-matrix`
+
+## Input Folder Structure
+
+Each "view" is a named research collection — a folder under `Inputs/` containing two CSV files:
+
+```
+Inputs/
+└── <ViewName>/          # e.g. PhagesInBlood
+    ├── metadata.csv     # 1 row per acc (from sra.metadata Athena table)
+    └── taxonomy.csv     # many rows per acc, one per taxon (from sra.tax_analysis)
+```
+
+Use `queries/blood_wgs_queries.sql` as a template for the Athena queries. Replace `{project_ids}` with the actual bioproject IDs, run both queries, and export to CSVs in the view folder.
+
+## Mapping Config Format
+
+Each project needs a JSON config in `mapping_configs/`:
+
+```json
+{
+  "project_id": "PRJEB12345",
+  "filters": {
+    "exclude_project": false,
+    "sample_filters": []
+  },
+  "mappings": {
+    "sex": {"static_value": "female"},
+    "subject_id": {"key_name": "submitter_id_sam", "value_mappings": {}},
+    "timepoint": {"key_name": "run_file_create_date", "value_mappings": {}}
+  },
+  "description": ""
+}
+```
+
+The `.json.template` file (auto-generated by SRAProcessor) shows all discoverable keys and their sample values to inform manual config creation.
+
+## Key Conventions
+
+- **Data validation happens only in Accessors** via pandera schemas — not downstream
+- **Taxonomy nested-set model**: `ileft`/`iright` columns encode tree structure; TaxonomyAccessor uses these for lineage queries rather than recursive traversal
+- **Two versions of MappingConfigManager exist** (`mapping_config_manager.py` vs `mapping_config_manager_v2.py`); v2 is the current one with target-field-first design
+- **Metalog schema** (`scrape_metalog.py`) should be re-run when the remote schema at metalog.embl.de is updated
+
+## Dependencies
+
+`pandas`, `pandera`, `numpy`, `plotly`, `seaborn`, `ipywidgets`, `nbformat`, `rich`, `scipy`
