@@ -1,30 +1,20 @@
 """
-This module defines the data contract for SRA metadata using pandera.
-It ensures that any DataFrame representing SRA metadata conforms to a strict,
-pre-defined structure, which is a key principle of the iDesign architecture
-for maintaining data quality and preventing schema drift in a data science pipeline.
+Data contracts for the two SRA source files and their validated types.
+
+SRAMetadataSchema  — one row per accession (acc), no taxonomy columns.
+SRATaxonomySchema  — one row per taxon observed per accession.
 """
 import pandera.pandas as pa
 from pandera.typing import Series
 
+
 class SRAMetadataSchema(pa.DataFrameModel):
     """
-    A pandera schema to validate the structure and types of the SRA metadata DataFrame.
-
-    This schema acts as a formal "contract" for the data that flows from the
-    SRA accessor. By enforcing this contract, we ensure that downstream
-    components can rely on the data's structure, which is crucial for
-    maintaining a robust and scalable data science system.
+    Contract for metadata.csv — 1 row per acc.
+    Contains all SRA run/sample/bioproject metadata fields.
+    No taxonomy columns (tax_id, rank, name, counts, nested-set).
     """
     acc: Series[str] = pa.Field(nullable=False)
-    tax_id: Series[int] = pa.Field(nullable=True)
-    rank: Series[str] = pa.Field(nullable=True)
-    name: Series[str] = pa.Field(nullable=True)
-    total_count: Series[int] = pa.Field(nullable=True)
-    self_count: Series[int] = pa.Field(nullable=True)
-    ilevel: Series[int] = pa.Field(nullable=True)
-    ileft: Series[int] = pa.Field(nullable=True)
-    iright: Series[int] = pa.Field(nullable=True)
     assay_type: Series[str] = pa.Field(nullable=True)
     center_name: Series[str] = pa.Field(nullable=True)
     consent: Series[str] = pa.Field(nullable=True)
@@ -39,9 +29,9 @@ class SRAMetadataSchema(pa.DataFrameModel):
     biosample: Series[str] = pa.Field(nullable=True)
     organism: Series[str] = pa.Field(nullable=True)
     sra_study: Series[str] = pa.Field(nullable=True)
-    releasedate: Series[str] = pa.Field(nullable=True) # Could be datetime
+    releasedate: Series[str] = pa.Field(nullable=True)
     mbytes: Series[int] = pa.Field(nullable=True)
-    loaddate: Series[str] = pa.Field(nullable=True) # Could be datetime
+    loaddate: Series[str] = pa.Field(nullable=True)
     avgspotlen: Series[int] = pa.Field(nullable=True)
     mbases: Series[int] = pa.Field(nullable=True)
     insertsize: Series[str] = pa.Field(nullable=True)
@@ -62,11 +52,28 @@ class SRAMetadataSchema(pa.DataFrameModel):
     run_file_version: Series[str] = pa.Field(nullable=True)
     bioproject: Series[str] = pa.Field(nullable=True)
 
+    class Config:
+        strict = "filter"
+        coerce = True
+
+
+class SRATaxonomySchema(pa.DataFrameModel):
+    """
+    Contract for taxonomy.csv — many rows per acc (one per detected taxon).
+    Contains the nested-set taxonomy tree fields and read counts per taxon.
+    bioproject is included to support per-project filtering without joining metadata.
+    """
+    acc: Series[str] = pa.Field(nullable=False)
+    tax_id: Series[int] = pa.Field(nullable=True)
+    rank: Series[str] = pa.Field(nullable=True)
+    name: Series[str] = pa.Field(nullable=True)
+    total_count: Series[int] = pa.Field(nullable=True)
+    self_count: Series[int] = pa.Field(nullable=True)
+    ilevel: Series[int] = pa.Field(nullable=True)
+    ileft: Series[int] = pa.Field(nullable=True)
+    iright: Series[int] = pa.Field(nullable=True)
+    bioproject: Series[str] = pa.Field(nullable=True)
 
     class Config:
-        """
-        Configuration for the schema.
-        `strict=True` ensures that no undefined columns are present in the DataFrame.
-        """
         strict = True
         coerce = True

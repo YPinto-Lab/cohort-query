@@ -3,53 +3,190 @@ import numpy as np
 import plotly.express as px
 from ipywidgets import Dropdown, VBox, HBox, Button, Output, HTML, Layout
 from IPython.display import display, clear_output
-from typing import Set
+
+from common.contracts.sra_schema import SRAMetadataSchema
+
+# Base columns defined by the metadata schema — anything beyond these is a mapped field
+_BASE_METADATA_COLS = set(SRAMetadataSchema.__fields__.keys())
+
 
 class TaxonomicAbundanceManager:
     """
     Manager for interactive taxonomic abundance analysis.
-    Calculates relative abundance, visualizes distribution, generates 
+    Calculates relative abundance, visualizes distribution, generates
     prevalence summaries, and allows CSV exporting.
     """
 
-    def __init__(self, enriched_df: pd.DataFrame, original_columns: Set[str]):
-        self.df = enriched_df
-        
-        # Identify metadata columns for grouping
-        self.metadata_cols = [c for c in self.df.columns if c not in original_columns 
-                              and c not in ['tax_id', 'rank', 'name', 'ileft', 'iright', 'acc', 'total_count']]
-        self.cat_cols = [c for c in self.metadata_cols if pd.api.types.is_string_dtype(self.df[c])]
-        
-        # Extract available ranks dynamically, keeping standard order
+    def __init__(
+        self,
+        taxonomy_df: pd.DataFrame = None,
+        metadata_df: pd.DataFrame = None,
+        abundance_metadata_matrix: pd.DataFrame = None,
+        taxon_lookup_df: pd.DataFrame = None,
+        metadata_cols: list = None,
+    ):
+        """
+        Args:
+            taxonomy_df: Taxonomy DataFrame (many rows per acc, one per detected taxon).
+            metadata_df: Enriched metadata DataFrame (1 row per acc), including any
+                         mapped fields added by SRAProcessor.
+        """
+        self._is_wide_mode = abundance_metadata_matrix is not None
+
+        if self._is_wide_mode:
+            if taxon_lookup_df is None:
+                raise ValueError("taxon_lookup_df is required when using analysis_wide_df")
+
+            if metadata_cols is None and metadata_df is not None:
+                metadata_cols = list(metadata_df.columns)
+            if metadata_cols is None:
+                metadata_cols = [c for c in abundance_metadata_matrix.columns if c in _BASE_METADATA_COLS]
+
+            missing_meta = [c for c in metadata_cols if c not in abundance_metadata_matrix.columns]
+            if missing_meta:
+                raise ValueError(f"analysis_wide_df is missing metadata columns: {missing_meta}")
+
+            self.metadata_df = abundance_metadata_matrix[metadata_cols].copy()
+            self.taxon_lookup_df = taxon_lookup_df.copy()
+
+            required_lookup = {'taxon_key', 'rank', 'name'}
+            missing_lookup = required_lookup - set(self.taxon_lookup_df.columns)
+            if missing_lookup:
+                raise ValueError(f"taxon_lookup_df is missing required columns: {missing_lookup}")
+
+            self.taxon_lookup_df['taxon_key'] = self.taxon_lookup_df['taxon_key'].astype(str)
+            taxon_cols = [c for c in abundance_metadata_matrix.columns if c in set(self.taxon_lookup_df['taxon_key'])]
+            self.sample_taxa_matrix = (
+                abundance_metadata_matrix[['acc'] + taxon_cols]
+                .set_index('acc')
+                .apply(pd.to_numeric, errors='coerce')
+                .fillna(0)
+            )
+
+            self.taxonomy_df = None
+        else:
+            if taxonomy_df is None or metadata_df is None:
+                raise ValueError("taxonomy_df and metadata_df are required in long-format mode")
+            self.taxonomy_df = taxonomy_df
+            self.metadata_df = metadata_df
+            self.taxon_lookup_df = None
+            self.sample_taxa_matrix = None
+
+        # Identify mapped columns in metadata for grouping
+        mapped_cols = [c for c in self.metadata_df.columns if c not in _BASE_METADATA_COLS]
+        self.cat_cols = [c for c in mapped_cols if pd.api.types.is_string_dtype(self.metadata_df[c])]
+
+        # Extract available ranks from taxonomy, keeping standard order
         standard_order = ['superkingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species']
-        existing_ranks = self.df['rank'].str.lower().dropna().unique()
+        if self._is_wide_mode:
+            existing_ranks = self.taxon_lookup_df['rank'].astype(str).str.lower().dropna().unique()
+        else:
+            existing_ranks = taxonomy_df['rank'].str.lower().dropna().unique()
         self.available_ranks = [r for r in standard_order if r in existing_ranks]
-        
+
         self._output_area = Output()
-        
+
         # State variables for exporting
         self.current_export_df = None
         self.current_taxon_name = "taxon"
 
+
+    def _calculate_rank_relative_abundance(self, rank: str, taxon: str) -> pd.DataFrame:
+        """Calculates abundance normalized within the selected taxonomic rank.
+        Denominator: sum of counts at the selected rank in each sample.
+        This is kept for future use when rank-normalized abundance is desired.
+        """
+        if self._is_wide_mode:
+            rank_keys = self.taxon_lookup_df[
+                self.taxon_lookup_df['rank'].astype(str).str.lower() == rank.lower()
+            ]['taxon_key'].astype(str).tolist()
+            taxon_keys = self.taxon_lookup_df[
+                (self.taxon_lookup_df['rank'].astype(str).str.lower() == rank.lower())
+                & (self.taxon_lookup_df['name'] == taxon)
+            ]['taxon_key'].astype(str).tolist()
+
+            rank_keys = [k for k in rank_keys if k in self.sample_taxa_matrix.columns]
+            taxon_keys = [k for k in taxon_keys if k in self.sample_taxa_matrix.columns]
+
+            total_counts = self.sample_taxa_matrix[rank_keys].sum(axis=1).rename('total_sample_reads') if rank_keys else pd.Series(0, index=self.sample_taxa_matrix.index, name='total_sample_reads')
+            taxon_counts = self.sample_taxa_matrix[taxon_keys].sum(axis=1).rename('taxon_reads') if taxon_keys else pd.Series(0, index=self.sample_taxa_matrix.index, name='taxon_reads')
+
+            all_samples = pd.DataFrame(index=self.sample_taxa_matrix.index)
+            plot_df = all_samples.join(total_counts).join(taxon_counts).fillna(0)
+        else:
+            rank_df = self.taxonomy_df[self.taxonomy_df['rank'].str.lower() == rank.lower()]
+            total_counts = rank_df.groupby('acc')['total_count'].sum().rename('total_sample_reads')
+
+            taxon_df = rank_df[rank_df['name'] == taxon]
+            if taxon_df['acc'].duplicated().any():
+                raise ValueError(
+                    f"Expected at most one row per sample for rank='{rank}', taxon='{taxon}', "
+                    "but found duplicates."
+                )
+            taxon_counts = taxon_df.set_index('acc')['total_count'].rename('taxon_reads')
+
+            all_samples = self.taxonomy_df[['acc']].drop_duplicates().set_index('acc')
+            plot_df = all_samples.join(total_counts).join(taxon_counts).fillna(0)
+
+        plot_df['relative_abundance_within_rank'] = np.where(
+            plot_df['total_sample_reads'] > 0,
+            plot_df['taxon_reads'] / plot_df['total_sample_reads'],
+            0.0
+        )
+
+        plot_df = plot_df.reset_index().rename(columns={'acc': 'sample'})
+
+        return plot_df
+
     def _calculate_abundance(self, rank: str, taxon: str) -> pd.DataFrame:
-        """Calculates relative abundance of a chosen taxon per sample."""
-        rank_df = self.df[self.df['rank'].str.lower() == rank.lower()]
-        total_counts = rank_df.groupby('acc')['total_count'].sum().rename('total_sample_reads')
-        
-        taxon_df = rank_df[rank_df['name'] == taxon]
-        taxon_counts = taxon_df.groupby('acc')['total_count'].sum().rename('taxon_reads')
-        
-        all_samples = self.df[['acc']].drop_duplicates().set_index('acc')
-        plot_df = all_samples.join(total_counts).join(taxon_counts).fillna(0)
-        
+        """Calculates per-sample relative abundance of a chosen taxon.
+        Denominator: total reads in the sample, computed as the sum of
+        `total_count` across superkingdom rows for each sample.
+        Numerator: total_count of the selected taxon at the selected rank.
+        """
+        if self._is_wide_mode:
+            taxon_keys = self.taxon_lookup_df[
+                (self.taxon_lookup_df['rank'].astype(str).str.lower() == rank.lower())
+                & (self.taxon_lookup_df['name'] == taxon)
+            ]['taxon_key'].astype(str).tolist()
+            superkingdom_keys = self.taxon_lookup_df[
+                self.taxon_lookup_df['rank'].astype(str).str.lower() == 'superkingdom'
+            ]['taxon_key'].astype(str).tolist()
+
+            taxon_keys = [k for k in taxon_keys if k in self.sample_taxa_matrix.columns]
+            superkingdom_keys = [k for k in superkingdom_keys if k in self.sample_taxa_matrix.columns]
+
+            taxon_counts = self.sample_taxa_matrix[taxon_keys].sum(axis=1).rename('taxon_reads') if taxon_keys else pd.Series(0, index=self.sample_taxa_matrix.index, name='taxon_reads')
+            total_counts = self.sample_taxa_matrix[superkingdom_keys].sum(axis=1).rename('total_sample_reads') if superkingdom_keys else pd.Series(0, index=self.sample_taxa_matrix.index, name='total_sample_reads')
+
+            all_samples = pd.DataFrame(index=self.sample_taxa_matrix.index)
+            plot_df = all_samples.join(total_counts).join(taxon_counts).fillna(0)
+        else:
+            rank_df = self.taxonomy_df[self.taxonomy_df['rank'].str.lower() == rank.lower()]
+            taxon_df = rank_df[rank_df['name'] == taxon]
+            if taxon_df['acc'].duplicated().any():
+                raise ValueError(
+                    f"Expected at most one row per sample for rank='{rank}', taxon='{taxon}', "
+                    "but found duplicates."
+                )
+            taxon_counts = taxon_df.set_index('acc')['total_count'].rename('taxon_reads')
+
+            superkingdom_df = self.taxonomy_df[
+                self.taxonomy_df['rank'].str.lower() == 'superkingdom'
+            ]
+            total_counts = superkingdom_df.groupby('acc')['total_count'].sum().rename('total_sample_reads')
+
+            all_samples = self.taxonomy_df[['acc']].drop_duplicates().set_index('acc')
+            plot_df = all_samples.join(total_counts).join(taxon_counts).fillna(0)
+
         plot_df['relative_abundance'] = np.where(
             plot_df['total_sample_reads'] > 0,
             plot_df['taxon_reads'] / plot_df['total_sample_reads'],
             0.0
         )
-        
+
         plot_df = plot_df.reset_index().rename(columns={'acc': 'sample'})
-        
+
         return plot_df
 
     def _create_ui(self) -> VBox:
@@ -72,8 +209,15 @@ class TaxonomicAbundanceManager:
         def update_taxa_options(*args):
             if not rank_dropdown.value:
                 return
-            rank_df = self.df[self.df['rank'].str.lower() == rank_dropdown.value.lower()]
-            taxa_list = sorted(rank_df['name'].dropna().unique())
+            # FIXED: Now correctly points to self.taxonomy_df instead of self.df
+            if self._is_wide_mode:
+                rank_df = self.taxon_lookup_df[
+                    self.taxon_lookup_df['rank'].astype(str).str.lower() == rank_dropdown.value.lower()
+                ]
+                taxa_list = sorted(rank_df['name'].dropna().astype(str).unique())
+            else:
+                rank_df = self.taxonomy_df[self.taxonomy_df['rank'].str.lower() == rank_dropdown.value.lower()]
+                taxa_list = sorted(rank_df['name'].dropna().astype(str).unique())
             taxon_dropdown.options = taxa_list
             if taxa_list:
                 taxon_dropdown.value = taxa_list[0]
@@ -112,9 +256,11 @@ class TaxonomicAbundanceManager:
                 if g and g not in extra_columns:
                     extra_columns.append(g)
                     
-                valid_extras = [col for col in extra_columns if col in self.df.columns]
+                # FIXED: Now checks valid extras against self.metadata_df
+                valid_extras = [col for col in extra_columns if col in self.metadata_df.columns]
                 if valid_extras:
-                    meta_df = self.df[['acc'] + valid_extras].drop_duplicates().rename(columns={'acc': 'sample'})
+                    # FIXED: Now merges from self.metadata_df
+                    meta_df = self.metadata_df[['acc'] + valid_extras].drop_duplicates().rename(columns={'acc': 'sample'})
                     df_plot = df_plot.merge(meta_df, on='sample', how='left')
                 
                 # 3. Plotting Logic

@@ -11,12 +11,13 @@ define how raw metadata keys should be mapped to standardized output columns
 """
 import json
 import re
+import logging
 import pandas as pd
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 from collections import defaultdict
 
-from rich import print
+logger = logging.getLogger(__name__)
 
 class SRAProcessor:
     """
@@ -45,19 +46,18 @@ class SRAProcessor:
         template_path = self.config_dir / f"{project_id}.json.template"
 
         if not config_path.exists():
-            print(f"⚠️ Configuration file not found for project [bold]{project_id}[/bold].")
+            logger.debug("Configuration file not found for project %s", project_id)
             self._generate_mapping_template(df, template_path)
-            print(f"✅ A new, enhanced configuration template has been created at: [bold]{template_path}[/bold]")
-            print("   It now includes sample values for each key to guide you.")
-            print("   Please edit this file, then rename it to "
-                  f"[bold]{project_id}.json[/bold] and run this cell again.")
+            logger.info("Created configuration template at %s", template_path)
+            logger.info("Template includes sample values for each key")
+            logger.info("Edit template, rename to %s.json, and rerun", project_id)
             return df # Return original df as configuration is needed
 
         # If config exists, load it and apply the mappings
         with open(config_path, 'r') as f:
             config = json.load(f)
         
-        print(f"✅ Found configuration for project [bold]{project_id}[/bold]. Applying mappings...")
+        logger.info("Found configuration for project %s. Applying mappings", project_id)
         return self._apply_mappings(df, config)
 
     def _get_mappings(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -188,14 +188,14 @@ class SRAProcessor:
         """
         # Check if entire project should be excluded
         if filters.get("exclude_project", False):
-            print("🚫 Project excluded by filter configuration")
+            logger.info("Project excluded by filter configuration")
             return df.iloc[0:0]  # Return empty df with same columns
         
         sample_filters = filters.get("sample_filters", [])
         if not sample_filters:
             return df
         
-        print(f"🔧 Applying {len(sample_filters)} filter(s)...")
+        logger.info("Applying %d filter(s)", len(sample_filters))
         
         # Build a mask for each row
         result_df = df.copy()
@@ -238,7 +238,14 @@ class SRAProcessor:
                 # Remove rows matching the condition
                 result_df = result_df[~mask]
             
-            print(f"   Filter '{key} {operator} {value}' ({action}): {len(result_df)} samples remaining")
+            logger.info(
+                "Filter '%s %s %s' (%s): %d samples remaining",
+                key,
+                operator,
+                value,
+                action,
+                len(result_df),
+            )
         
         return result_df
 
@@ -251,7 +258,7 @@ class SRAProcessor:
         if filters:
             processed_df = self._apply_filters(processed_df, filters)
             if processed_df.empty:
-                print("⚠️ All samples were filtered out")
+                logger.info("All samples were filtered out")
                 return processed_df
         
         mappings = self._get_mappings(config)

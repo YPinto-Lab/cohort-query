@@ -14,46 +14,97 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from ipywidgets import Dropdown, VBox, HBox, Output, HTML, Button, Layout, Checkbox
 from IPython.display import display, clear_output
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 from Accessors.TaxonomyAccessor import TaxonomyAccessor
+from common.contracts.sra_schema import SRAMetadataSchema
 
 
 # Standard taxonomic ranks (most commonly used for diversity analysis)
 STANDARD_RANKS = ['superkingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species']
 
+# Base columns defined by the metadata schema — anything beyond these is a mapped field
+_BASE_METADATA_COLS = set(SRAMetadataSchema.__fields__.keys())
+
+
 
 class AlphaDiversityManager:
     """
     Manager for interactive alpha diversity analysis in Jupyter notebooks.
-    
     Provides a widget-based UI for users to:
-    - Filter data by taxonomic clade
-    - Select aggregation level for counting taxa
-    - Color plots by categorical grouping variables
-    - View richness and Shannon diversity metrics
+      - Filter data by taxonomic clade
+      - Select aggregation level for counting taxa
+      - Color plots by categorical grouping variables
+      - View richness and Shannon diversity metrics
     """
-    
-    def __init__(self, enriched_df: pd.DataFrame, original_columns: Set[str]):
-        """
-        Initialize the Alpha Diversity Manager.
-        
-        Args:
-            enriched_df: The analysis-ready DataFrame with taxonomy and count data.
-            original_columns: Set of column names from the original (pre-mapping) DataFrame.
-                             Used to identify which columns were added by mappings.
-        """
-        self.enriched_df = enriched_df
-        self.original_columns = original_columns
-        
+
+    # Accepts either long-format taxonomy table or OTU/ASV table with these columns
+    REQUIRED_TAX_COLS = {'acc', 'tax_id', 'rank', 'name', 'total_count'}
+
+    def __init__(
+        self,
+        taxonomy_df: Optional[pd.DataFrame] = None,
+        metadata_df: Optional[pd.DataFrame] = None,
+        analysis_wide_df: Optional[pd.DataFrame] = None,
+        taxon_lookup_df: Optional[pd.DataFrame] = None,
+        metadata_cols: Optional[List[str]] = None,
+    ):
+        self._is_wide_mode = analysis_wide_df is not None
+
+        if self._is_wide_mode:
+            if taxon_lookup_df is None:
+                raise ValueError("taxon_lookup_df is required when using analysis_wide_df")
+
+            if metadata_cols is None and metadata_df is not None:
+                metadata_cols = list(metadata_df.columns)
+            if metadata_cols is None:
+                metadata_cols = [c for c in analysis_wide_df.columns if c in _BASE_METADATA_COLS]
+
+            missing_meta = [c for c in metadata_cols if c not in analysis_wide_df.columns]
+            if missing_meta:
+                raise ValueError(f"analysis_wide_df is missing metadata columns: {missing_meta}")
+
+            self.metadata_df = analysis_wide_df[metadata_cols].copy()
+            self.taxon_lookup_df = taxon_lookup_df.copy()
+
+            required_lookup = {'taxon_key', 'tax_id', 'rank', 'name', 'ileft', 'iright'}
+            missing_lookup = required_lookup - set(self.taxon_lookup_df.columns)
+            if missing_lookup:
+                raise ValueError(f"taxon_lookup_df is missing required columns: {missing_lookup}")
+
+            self.taxon_lookup_df['taxon_key'] = self.taxon_lookup_df['taxon_key'].astype(str)
+            taxon_cols = [c for c in analysis_wide_df.columns if c in set(self.taxon_lookup_df['taxon_key'])]
+            self.sample_taxa_matrix = (
+                analysis_wide_df[['acc'] + taxon_cols]
+                .set_index('acc')
+                .apply(pd.to_numeric, errors='coerce')
+                .fillna(0)
+            )
+
+            key_to_tax = self.taxon_lookup_df[['taxon_key', 'tax_id']].drop_duplicates()
+            self._taxon_key_to_tax_id: Dict[str, str] = {
+                str(k): str(v) for k, v in zip(key_to_tax['taxon_key'], key_to_tax['tax_id'])
+            }
+            self.taxonomy_df = None
+        else:
+            if taxonomy_df is None or metadata_df is None:
+                raise ValueError("taxonomy_df and metadata_df are required in long-format mode")
+
+            missing = self.REQUIRED_TAX_COLS - set(taxonomy_df.columns)
+            if missing:
+                raise ValueError(f"taxonomy_df is missing required columns: {missing}")
+            self.taxonomy_df = taxonomy_df.copy()
+            self.metadata_df = metadata_df.copy()
+            self.taxon_lookup_df = None
+            self.sample_taxa_matrix = None
+            self._taxon_key_to_tax_id = {}
+
         # Computed attributes
         self.tax_accessor: Optional[TaxonomyAccessor] = None
         self.all_ranks: List[str] = []
         self.standard_ranks_display: List[str] = []
         self.mapped_cols: List[str] = []
         self.categorical_cols: List[str] = []
-        
-        # UI components (created in run())
         self._output_area: Optional[Output] = None
     
     # --- Alpha Diversity Calculation Functions ---
@@ -62,7 +113,7 @@ class AlphaDiversityManager:
     def calculate_richness(counts: np.ndarray) -> int:
         """Number of unique taxa with count > 0."""
         return int(np.sum(counts > 0))
-    
+
     @staticmethod
     def calculate_shannon(counts: np.ndarray) -> float:
         """Shannon diversity index: H = -Σ(pi * ln(pi))."""
@@ -71,7 +122,7 @@ class AlphaDiversityManager:
             return 0.0
         proportions = counts / counts.sum()
         return float(-np.sum(proportions * np.log(proportions)))
-    
+
     def compute_alpha_diversity(self, aggregated_df: pd.DataFrame, sample_col: str = 'sample') -> pd.DataFrame:
         """Compute alpha diversity metrics for each sample."""
         results = []
@@ -86,43 +137,34 @@ class AlphaDiversityManager:
     
     # --- Data Validation ---
     
-    def _validate_data(self) -> bool:
-        """Check that required columns exist in the DataFrame."""
-        required_cols = {'tax_id', 'rank', 'name', 'ileft', 'iright', 'acc', 'total_count'}
-        available_cols = set(self.enriched_df.columns)
-        missing_cols = required_cols - available_cols
-        
-        if missing_cols:
-            print(f"❌ Missing required columns: {missing_cols}")
-            print(f"   Available columns: {list(self.enriched_df.columns)}")
-            return False
-        return True
-    
+
     def _initialize_taxonomy(self) -> bool:
-        """Build the taxonomy accessor from the enriched DataFrame."""
+        """Build the taxonomy accessor from the taxonomy DataFrame."""
         print("📊 Building taxonomy lineage database...")
-        
-        if not self._validate_data():
-            return False
-        
-        # Initialize TaxonomyAccessor and build from DataFrame
+
         self.tax_accessor = TaxonomyAccessor()
-        self.tax_accessor.build_from_dataframe(self.enriched_df)
-        
+        if self._is_wide_mode:
+            lineage_df = self.taxon_lookup_df[['tax_id', 'rank', 'name', 'ileft', 'iright']].copy()
+            lineage_df = lineage_df.drop_duplicates(subset=['tax_id'])
+            lineage_df['acc'] = '__global__'
+            self.tax_accessor.build_from_dataframe(lineage_df)
+        else:
+            self.tax_accessor.build_from_dataframe(self.taxonomy_df)
+
         # Get available ranks
         self.all_ranks = self.tax_accessor.get_available_ranks()
         self.standard_ranks_display = [r for r in self.all_ranks if r.lower() in STANDARD_RANKS]
-        
+
         print(f"📋 Standard ranks available: {self.standard_ranks_display}")
         print(f"   (+ {len(self.all_ranks) - len(self.standard_ranks_display)} additional ranks available)")
-        
-        # Identify mapped columns for grouping
-        self.mapped_cols = [c for c in self.enriched_df.columns if c not in self.original_columns]
+
+        # Identify mapped columns from metadata_df for grouping options
+        self.mapped_cols = [c for c in self.metadata_df.columns if c not in _BASE_METADATA_COLS]
         self.categorical_cols = [
-            c for c in self.mapped_cols 
-            if pd.api.types.is_string_dtype(self.enriched_df[c])
+            c for c in self.mapped_cols
+            if pd.api.types.is_string_dtype(self.metadata_df[c])
         ]
-        
+
         return True
     
     # --- Taxonomy Helpers ---
@@ -148,6 +190,43 @@ class AlphaDiversityManager:
                     matching_tax_ids.add(str(tax_id))
                     break
         return matching_tax_ids
+
+    def _compute_diversity_from_wide(self, selected_rank: str, filter_rank: str, filter_taxon: str) -> pd.DataFrame:
+        """Compute alpha diversity directly from the wide sample x taxon matrix."""
+        all_samples = self.sample_taxa_matrix.index
+        active_keys = list(self.sample_taxa_matrix.columns)
+
+        if filter_rank != 'No Filter' and filter_taxon != 'All Taxa':
+            matching_tax_ids = self._get_matching_tax_ids(filter_rank, filter_taxon)
+            active_keys = [
+                k for k in active_keys
+                if str(self._taxon_key_to_tax_id.get(str(k), '')) in matching_tax_ids
+            ]
+
+        if not active_keys:
+            return pd.DataFrame({'sample': all_samples, 'richness': 0, 'shannon': 0.0})
+
+        matrix = self.sample_taxa_matrix[active_keys]
+
+        agg_labels: List[str] = []
+        for key in active_keys:
+            tax_id = str(self._taxon_key_to_tax_id.get(str(key), ''))
+            ancestor = self.tax_accessor.get_ancestor_at_rank(tax_id, selected_rank)
+            if ancestor:
+                agg_labels.append(f"{ancestor['name']}|{ancestor['tax_id']}")
+            else:
+                agg_labels.append(f"Unclassified ({selected_rank})|NA")
+
+        aggregated_matrix = matrix.T.groupby(agg_labels).sum().T
+
+        richness = (aggregated_matrix > 0).sum(axis=1).astype(int)
+        shannon = aggregated_matrix.apply(lambda row: self.calculate_shannon(row.values), axis=1)
+
+        return pd.DataFrame({
+            'sample': aggregated_matrix.index,
+            'richness': richness.values,
+            'shannon': shannon.values,
+        })
     
     # --- UI Creation ---
     
@@ -267,49 +346,65 @@ class AlphaDiversityManager:
                 filter_taxon = filter_taxon_dropdown.value
                 group_var = group_dropdown.value if group_dropdown.value != 'None' else None
                 
-                # Start with full data
-                working_df = self.enriched_df.copy()
-                
-                # Get ALL unique samples BEFORE filtering (to ensure all appear in plot)
-                all_samples = working_df['acc'].unique()
-                total_samples = len(all_samples)
-                
-                # Apply taxon filter if selected
-                if filter_rank != 'No Filter' and filter_taxon != 'All Taxa':
-                    print(f"🔍 Filtering to {filter_taxon} ({filter_rank})...")
-                    
-                    matching_tax_ids = self._get_matching_tax_ids(filter_rank, filter_taxon)
-                    working_df = working_df[working_df['tax_id'].astype(str).isin(matching_tax_ids)]
-                    samples_with_data = working_df['acc'].nunique()
-                    print(f"   → {samples_with_data}/{total_samples} samples have {filter_taxon} taxa")
-                
-                print(f"🔄 Counting unique taxa at {selected_rank} level...")
-                
-                # Aggregate at selected rank (may have fewer samples if filtering removed some)
-                if working_df.empty:
-                    # No data after filter - create empty diversity_df
-                    diversity_df = pd.DataFrame({'sample': all_samples, 'richness': 0, 'shannon': 0.0})
+                if self._is_wide_mode:
+                    total_samples = len(self.sample_taxa_matrix.index)
+                    if filter_rank != 'No Filter' and filter_taxon != 'All Taxa':
+                        print(f"🔍 Filtering to {filter_taxon} ({filter_rank})...")
+                        matching_tax_ids = self._get_matching_tax_ids(filter_rank, filter_taxon)
+                        matching_keys = [
+                            k for k in self.sample_taxa_matrix.columns
+                            if str(self._taxon_key_to_tax_id.get(str(k), '')) in matching_tax_ids
+                        ]
+                        samples_with_data = (self.sample_taxa_matrix[matching_keys].sum(axis=1) > 0).sum() if matching_keys else 0
+                        print(f"   → {samples_with_data}/{total_samples} samples have {filter_taxon} taxa")
+
+                    print(f"🔄 Counting unique taxa at {selected_rank} level...")
+                    diversity_df = self._compute_diversity_from_wide(selected_rank, filter_rank, filter_taxon)
                 else:
-                    aggregated_df = self.tax_accessor.aggregate_counts_at_rank(
-                        working_df,
-                        target_rank=selected_rank,
-                        tax_id_col='tax_id',
-                        count_col='total_count',
-                        sample_col='acc'
-                    )
-                    
-                    # Compute alpha diversity
-                    diversity_df = self.compute_alpha_diversity(aggregated_df)
+                    # Start with full taxonomy data
+                    working_df = self.taxonomy_df.copy()
+
+                    # Get ALL unique samples BEFORE filtering (to ensure all appear in plot)
+                    all_samples = working_df['acc'].unique()
+                    total_samples = len(all_samples)
+
+                    # Apply taxon filter if selected
+                    if filter_rank != 'No Filter' and filter_taxon != 'All Taxa':
+                        print(f"🔍 Filtering to {filter_taxon} ({filter_rank})...")
+
+                        matching_tax_ids = self._get_matching_tax_ids(filter_rank, filter_taxon)
+                        working_df = working_df[working_df['tax_id'].astype(str).isin(matching_tax_ids)]
+                        samples_with_data = working_df['acc'].nunique()
+                        print(f"   → {samples_with_data}/{total_samples} samples have {filter_taxon} taxa")
+
+                    print(f"🔄 Counting unique taxa at {selected_rank} level...")
+
+                    # Aggregate at selected rank (may have fewer samples if filtering removed some)
+                    if working_df.empty:
+                        # No data after filter - create empty diversity_df
+                        diversity_df = pd.DataFrame({'sample': all_samples, 'richness': 0, 'shannon': 0.0})
+                    else:
+                        aggregated_df = self.tax_accessor.aggregate_counts_at_rank(
+                            working_df,
+                            target_rank=selected_rank,
+                            tax_id_col='tax_id',
+                            count_col='total_count',
+                            sample_col='acc'
+                        )
+
+                        # Compute alpha diversity
+                        diversity_df = self.compute_alpha_diversity(aggregated_df)
                 
                 # Ensure ALL samples are included (even if they have 0 taxa after filtering)
+                all_samples = self.sample_taxa_matrix.index if self._is_wide_mode else self.taxonomy_df['acc'].unique()
                 all_samples_df = pd.DataFrame({'sample': all_samples})
                 diversity_df = all_samples_df.merge(diversity_df, on='sample', how='left')
                 diversity_df['richness'] = diversity_df['richness'].fillna(0).astype(int)
                 diversity_df['shannon'] = diversity_df['shannon'].fillna(0.0)
                 
-                # Merge with grouping variable from ORIGINAL data (before filter)
+                # Merge with grouping variable from metadata (unaffected by taxonomy filter)
                 if group_var:
-                    sample_groups = self.enriched_df[['acc', group_var]].drop_duplicates()
+                    sample_groups = self.metadata_df[['acc', group_var]].drop_duplicates()
                     diversity_df = diversity_df.merge(sample_groups, left_on='sample', right_on='acc', how='left')
                     color_col = group_var
                 else:
