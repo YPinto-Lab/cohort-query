@@ -74,3 +74,7 @@
 
 10. **אינטגרציה עם כלים סטטיסטיים חיצוניים**
     - חיבור ל-R, Bioconductor, QIIME2, Galaxy.
+
+11. הוספת Simpson’s index ל אלפא דיברסיטי
+
+12. Permutational multivariate analysis of variance (PERMANOVA)
