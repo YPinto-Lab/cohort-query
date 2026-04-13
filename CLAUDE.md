@@ -18,7 +18,7 @@ For command-line usage:
 ```bash
 python cli.py alpha-diversity --view PhagesInBlood --rank species --group Group
 python cli.py taxonomic-abundance --view PhagesInBlood --rank genus --taxon Prevotella --group Group
-python cli.py feature-matrix --view PhagesInBlood
+python cli.py abundance-matrix --view PhagesInBlood
 # Outputs go to results/<view>/
 ```
 
@@ -58,7 +58,7 @@ Orchestrate analysis and present interactive Jupyter widget UIs. Each accepts `(
 Pure computation functions extracted from managers — no UI dependencies, usable from the CLI or notebooks.
 - `analysis/alpha_diversity.py` — `compute_alpha_diversity(taxonomy_df, metadata_df, rank, ...)`
 - `analysis/taxonomic_abundance.py` — `compute_taxonomic_abundance(taxonomy_df, metadata_df, rank, taxon, ...)`
-- `cli.py` — command-line entry point: `alpha-diversity`, `taxonomic-abundance`, `feature-matrix`
+- `cli.py` — command-line entry point: `alpha-diversity`, `taxonomic-abundance`, `abundance-matrix`
 
 ## Input Folder Structure
 

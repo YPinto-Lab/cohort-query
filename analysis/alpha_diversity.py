@@ -60,15 +60,20 @@ def compute_alpha_diversity(
 
         working_df = working_df[working_df['tax_id'].astype(str).isin(matching_tax_ids)]
 
-    # Build (or rebuild) TaxonomyAccessor on the working data
-    tax_accessor = TaxonomyAccessor()
-    tax_accessor.build_from_dataframe(working_df if not working_df.empty else taxonomy_df)
+    # Count diversity only from rows already at the requested rank.
+    # This avoids introducing synthetic "Unclassified (<rank>)" buckets from
+    # higher/lower ranks that were not requested by the analysis.
+    rank_df = working_df[working_df['rank'].astype(str).str.lower() == rank.lower()].copy()
 
-    if working_df.empty:
+    # Build (or rebuild) TaxonomyAccessor on rank-filtered data.
+    tax_accessor = TaxonomyAccessor()
+    tax_accessor.build_from_dataframe(rank_df if not rank_df.empty else taxonomy_df)
+
+    if rank_df.empty:
         diversity_df = pd.DataFrame({'acc': all_samples, 'richness': 0, 'shannon': 0.0})
     else:
         aggregated_df = tax_accessor.aggregate_counts_at_rank(
-            working_df,
+            rank_df,
             target_rank=rank,
             tax_id_col='tax_id',
             count_col='total_count',

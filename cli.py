@@ -9,7 +9,7 @@ runs the requested analysis, and writes structured outputs to results/<view>/.
 Usage examples:
   python cli.py alpha-diversity     --view PhagesInBlood --rank species --group Group
   python cli.py taxonomic-abundance --view PhagesInBlood --rank genus --taxon Prevotella --group Group
-  python cli.py feature-matrix      --view PhagesInBlood
+  python cli.py abundance-matrix      --view PhagesInBlood
 """
 import argparse
 import sys
@@ -195,14 +195,14 @@ def cmd_taxonomic_abundance(args):
     print(summary_df.to_string(index=False))
 
 
-def cmd_feature_matrix(args):
+def cmd_abundance_matrix(args):
     taxonomy_df, _ = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
     )
     out_dir = _ensure_output_dir(Path(args.output_dir), args.view)
 
-    print("Building feature matrix (samples × taxa) ...")
-    feature_matrix = taxonomy_df.pivot_table(
+    print("Building abundance matrix (samples × taxa) ...")
+    abundance_matrix = taxonomy_df.pivot_table(
         index='acc',
         columns='name',
         values='total_count',
@@ -210,10 +210,10 @@ def cmd_feature_matrix(args):
         fill_value=0,
     )
 
-    csv_path = out_dir / "feature_matrix.csv"
-    feature_matrix.to_csv(csv_path)
+    csv_path = out_dir / "abundance_matrix.csv"
+    abundance_matrix.to_csv(csv_path)
     print(f"  → {csv_path}")
-    print(f"  Shape: {feature_matrix.shape[0]} samples × {feature_matrix.shape[1]} taxa")
+    print(f"  Shape: {abundance_matrix.shape[0]} samples × {abundance_matrix.shape[1]} taxa")
 
 
 # ── Argument parser ───────────────────────────────────────────────────────────
@@ -261,10 +261,15 @@ def build_parser() -> argparse.ArgumentParser:
                          help="Metadata column to group samples by in the plot")
     p_abund.set_defaults(func=cmd_taxonomic_abundance)
 
-    # feature-matrix
+    # abundance-matrix (preferred)
+    p_abund_matrix = sub.add_parser("abundance-matrix", parents=[shared],
+                                    help="Export samples × taxa count matrix as CSV")
+    p_abund_matrix.set_defaults(func=cmd_abundance_matrix)
+
+    # feature-matrix (backward-compatible alias)
     p_feat = sub.add_parser("feature-matrix", parents=[shared],
-                             help="Export samples × taxa count matrix as CSV")
-    p_feat.set_defaults(func=cmd_feature_matrix)
+                            help="Alias of abundance-matrix")
+    p_feat.set_defaults(func=cmd_abundance_matrix)
 
     return parser
 
