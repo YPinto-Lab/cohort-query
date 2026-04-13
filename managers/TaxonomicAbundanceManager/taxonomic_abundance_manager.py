@@ -1,8 +1,10 @@
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import time
 from ipywidgets import Dropdown, VBox, HBox, Button, Output, HTML, Layout
 from IPython.display import display, clear_output
+from typing import Optional
 
 from common.contracts.sra_schema import SRAMetadataSchema
 
@@ -85,6 +87,14 @@ class TaxonomicAbundanceManager:
         self.available_ranks = [r for r in standard_order if r in existing_ranks]
 
         self._output_area = Output()
+        self._ui: Optional[VBox] = None
+        self._plot_btn: Optional[Button] = None
+        self._export_btn: Optional[Button] = None
+        self._plot_click_cb = None
+        self._export_click_cb = None
+        self._is_plotting = False
+        self._last_plot_click_ts = 0.0
+        self._plot_debounce_seconds = 0.75
 
         # State variables for exporting
         self.current_export_df = None
@@ -190,6 +200,9 @@ class TaxonomicAbundanceManager:
         return plot_df
 
     def _create_ui(self) -> VBox:
+        # Recreate output widget on each UI build to avoid stale multi-view output duplication.
+        self._output_area = Output()
+
         rank_dropdown = Dropdown(
             options=self.available_ranks,
             value=self.available_ranks[-1] if self.available_ranks else None,
@@ -235,137 +248,157 @@ class TaxonomicAbundanceManager:
                 with self._output_area:
                     print("⚠️ Please generate a plot before exporting.")
                     
+        if self._export_btn is not None and self._export_click_cb is not None:
+            self._export_btn.on_click(self._export_click_cb, remove=True)
         export_btn.on_click(on_export_click)
+        self._export_btn = export_btn
+        self._export_click_cb = on_export_click
 
         def on_plot_click(*args):
+            now = time.monotonic()
+            if (now - self._last_plot_click_ts) < self._plot_debounce_seconds:
+                return
+            self._last_plot_click_ts = now
+
+            if self._is_plotting:
+                return
+
+            self._is_plotting = True
             with self._output_area:
-                clear_output(wait=True)
-                r = rank_dropdown.value
-                t = taxon_dropdown.value
-                g = group_dropdown.value if group_dropdown.value != 'None' else None
-                
-                if not r or not t:
-                    print("⚠️ Please select both a rank and a taxon.")
-                    return
+                try:
+                    clear_output(wait=True)
+                    r = rank_dropdown.value
+                    t = taxon_dropdown.value
+                    g = group_dropdown.value if group_dropdown.value != 'None' else None
                     
-                # 1. Calculate base metrics
-                df_plot = self._calculate_abundance(r, t)
-                
-                # 2. Merge metadata dynamically for plotting and tables
-                extra_columns = ['bioproject']
-                if g and g not in extra_columns:
-                    extra_columns.append(g)
+                    if not r or not t:
+                        print("⚠️ Please select both a rank and a taxon.")
+                        return
+                        
+                    # 1. Calculate base metrics
+                    df_plot = self._calculate_abundance(r, t)
                     
-                # FIXED: Now checks valid extras against self.metadata_df
-                valid_extras = [col for col in extra_columns if col in self.metadata_df.columns]
-                if valid_extras:
-                    # FIXED: Now merges from self.metadata_df
-                    meta_df = self.metadata_df[['acc'] + valid_extras].drop_duplicates().rename(columns={'acc': 'sample'})
-                    df_plot = df_plot.merge(meta_df, on='sample', how='left')
-                
-                # 3. Plotting Logic
-                title = f"Relative Abundance of <i>{t}</i> ({r.title()})"
-                max_val = df_plot['relative_abundance'].max()
-                
-                if max_val == 0: tick_fmt = ".2%"
-                elif max_val < 0.0001: tick_fmt = ".4e"
-                elif max_val < 0.01: tick_fmt = ".4%"
-                else: tick_fmt = ".2%"
-                
-                if g:
-                    plot_df_sorted = df_plot.sort_values(g).copy()
+                    # 2. Merge metadata dynamically for plotting and tables
+                    extra_columns = ['bioproject']
+                    if g and g not in extra_columns:
+                        extra_columns.append(g)
+                        
+                    # FIXED: Now checks valid extras against self.metadata_df
+                    valid_extras = [col for col in extra_columns if col in self.metadata_df.columns]
+                    if valid_extras:
+                        # FIXED: Now merges from self.metadata_df
+                        meta_df = self.metadata_df[['acc'] + valid_extras].drop_duplicates().rename(columns={'acc': 'sample'})
+                        df_plot = df_plot.merge(meta_df, on='sample', how='left')
                     
-                    # 1. Count how many samples are in each group
-                    group_counts = plot_df_sorted[g].value_counts().to_dict()
+                    # 3. Plotting Logic
+                    title = f"Relative Abundance of <i>{t}</i> ({r.title()})"
+                    max_val = df_plot['relative_abundance'].max()
                     
-                    # 2. Create a new label combining the name and the 'n'
-                    plot_df_sorted['plot_label'] = plot_df_sorted[g].apply(
-                        lambda x: f"{x}<br>(n={group_counts.get(x, 0)})"
-                    )
+                    if max_val == 0: tick_fmt = ".2%"
+                    elif max_val < 0.0001: tick_fmt = ".4e"
+                    elif max_val < 0.01: tick_fmt = ".4%"
+                    else: tick_fmt = ".2%"
                     
-                    # 3. Use the new label for the X-axis and color
-                    fig = px.box(
-                        plot_df_sorted, x='plot_label', y='relative_abundance', color='plot_label',
-                        points='all', hover_data=['sample', 'taxon_reads', 'total_sample_reads'],
-                        title=title, template='plotly_white', height=500,
-                        labels={'plot_label': g} # Keeps the legend/axis titles looking clean
-                    )
-                else:
-                    plot_df_sorted = df_plot.sort_values('relative_abundance', ascending=False)
-                    fig = px.bar(
-                        plot_df_sorted, x='sample', y='relative_abundance',
-                        hover_data=['taxon_reads', 'total_sample_reads'],
-                        title=title, template='plotly_white', height=500
-                    )
-                    fig.update_xaxes(showticklabels=True, tickangle=-45, type='category', title_text="Sample ID")
+                    if g:
+                        plot_df_sorted = df_plot.sort_values(g).copy()
+                        
+                        # 1. Count how many samples are in each group
+                        group_counts = plot_df_sorted[g].value_counts().to_dict()
+                        
+                        # 2. Create a new label combining the name and the 'n'
+                        plot_df_sorted['plot_label'] = plot_df_sorted[g].apply(
+                            lambda x: f"{x}<br>(n={group_counts.get(x, 0)})"
+                        )
+                        
+                        # 3. Use the new label for the X-axis and color
+                        fig = px.box(
+                            plot_df_sorted, x='plot_label', y='relative_abundance', color='plot_label',
+                            points='all', hover_data=['sample', 'taxon_reads', 'total_sample_reads'],
+                            title=title, template='plotly_white', height=500,
+                            labels={'plot_label': g} # Keeps the legend/axis titles looking clean
+                        )
+                    else:
+                        plot_df_sorted = df_plot.sort_values('relative_abundance', ascending=False)
+                        fig = px.bar(
+                            plot_df_sorted, x='sample', y='relative_abundance',
+                            hover_data=['taxon_reads', 'total_sample_reads'],
+                            title=title, template='plotly_white', height=500
+                        )
+                        fig.update_xaxes(showticklabels=True, tickangle=-45, type='category', title_text="Sample ID")
+                        
+                    fig.update_layout(yaxis_title="Relative Abundance", yaxis_tickformat=tick_fmt)
+                    fig.show()
+
+                    # =========================================================
+                    # 📊 PREVALENCE SUMMARY CALCULATIONS
+                    # =========================================================
+                    def generate_summary_row(name, subset):
+                        total_n = len(subset)
+                        zero_reads = (subset['taxon_reads'] == 0).sum()
+                        prevalence = (total_n - zero_reads) / total_n if total_n > 0 else 0
+                        return {
+                            'Cohort': name,
+                            'Total Samples (N)': total_n,
+                            'Samples with 0 Reads': zero_reads,
+                            'Samples with Non-Zero Reads (%)': f"{prevalence:.2%}",
+                            'Mean Rel. Abundance': f"{subset['relative_abundance'].mean():.6%}"
+                        }
+
+                    summary_rows = []
+                    if g:
+                        # Calculate per group
+                        for group_name, group_data in df_plot.groupby(g):
+                            summary_rows.append(generate_summary_row(str(group_name), group_data))
                     
-                fig.update_layout(yaxis_title="Relative Abundance", yaxis_tickformat=tick_fmt)
-                fig.show()
-
-                # =========================================================
-                # 📊 PREVALENCE SUMMARY CALCULATIONS
-                # =========================================================
-                def generate_summary_row(name, subset):
-                    total_n = len(subset)
-                    zero_reads = (subset['taxon_reads'] == 0).sum()
-                    prevalence = (total_n - zero_reads) / total_n if total_n > 0 else 0
-                    return {
-                        'Cohort': name,
-                        'Total Samples (N)': total_n,
-                        'Samples with 0 Reads': zero_reads,
-                        'Samples with Non-Zero Reads (%)': f"{prevalence:.2%}",
-                        'Mean Rel. Abundance': f"{subset['relative_abundance'].mean():.6%}"
-                    }
-
-                summary_rows = []
-                if g:
-                    # Calculate per group
-                    for group_name, group_data in df_plot.groupby(g):
-                        summary_rows.append(generate_summary_row(str(group_name), group_data))
-                
-                # Calculate for ALL data
-                summary_rows.append(generate_summary_row('All Combined', df_plot))
-                
-                summary_df = pd.DataFrame(summary_rows)
-                print("\n📈 PREVALENCE & SUMMARY STATISTICS:")
-                display(summary_df)
+                    # Calculate for ALL data
+                    summary_rows.append(generate_summary_row('All Combined', df_plot))
+                    
+                    summary_df = pd.DataFrame(summary_rows)
+                    print("\n📈 PREVALENCE & SUMMARY STATISTICS:")
+                    display(summary_df)
 
 
-                # =========================================================
-                # 📋 RAW DATA TABLE PREPARATION
-                # =========================================================
-                # Sort exactly how you want it: Group first (alphabetical), then Taxon Reads (descending)
-                if g:
-                    df_plot = df_plot.sort_values(by=[g, 'taxon_reads'], ascending=[True, False])
-                else:
-                    df_plot = df_plot.sort_values(by=['taxon_reads'], ascending=[False])
+                    # =========================================================
+                    # 📋 RAW DATA TABLE PREPARATION
+                    # =========================================================
+                    # Sort exactly how you want it: Group first (alphabetical), then Taxon Reads (descending)
+                    if g:
+                        df_plot = df_plot.sort_values(by=[g, 'taxon_reads'], ascending=[True, False])
+                    else:
+                        df_plot = df_plot.sort_values(by=['taxon_reads'], ascending=[False])
 
-                final_cols = ['sample'] + valid_extras + ['total_sample_reads', 'taxon_reads', 'relative_abundance']
-                table_df = df_plot[final_cols].copy()
-                
-                table_df.rename(columns={
-                    'sample': 'Sample ID (SRR)',
-                    'total_sample_reads': 'Total Sample Reads',
-                    'taxon_reads': 'Taxon Reads',
-                    'relative_abundance': 'Relative Abundance',
-                    'bioproject': 'BioProject'
-                }, inplace=True)
-                
-                table_df['Total Sample Reads'] = table_df['Total Sample Reads'].astype(int)
-                table_df['Taxon Reads'] = table_df['Taxon Reads'].astype(int)
-                
-                # Save raw numbers for CSV export
-                self.current_export_df = table_df.copy()
-                self.current_taxon_name = t
-                
-                # Format relative abundance for the visual table display only
-                display_df = table_df.copy()
-                display_df['Relative Abundance'] = display_df['Relative Abundance'].apply(lambda x: f"{x:.6%}")
-                
-                print("\n📋 RAW DATA TABLE:")
-                display(display_df)
+                    final_cols = ['sample'] + valid_extras + ['total_sample_reads', 'taxon_reads', 'relative_abundance']
+                    table_df = df_plot[final_cols].copy()
+                    
+                    table_df.rename(columns={
+                        'sample': 'Sample ID (SRR)',
+                        'total_sample_reads': 'Total Sample Reads',
+                        'taxon_reads': 'Taxon Reads',
+                        'relative_abundance': 'Relative Abundance',
+                        'bioproject': 'BioProject'
+                    }, inplace=True)
+                    
+                    table_df['Total Sample Reads'] = table_df['Total Sample Reads'].astype(int)
+                    table_df['Taxon Reads'] = table_df['Taxon Reads'].astype(int)
+                    
+                    # Save raw numbers for CSV export
+                    self.current_export_df = table_df.copy()
+                    self.current_taxon_name = t
+                    
+                    # Format relative abundance for the visual table display only
+                    display_df = table_df.copy()
+                    display_df['Relative Abundance'] = display_df['Relative Abundance'].apply(lambda x: f"{x:.6%}")
+                    
+                    print("\n📋 RAW DATA TABLE:")
+                    display(display_df)
+                finally:
+                    self._is_plotting = False
 
+        if self._plot_btn is not None and self._plot_click_cb is not None:
+            self._plot_btn.on_click(self._plot_click_cb, remove=True)
         plot_btn.on_click(on_plot_click)
+        self._plot_btn = plot_btn
+        self._plot_click_cb = on_plot_click
 
         header = HTML(
             "<div style='background: #4A90E2; padding: 15px; border-radius: 8px; margin-bottom: 15px;'>"
@@ -377,7 +410,12 @@ class TaxonomicAbundanceManager:
         controls = HBox([rank_dropdown, taxon_dropdown, group_dropdown], layout=Layout(margin='0 0 10px 0'))
         buttons = HBox([plot_btn, export_btn], layout=Layout(margin='0 0 15px 0', align_items='center'))
         
-        return VBox([header, controls, buttons, self._output_area])
+        ui = VBox([header, controls, buttons, self._output_area])
+        self._ui = ui
+        return ui
 
     def run(self):
+        if self._ui is not None:
+            self._ui.close()
+            self._ui = None
         display(self._create_ui())
