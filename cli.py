@@ -7,9 +7,9 @@ in scripted pipelines. Each command reads from a named view folder
 runs the requested analysis, and writes structured outputs to results/<view>/.
 
 Usage examples:
-  python cli.py alpha-diversity     --view PhagesInBlood --rank species --group Group
-  python cli.py taxonomic-abundance --view PhagesInBlood --rank genus --taxon Prevotella --group Group
-  python cli.py abundance-matrix      --view PhagesInBlood
+    python askslm.py alpha-diversity     --view PhagesInBlood --rank species --group Group
+    python askslm.py taxonomic-abundance --view PhagesInBlood --rank genus --taxon Prevotella --group Group
+    python askslm.py abundance-matrix    --view PhagesInBlood
 """
 import argparse
 import sys
@@ -18,6 +18,11 @@ from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
+
+from common.contracts.sra_schema import SRAMetadataSchema
+
+
+_BASE_METADATA_COLS = set(SRAMetadataSchema.__fields__.keys())
 
 
 def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
@@ -44,7 +49,7 @@ def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
     print(f"Loaded: {len(metadata_df)} samples, {len(taxonomy_df)} taxon observations")
 
     # Apply mapping configs per project
-    processor = SRAProcessor()
+    processor = SRAProcessor(config_dir=config_dir)
     parts = []
     for project_id in metadata_df['bioproject'].unique():
         config_path = config_dir / f"{project_id}.json"
@@ -59,8 +64,10 @@ def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
     return taxonomy_df, enriched_metadata_df
 
 
-def _ensure_output_dir(output_dir: Path, view: str) -> Path:
+def _ensure_output_dir(output_dir: Path, view: str, analyzer: str | None = None) -> Path:
     out = output_dir / view
+    if analyzer:
+        out = out / analyzer
     out.mkdir(parents=True, exist_ok=True)
     return out
 
@@ -73,7 +80,7 @@ def cmd_alpha_diversity(args):
     taxonomy_df, metadata_df = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
     )
-    out_dir = _ensure_output_dir(Path(args.output_dir), args.view)
+    out_dir = _ensure_output_dir(Path(args.output_dir), args.view, "alpha_diversity")
 
     print(f"Computing alpha diversity at rank '{args.rank}' ...")
     diversity_df = compute_alpha_diversity(
@@ -138,7 +145,7 @@ def cmd_taxonomic_abundance(args):
     taxonomy_df, metadata_df = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
     )
-    out_dir = _ensure_output_dir(Path(args.output_dir), args.view)
+    out_dir = _ensure_output_dir(Path(args.output_dir), args.view, "taxonomic_abundance")
 
     print(f"Computing abundance of '{args.taxon}' at rank '{args.rank}' ...")
     abundance_df, summary_df = compute_taxonomic_abundance(
@@ -199,7 +206,7 @@ def cmd_abundance_matrix(args):
     taxonomy_df, _ = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
     )
-    out_dir = _ensure_output_dir(Path(args.output_dir), args.view)
+    out_dir = _ensure_output_dir(Path(args.output_dir), args.view, "abundance_matrix")
 
     print("Building abundance matrix (samples × taxa) ...")
     abundance_matrix = taxonomy_df.pivot_table(
@@ -214,6 +221,114 @@ def cmd_abundance_matrix(args):
     abundance_matrix.to_csv(csv_path)
     print(f"  → {csv_path}")
     print(f"  Shape: {abundance_matrix.shape[0]} samples × {abundance_matrix.shape[1]} taxa")
+
+
+def cmd_metadata_overview(args):
+    inputs_dir = Path(args.inputs_dir)
+    config_dir = Path(args.config_dir)
+
+    _, metadata_df = _load_and_enrich(
+        args.view, Path(args.inputs_dir), Path(args.config_dir)
+    )
+    out_dir = _ensure_output_dir(Path(args.output_dir), args.view, "metadata_overview")
+
+    # Load raw metadata to run discovered-key scanning per project (runner-style insight).
+    from Accessors.SraAccessor.sra_metadata_accessor import SRAMetadataAccessor
+    from processors.sra_processor import SRAProcessor
+
+    raw_metadata_df = SRAMetadataAccessor.get(inputs_dir / args.view / "metadata.csv")
+    processor = SRAProcessor(config_dir=config_dir)
+
+    discovered_rows = []
+    for project_id in sorted(raw_metadata_df["bioproject"].dropna().unique()):
+        project_df = raw_metadata_df[raw_metadata_df["bioproject"] == project_id].copy()
+        discovered = processor._scan_for_keys_and_values(project_df)
+
+        for source_name in ["from_jattr", "from_attributes"]:
+            for item in discovered.get(source_name, []):
+                discovered_rows.append(
+                    {
+                        "project_id": project_id,
+                        "source": source_name,
+                        "key_name": item.get("key_name", ""),
+                        "unique_values_count": len(item.get("values_with_counts", [])),
+                        "top_values": " | ".join(item.get("top_values", [])),
+                    }
+                )
+
+    discovered_by_project_df = pd.DataFrame(discovered_rows)
+    if discovered_by_project_df.empty:
+        discovered_unique_df = pd.DataFrame(
+            columns=["source", "key_name", "projects_count", "projects", "max_unique_values_count"]
+        )
+    else:
+        discovered_unique_df = (
+            discovered_by_project_df.groupby(["source", "key_name"], as_index=False)
+            .agg(
+                projects_count=("project_id", "nunique"),
+                projects=("project_id", lambda s: ", ".join(sorted(set(map(str, s))))),
+                max_unique_values_count=("unique_values_count", "max"),
+            )
+            .sort_values(["source", "key_name"])
+        )
+
+    unique_keys_count = int(len(discovered_unique_df))
+    projects_with_discovered_keys = (
+        int(discovered_by_project_df["project_id"].nunique()) if not discovered_by_project_df.empty else 0
+    )
+
+    mapped_cols = sorted([c for c in metadata_df.columns if c not in _BASE_METADATA_COLS])
+
+    summary_df = pd.DataFrame(
+        {
+            "metric": [
+                "samples",
+                "projects",
+                "metadata_columns",
+                "mapped_columns_count",
+                "mapped_columns",
+                "discovered_source_keys_unique",
+                "projects_with_discovered_source_keys",
+            ],
+            "value": [
+                int(len(metadata_df)),
+                int(metadata_df["bioproject"].nunique()) if "bioproject" in metadata_df.columns else 0,
+                int(len(metadata_df.columns)),
+                int(len(mapped_cols)),
+                ", ".join(mapped_cols),
+                unique_keys_count,
+                projects_with_discovered_keys,
+            ],
+        }
+    )
+
+    if "bioproject" in metadata_df.columns:
+        projects_df = (
+            metadata_df.groupby("bioproject", as_index=False)
+            .agg(samples=("acc", "count"))
+            .sort_values("bioproject")
+        )
+    else:
+        projects_df = pd.DataFrame(columns=["bioproject", "samples"])
+
+    summary_path = out_dir / "metadata_overview_summary.csv"
+    projects_path = out_dir / "metadata_overview_projects.csv"
+    discovered_by_project_path = out_dir / "metadata_overview_discovered_keys_by_project.csv"
+    discovered_unique_path = out_dir / "metadata_overview_discovered_keys_unique.csv"
+
+    summary_df.to_csv(summary_path, index=False)
+    projects_df.to_csv(projects_path, index=False)
+    discovered_by_project_df.to_csv(discovered_by_project_path, index=False)
+    discovered_unique_df.to_csv(discovered_unique_path, index=False)
+
+    print("Building metadata overview report ...")
+    print(f"  → {summary_path}")
+    print(f"  → {projects_path}")
+    print(f"  → {discovered_by_project_path}")
+    print(f"  → {discovered_unique_path}")
+    print(f"\n🔍 Discovered Source Keys ({unique_keys_count} unique keys across {projects_with_discovered_keys} projects)")
+    print("\nMetadata Summary:")
+    print(summary_df.to_string(index=False))
 
 
 # ── Argument parser ───────────────────────────────────────────────────────────
@@ -271,10 +386,16 @@ def build_parser() -> argparse.ArgumentParser:
                             help="Alias of abundance-matrix")
     p_feat.set_defaults(func=cmd_abundance_matrix)
 
+    # metadata-overview
+    p_meta = sub.add_parser("metadata-overview", parents=[shared],
+                            help="Export metadata summary and per-project sample counts")
+    p_meta.set_defaults(func=cmd_metadata_overview)
+
     return parser
 
 
 if __name__ == "__main__":
+    # Backward-compatible wrapper: prefer using askslm.py as primary entrypoint.
     parser = build_parser()
     args = parser.parse_args()
     args.func(args)
