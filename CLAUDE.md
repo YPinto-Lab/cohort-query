@@ -16,9 +16,9 @@ The main entry point is `runner.ipynb` — open and run it in Jupyter.
 
 For command-line usage:
 ```bash
-python cli.py alpha-diversity --view PhagesInBlood --rank species --group Group
-python cli.py taxonomic-abundance --view PhagesInBlood --rank genus --taxon Prevotella --group Group
-python cli.py abundance-matrix --view PhagesInBlood
+python askslm.py alpha-diversity --view PhagesInBlood --rank species --group Group
+python askslm.py taxonomic-abundance --view PhagesInBlood --rank genus --taxon Prevotella --group Group
+python askslm.py abundance-matrix --view PhagesInBlood
 # Outputs go to results/<view>/
 ```
 
@@ -29,7 +29,7 @@ The codebase follows a strict three-layer architecture:
 ```
 Two CSV files → Accessors → Processors → Managers → Jupyter UI (ipywidgets)
                                        ↓
-                               analysis/ functions → CLI (cli.py)
+                               analysis/ functions → CLI (askslm.py)
 ```
 
 **Core design principle**: `metadata.csv` (1 row per acc) and `taxonomy.csv` (many rows per acc, one per taxon) flow as **two separate DataFrames** throughout the entire pipeline. They are never merged — the old SQL JOIN that duplicated metadata columns across every taxon row has been removed. Grouping joins only happen narrowly on small per-sample summary DataFrames inside managers.
@@ -54,11 +54,11 @@ Orchestrate analysis and present interactive Jupyter widget UIs. Each accepts `(
 - **TaxonomicAbundanceManager**: Relative abundance, prevalence stats, CSV export
 - **LongitudinalAnalysisManager**: Trajectory visualization, paired comparisons, change-point detection. *(Pending refactor to (taxonomy_df, metadata_df) signature)*
 
-### Layer 4: Analysis functions + CLI (`/analysis/`, `cli.py`)
+### Layer 4: Analysis functions + CLI (`/analysis/`, `askslm.py`)
 Pure computation functions extracted from managers — no UI dependencies, usable from the CLI or notebooks.
 - `analysis/alpha_diversity.py` — `compute_alpha_diversity(taxonomy_df, metadata_df, rank, ...)`
 - `analysis/taxonomic_abundance.py` — `compute_taxonomic_abundance(taxonomy_df, metadata_df, rank, taxon, ...)`
-- `cli.py` — command-line entry point: `alpha-diversity`, `taxonomic-abundance`, `abundance-matrix`
+- `askslm.py` — command-line entry point: `alpha-diversity`, `taxonomic-abundance`, `abundance-matrix`
 
 ## Input Folder Structure
 
