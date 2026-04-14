@@ -21,6 +21,7 @@ Desktop.ini
 __pycache__/
 *.py[cod]
 *.so
+*.egg-info/
 
 # Virtual Environments
 .venv/
