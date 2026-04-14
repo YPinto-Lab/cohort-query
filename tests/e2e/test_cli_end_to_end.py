@@ -77,7 +77,7 @@ class TestCliEndToEnd(unittest.TestCase):
             # Act + Assert: abundance-matrix
             abundance_cmd = [
                 sys.executable,
-                "cli.py",
+                "askslm.py",
                 "abundance-matrix",
                 "--view",
                 view_name,
@@ -90,7 +90,7 @@ class TestCliEndToEnd(unittest.TestCase):
             ]
             abundance_run = self._run_cli(abundance_cmd, cwd=repo_root)
 
-            abundance_out = output_root / view_name / "abundance_matrix.csv"
+            abundance_out = output_root / view_name / "abundance_matrix" / "abundance_matrix.csv"
             self.assertTrue(abundance_out.exists(), f"abundance_matrix.csv was not created.\nSTDOUT:\n{abundance_run.stdout}")
             self.assertIn("Shape: 3 samples", abundance_run.stdout, "Feature matrix shape summary missing from stdout")
 
@@ -105,10 +105,64 @@ class TestCliEndToEnd(unittest.TestCase):
             )
             self._add_checkpoint("abundance-matrix", "passed", f"Validated {abundance_out}")
 
+            # Act + Assert: metadata-overview
+            metadata_cmd = [
+                sys.executable,
+                "askslm.py",
+                "metadata-overview",
+                "--view",
+                view_name,
+                "--inputs-dir",
+                str(inputs_root),
+                "--config-dir",
+                str(config_root),
+                "--output-dir",
+                str(output_root),
+            ]
+            metadata_run = self._run_cli(metadata_cmd, cwd=repo_root)
+
+            metadata_summary_out = output_root / view_name / "metadata_overview" / "metadata_overview_summary.csv"
+            metadata_projects_out = output_root / view_name / "metadata_overview" / "metadata_overview_projects.csv"
+            metadata_discovered_by_project_out = output_root / view_name / "metadata_overview" / "metadata_overview_discovered_keys_by_project.csv"
+            metadata_discovered_unique_out = output_root / view_name / "metadata_overview" / "metadata_overview_discovered_keys_unique.csv"
+
+            self.assertTrue(metadata_summary_out.exists(), "Metadata overview summary CSV was not created")
+            self.assertTrue(metadata_projects_out.exists(), "Metadata overview projects CSV was not created")
+            self.assertTrue(metadata_discovered_by_project_out.exists(), "Metadata discovered-keys by-project CSV was not created")
+            self.assertTrue(metadata_discovered_unique_out.exists(), "Metadata discovered-keys unique CSV was not created")
+            self.assertIn("Metadata Summary", metadata_run.stdout, "Metadata summary text missing from stdout")
+            self.assertIn("Discovered Source Keys", metadata_run.stdout, "Discovered source-keys text missing from stdout")
+
+            pd.testing.assert_frame_equal(
+                pd.read_csv(metadata_summary_out),
+                pd.read_csv(expected_files["metadata_overview_summary"]),
+                check_dtype=False,
+            )
+            pd.testing.assert_frame_equal(
+                pd.read_csv(metadata_projects_out),
+                pd.read_csv(expected_files["metadata_overview_projects"]),
+                check_dtype=False,
+            )
+            pd.testing.assert_frame_equal(
+                pd.read_csv(metadata_discovered_by_project_out),
+                pd.read_csv(expected_files["metadata_overview_discovered_by_project"]),
+                check_dtype=False,
+            )
+            pd.testing.assert_frame_equal(
+                pd.read_csv(metadata_discovered_unique_out),
+                pd.read_csv(expected_files["metadata_overview_discovered_unique"]),
+                check_dtype=False,
+            )
+            self._add_checkpoint(
+                "metadata-overview",
+                "passed",
+                f"Validated {metadata_summary_out}, {metadata_projects_out}, and discovered-key reports",
+            )
+
             # Act + Assert: alpha-diversity
             alpha_cmd = [
                 sys.executable,
-                "cli.py",
+                "askslm.py",
                 "alpha-diversity",
                 "--view",
                 view_name,
@@ -123,8 +177,8 @@ class TestCliEndToEnd(unittest.TestCase):
             ]
             alpha_run = self._run_cli(alpha_cmd, cwd=repo_root)
 
-            alpha_csv = output_root / view_name / "alpha_diversity.csv"
-            alpha_html = output_root / view_name / "alpha_diversity.html"
+            alpha_csv = output_root / view_name / "alpha_diversity" / "alpha_diversity.csv"
+            alpha_html = output_root / view_name / "alpha_diversity" / "alpha_diversity.html"
             self.assertTrue(alpha_csv.exists(), f"alpha_diversity.csv was not created.\nSTDOUT:\n{alpha_run.stdout}")
             self.assertTrue(alpha_html.exists(), "alpha_diversity.html was not created")
             self.assertIn("Summary:", alpha_run.stdout, "Alpha diversity summary missing from stdout")
@@ -139,7 +193,7 @@ class TestCliEndToEnd(unittest.TestCase):
             # Act + Assert: taxonomic-abundance
             abundance_cmd = [
                 sys.executable,
-                "cli.py",
+                "askslm.py",
                 "taxonomic-abundance",
                 "--view",
                 view_name,
@@ -156,9 +210,9 @@ class TestCliEndToEnd(unittest.TestCase):
             ]
             abundance_run = self._run_cli(abundance_cmd, cwd=repo_root)
 
-            abundance_csv = output_root / view_name / "taxonomic_abundance_Some_genus_1.csv"
-            abundance_summary_csv = output_root / view_name / "taxonomic_abundance_Some_genus_1_summary.csv"
-            abundance_html = output_root / view_name / "taxonomic_abundance_Some_genus_1.html"
+            abundance_csv = output_root / view_name / "taxonomic_abundance" / "taxonomic_abundance_Some_genus_1.csv"
+            abundance_summary_csv = output_root / view_name / "taxonomic_abundance" / "taxonomic_abundance_Some_genus_1_summary.csv"
+            abundance_html = output_root / view_name / "taxonomic_abundance" / "taxonomic_abundance_Some_genus_1.html"
 
             self.assertTrue(abundance_csv.exists(), "Taxonomic abundance CSV was not created")
             self.assertTrue(abundance_summary_csv.exists(), "Taxonomic abundance summary CSV was not created")
@@ -362,7 +416,17 @@ class TestCliEndToEnd(unittest.TestCase):
         """Create a minimal, schema-valid metadata.csv fixture."""
         cols = list(SRAMetadataSchema.__fields__.keys())
 
-        def base_row(acc: str, group_value: str) -> dict:
+        def base_row(
+            acc: str,
+            group_value: str,
+            sex: str,
+            age_group: str,
+            subject_id: str,
+            timepoint: str,
+            body_site: str,
+            host_state: str,
+            sequencing_batch: str,
+        ) -> dict:
             row = {col: "" for col in cols}
             row.update(
                 {
@@ -375,17 +439,29 @@ class TestCliEndToEnd(unittest.TestCase):
                     "avgspotlen": 0,
                     "mbases": 0,
                     "insertsize": "0",
-                    "jattr": json.dumps({"group": group_value}),
-                    "attributes": "",
+                    "jattr": json.dumps(
+                        {
+                            "group": group_value,
+                            "sex": sex,
+                            "age_group": age_group,
+                            "subject_id": subject_id,
+                            "timepoint": timepoint,
+                        }
+                    ),
+                    "attributes": (
+                        f"k=body_site, v={body_site}}}"
+                        f"k=host_state, v={host_state}}}"
+                        f"k=sequencing_batch, v={sequencing_batch}}}"
+                    ),
                 }
             )
             return row
 
         metadata_df = pd.DataFrame(
             [
-                base_row("SRR0001", "Case"),
-                base_row("SRR0002", "Case"),
-                base_row("SRR0003", "Control"),
+                base_row("SRR0001", "Case", "female", "adult", "SUBJ_1", "baseline", "gut", "healthy", "batch_1"),
+                base_row("SRR0002", "Case", "male", "senior", "SUBJ_2", "followup", "blood", "diseased", "batch_2"),
+                base_row("SRR0003", "Control", "female", "adult", "SUBJ_3", "baseline", "gut", "healthy", "batch_1"),
             ]
         )
         metadata_df.to_csv(path, index=False)
@@ -487,21 +563,143 @@ class TestCliEndToEnd(unittest.TestCase):
             }
         )
 
+        metadata_summary_df = pd.DataFrame(
+            {
+                "metric": [
+                    "samples",
+                    "projects",
+                    "metadata_columns",
+                    "mapped_columns_count",
+                    "mapped_columns",
+                    "discovered_source_keys_unique",
+                    "projects_with_discovered_source_keys",
+                ],
+                "value": [
+                    "3",
+                    "1",
+                    str(len(SRAMetadataSchema.__fields__) + 1),
+                    "1",
+                    "Group",
+                    "8",
+                    "1",
+                ],
+            }
+        )
+        metadata_projects_df = pd.DataFrame(
+            {
+                "bioproject": ["PRJTEST1"],
+                "samples": [3],
+            }
+        )
+        metadata_discovered_by_project_df = pd.DataFrame(
+            {
+                "project_id": [
+                    "PRJTEST1",
+                    "PRJTEST1",
+                    "PRJTEST1",
+                    "PRJTEST1",
+                    "PRJTEST1",
+                    "PRJTEST1",
+                    "PRJTEST1",
+                    "PRJTEST1",
+                ],
+                "source": [
+                    "from_jattr",
+                    "from_jattr",
+                    "from_jattr",
+                    "from_jattr",
+                    "from_jattr",
+                    "from_attributes",
+                    "from_attributes",
+                    "from_attributes",
+                ],
+                "key_name": [
+                    "age_group",
+                    "group",
+                    "sex",
+                    "subject_id",
+                    "timepoint",
+                    "body_site",
+                    "host_state",
+                    "sequencing_batch",
+                ],
+                "unique_values_count": [2, 2, 2, 3, 2, 2, 2, 2],
+                "top_values": [
+                    "adult | senior",
+                    "Case | Control",
+                    "female | male",
+                    "SUBJ_1 | SUBJ_2 | SUBJ_3",
+                    "baseline | followup",
+                    "gut | blood",
+                    "healthy | diseased",
+                    "batch_1 | batch_2",
+                ],
+            }
+        )
+        metadata_discovered_unique_df = pd.DataFrame(
+            {
+                "source": [
+                    "from_attributes",
+                    "from_attributes",
+                    "from_attributes",
+                    "from_jattr",
+                    "from_jattr",
+                    "from_jattr",
+                    "from_jattr",
+                    "from_jattr",
+                ],
+                "key_name": [
+                    "body_site",
+                    "host_state",
+                    "sequencing_batch",
+                    "age_group",
+                    "group",
+                    "sex",
+                    "subject_id",
+                    "timepoint",
+                ],
+                "projects_count": [1, 1, 1, 1, 1, 1, 1, 1],
+                "projects": [
+                    "PRJTEST1",
+                    "PRJTEST1",
+                    "PRJTEST1",
+                    "PRJTEST1",
+                    "PRJTEST1",
+                    "PRJTEST1",
+                    "PRJTEST1",
+                    "PRJTEST1",
+                ],
+                "max_unique_values_count": [2, 2, 2, 2, 2, 2, 3, 2],
+            }
+        )
+
         abundance_matrix_path = expected_root / "abundance_matrix.csv"
         alpha_path = expected_root / "alpha_diversity.csv"
         taxonomic_abundance_path = expected_root / "taxonomic_abundance_Some_genus_1.csv"
         abundance_summary_path = expected_root / "taxonomic_abundance_Some_genus_1_summary.csv"
+        metadata_summary_path = expected_root / "metadata_overview_summary.csv"
+        metadata_projects_path = expected_root / "metadata_overview_projects.csv"
+        metadata_discovered_by_project_path = expected_root / "metadata_overview_discovered_keys_by_project.csv"
+        metadata_discovered_unique_path = expected_root / "metadata_overview_discovered_keys_unique.csv"
 
         abundance_matrix_df.to_csv(abundance_matrix_path, index=False)
         alpha_df.to_csv(alpha_path, index=False)
         abundance_df.to_csv(taxonomic_abundance_path, index=False)
         abundance_summary_df.to_csv(abundance_summary_path, index=False)
+        metadata_summary_df.to_csv(metadata_summary_path, index=False)
+        metadata_projects_df.to_csv(metadata_projects_path, index=False)
+        metadata_discovered_by_project_df.to_csv(metadata_discovered_by_project_path, index=False)
+        metadata_discovered_unique_df.to_csv(metadata_discovered_unique_path, index=False)
 
         return {
             "abundance_matrix": abundance_matrix_path,
             "alpha_diversity": alpha_path,
             "taxonomic_abundance": taxonomic_abundance_path,
             "taxonomic_abundance_summary": abundance_summary_path,
+            "metadata_overview_summary": metadata_summary_path,
+            "metadata_overview_projects": metadata_projects_path,
+            "metadata_overview_discovered_by_project": metadata_discovered_by_project_path,
+            "metadata_overview_discovered_unique": metadata_discovered_unique_path,
         }
 
 
