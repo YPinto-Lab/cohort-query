@@ -212,6 +212,7 @@ class SRAProcessor:
             key = filter_rule.get("key")
             operator = filter_rule.get("operator", "equals")
             value = filter_rule.get("value", "")
+            equals_values = [v.strip().lower() for v in str(value).split(",") if v.strip()]
             
             if not key:
                 continue
@@ -227,7 +228,9 @@ class SRAProcessor:
                 elif field_value is None:
                     return False
                 elif operator == "equals":
-                    return field_value.lower() == value.lower()
+                    if not equals_values:
+                        return False
+                    return field_value.lower() in equals_values
                 elif operator == "contains":
                     return value.lower() in field_value.lower()
                 elif operator == "starts_with":

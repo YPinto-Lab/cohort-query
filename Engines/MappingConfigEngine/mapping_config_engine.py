@@ -842,6 +842,7 @@ class MappingConfigManager:
         init_key = initial_values.get('key', '') if initial_values else ''
         init_operator = initial_values.get('operator', 'equals') if initial_values else 'equals'
         init_value = initial_values.get('value', '') if initial_values else ''
+        init_comment = initial_values.get('comment', '') if initial_values else ''
         
         # Action: include or exclude matching samples
         action_dropdown = Dropdown(
@@ -864,7 +865,7 @@ class MappingConfigManager:
         # Operator dropdown
         operator_dropdown = Dropdown(
             options=[
-                ('equals', 'equals'),
+                ('equals (supports comma list)', 'equals'),
                 ('contains', 'contains'),
                 ('starts with', 'starts_with'),
                 ('ends with', 'ends_with'),
@@ -881,7 +882,7 @@ class MappingConfigManager:
         # Value input
         value_input = Textarea(
             value=init_value,
-            placeholder='Value',
+            placeholder='Value (comma-separated supported for equals)',
             rows=1,
             layout=Layout(width='150px', height='28px', display='none' if hide_value else 'block')
         )
@@ -931,10 +932,23 @@ class MappingConfigManager:
             button_style='danger',
             layout=Layout(width='35px')
         )
+
+        # Optional note/comment for remembering filter rationale.
+        comment_input = Textarea(
+            value=init_comment,
+            placeholder='Comment (optional): e.g., control subjects',
+            rows=1,
+            layout=Layout(width='360px', height='28px')
+        )
         
-        filter_row = HBox(
+        primary_row = HBox(
             [action_dropdown, where_label, key_dropdown, operator_dropdown, value_input, value_suggestions, delete_button],
-            layout=Layout(margin='4px 0', align_items='center')
+            layout=Layout(margin='2px 0', align_items='center')
+        )
+
+        filter_row = VBox(
+            [primary_row, comment_input],
+            layout=Layout(margin='4px 0')
         )
         
         # Store widget references
@@ -942,7 +956,8 @@ class MappingConfigManager:
             'action': action_dropdown,
             'key': key_dropdown,
             'operator': operator_dropdown,
-            'value': value_input
+            'value': value_input,
+            'comment': comment_input,
         }
         
         def on_delete(b):
@@ -1059,6 +1074,9 @@ class MappingConfigManager:
                             }
                             if fw['operator'].value not in ['is_empty', 'is_not_empty']:
                                 filter_entry["value"] = fw['value'].value.strip()
+                            comment_text = fw['comment'].value.strip()
+                            if comment_text:
+                                filter_entry["comment"] = comment_text
                             filters_config["sample_filters"].append(filter_entry)
                     
                     # Load existing config or create new
