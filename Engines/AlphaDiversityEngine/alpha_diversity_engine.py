@@ -17,7 +17,7 @@ from IPython.display import display, clear_output
 from typing import Callable, Dict, List, Optional, Set
 
 from Accessors.TaxonomyAccessor import TaxonomyAccessor
-from common.contracts.sra_schema import SRAMetadataSchema
+from Common.contracts.sra_schema import SRAMetadataSchema
 
 
 # Standard taxonomic ranks (most commonly used for diversity analysis)

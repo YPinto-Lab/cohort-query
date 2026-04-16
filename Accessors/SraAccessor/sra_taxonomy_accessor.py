@@ -11,7 +11,7 @@ This accessor is only responsible for reading and validating the raw file.
 import pandas as pd
 from pathlib import Path
 
-from common.contracts.sra_schema import SRATaxonomySchema
+from Common.contracts.sra_schema import SRATaxonomySchema
 
 
 class SRATaxonomyAccessor:

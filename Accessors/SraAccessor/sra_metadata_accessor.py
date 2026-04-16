@@ -7,7 +7,7 @@ No taxonomy columns — only run/sample/bioproject metadata fields.
 import pandas as pd
 from pathlib import Path
 
-from common.contracts.sra_schema import SRAMetadataSchema
+from Common.contracts.sra_schema import SRAMetadataSchema
 
 
 class SRAMetadataAccessor:

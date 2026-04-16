@@ -6,7 +6,7 @@ from ipywidgets import Dropdown, VBox, HBox, Button, Output, HTML, Layout
 from IPython.display import display, clear_output
 from typing import Optional
 
-from common.contracts.sra_schema import SRAMetadataSchema
+from Common.contracts.sra_schema import SRAMetadataSchema
 
 # Base columns defined by the metadata schema — anything beyond these is a mapped field
 _BASE_METADATA_COLS = set(SRAMetadataSchema.__fields__.keys())

@@ -19,7 +19,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 
-from common.contracts.sra_schema import SRAMetadataSchema
+from Common.contracts.sra_schema import SRAMetadataSchema
 
 
 _BASE_METADATA_COLS = set(SRAMetadataSchema.__fields__.keys())

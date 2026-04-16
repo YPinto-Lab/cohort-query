@@ -9,7 +9,7 @@ import pandas as pd
 import pandera as pa
 from pathlib import Path
 
-from common.contracts.sra_schema import SRAMetadataSchema
+from Common.contracts.sra_schema import SRAMetadataSchema
 
 class SRAAccessor:
     """
