@@ -2,10 +2,10 @@ title Runner End-to-End Sequence (runner.ipynb)
 
 participant Engineer
 participant Notebook
-participant Pipeline as runner_pipeline.py
+participant Pipeline as managers/runner_pipeline_manager.py
 participant MetadataAccessor
 participant TaxonomyAccessor
-participant Processor as SRAProcessor
+participant Processor as MetadataMappingEngine
 participant Cache
 participant Results
 participant Logs

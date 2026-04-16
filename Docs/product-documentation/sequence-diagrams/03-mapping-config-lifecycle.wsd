@@ -2,7 +2,7 @@ title Mapping Config Lifecycle (Template -> UI -> JSON)
 
 participant Notebook
 participant Pipeline
-participant Processor as SRAProcessor
+participant Processor as MetadataMappingEngine
 participant ConfigDir as Workspaces/<view>/mapping_configs
 participant MappingUI as MappingConfigManager
 participant Engineer

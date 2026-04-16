@@ -7,7 +7,7 @@ participant Command as cmd_*
 participant Loader as _load_and_enrich
 participant Inputs
 participant Configs
-participant Processor as SRAProcessor
+participant Processor as MetadataMappingEngine
 participant Analysis
 participant Output
 
@@ -23,5 +23,5 @@ Loader->Command: Return taxonomy_df and enriched_metadata_df
 
 Command->Analysis: Run compute function for selected command
 Analysis->Command: Return result DataFrame(s)
-Command->Output: Write CSV/HTML outputs under results/<view>/<analysis>/
+Command->Output: Write CSV/HTML outputs under <output_dir>/<view>/<analysis>/
 Command->Engineer: Print summary and output paths

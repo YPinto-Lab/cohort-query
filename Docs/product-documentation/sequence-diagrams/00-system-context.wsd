@@ -2,13 +2,13 @@ title Ask-SLM System Context (Notebook and CLI)
 
 participant Engineer
 participant RunnerNotebook as Notebook
-participant RunnerPipeline as Workflow
+participant RunnerPipelineManager as Workflow
 participant InputsFolder as Inputs
 participant MappingConfigs as Configs
 participant Workspace as Workspaces
 participant ManagersUI as Managers
 participant CLI
-participant AnalysisLayer as Analysis
+participant ComputeEngines as Analysis
 
 Engineer->Notebook: Run notebook cells for selected view
 Notebook->Workflow: initialize_runner_context(view_name)
@@ -26,4 +26,4 @@ Engineer->CLI: Execute askslm.py command
 CLI->Inputs: Load metadata.csv and taxonomy.csv for view
 CLI->Configs: Apply per-project mapping configs
 CLI->Analysis: Run pure compute functions
-CLI->Workspace: Write CSV/HTML outputs under results/<view>/
+CLI->Workspace: Write CSV/HTML outputs under <output_dir>/<view>/
