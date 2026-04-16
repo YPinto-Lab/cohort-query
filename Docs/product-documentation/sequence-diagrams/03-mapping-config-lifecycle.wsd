@@ -1,0 +1,25 @@
+title Mapping Config Lifecycle (Template -> UI -> JSON)
+
+participant Notebook
+participant Pipeline
+participant Processor as SRAProcessor
+participant ConfigDir as Workspaces/<view>/mapping_configs
+participant MappingUI as MappingConfigManager
+participant Engineer
+
+Notebook->Pipeline: refresh_mapping_templates(metadata_df)
+Pipeline->Processor: For each bioproject, refresh_template(...)
+Processor->ConfigDir: Write <project>.json.template
+Pipeline->Notebook: Return project_status_df
+
+Notebook->MappingUI: MappingConfigManager.run()
+MappingUI->ConfigDir: Load *.json.template files
+MappingUI->ConfigDir: Load existing <project>.json when present
+MappingUI->Engineer: Render target-first mapping editor
+Engineer->MappingUI: Add target fields and mapping rules
+MappingUI->ConfigDir: Save per-project <project>.json configs
+
+Notebook->Pipeline: run_enrichment_stage(...)
+Pipeline->ConfigDir: Read project JSON configs
+Pipeline->Processor: Apply mappings to project metadata
+Pipeline->Notebook: Return enriched metadata + missing configs

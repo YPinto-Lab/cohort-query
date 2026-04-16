@@ -1,0 +1,27 @@
+title Stage-Level Cache Decisions (Enrichment, Taxonomy, Merge)
+
+participant Notebook
+participant Pipeline
+participant EnrichmentCache as _cache/enrichment_stage_stamp.json
+participant TaxonomyCache as _cache/taxonomy_stage_stamp.json
+participant MergeCache as _cache/merge_stage_stamp.json
+participant Results
+
+Notebook->Pipeline: run_enrichment_stage(...)
+Pipeline->EnrichmentCache: Compare current stamp vs previous stamp
+EnrichmentCache->Pipeline: cache hit or miss
+Pipeline->Results: Hit: load enriched artifacts
+Pipeline->Results: Miss: rebuild and write enriched artifacts
+
+Notebook->Pipeline: run_taxonomy_stage(...)
+Pipeline->TaxonomyCache: Compare taxonomy stamp
+TaxonomyCache->Pipeline: cache hit or miss
+Pipeline->Results: Hit: load abundance matrix + taxon lookup
+Pipeline->Results: Miss: rebuild and write taxonomy artifacts
+
+Notebook->Pipeline: run_merge_stage(...)
+Pipeline->MergeCache: Compare merge stamp
+MergeCache->Pipeline: cache hit or miss
+Pipeline->Results: Hit: load analysis-wide dataset
+Pipeline->Results: Miss: rebuild merged dataset
+Pipeline->Results: Update compatibility stamp Ask_SLM_Cache_Stamp.json

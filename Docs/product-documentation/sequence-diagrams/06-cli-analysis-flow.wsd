@@ -1,0 +1,27 @@
+title CLI Analysis Flow (askslm.py + cli.py)
+
+participant Engineer
+participant EntryPoint as askslm.py
+participant Parser as cli.build_parser
+participant Command as cmd_*
+participant Loader as _load_and_enrich
+participant Inputs
+participant Configs
+participant Processor as SRAProcessor
+participant Analysis
+participant Output
+
+Engineer->EntryPoint: python askslm.py <command> --view <view> ...
+EntryPoint->Parser: Parse args and dispatch args.func
+Parser->Command: Execute selected command handler
+
+Command->Loader: _load_and_enrich(view, inputs_dir, config_dir)
+Loader->Inputs: Load metadata.csv and taxonomy.csv
+Loader->Configs: For each project, check <project>.json
+Loader->Processor: Apply mapping when config exists
+Loader->Command: Return taxonomy_df and enriched_metadata_df
+
+Command->Analysis: Run compute function for selected command
+Analysis->Command: Return result DataFrame(s)
+Command->Output: Write CSV/HTML outputs under results/<view>/<analysis>/
+Command->Engineer: Print summary and output paths

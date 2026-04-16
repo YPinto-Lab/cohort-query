@@ -1,0 +1,21 @@
+title ENVO Resolution and Dictionary Export
+
+participant Notebook
+participant Pipeline
+participant Metadata
+participant EnvoCache as _cache/ontology_envo_cache.json
+participant OLS4 as EBI OLS4 API
+participant Results
+
+Notebook->Pipeline: enrich_envo_columns(metadata_df)
+Pipeline->EnvoCache: Load local ENVO cache if present
+Pipeline->Metadata: Scan candidate columns for ENVO IDs
+
+Pipeline->EnvoCache: For each ENVO term, check local cache
+Pipeline->OLS4: Fetch missing terms from OLS4 API
+OLS4->Pipeline: Return label and definition or fallback
+Pipeline->Metadata: Add *_label and *_definition columns
+
+Pipeline->EnvoCache: Persist updated local cache
+Pipeline->Results: Write ENVO_Term_Dictionary.csv
+Pipeline->Notebook: Return enriched metadata and ENVO report

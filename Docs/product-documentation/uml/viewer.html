@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UML Viewer - Ask-SLM Docs</title>
+  <style>
+    :root {
+      --bg: #f5f4ef;
+      --paper: #fffef8;
+      --ink: #1f2a20;
+      --muted: #55615b;
+      --line: #d7d6cc;
+      --accent: #2e6a53;
+      --accent2: #1f527f;
+      --shadow: 0 12px 30px rgba(35, 43, 37, 0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(980px 560px at 95% -10%, #d3e3d4 0%, transparent 72%),
+        radial-gradient(860px 520px at -10% 24%, #d8e6f0 0%, transparent 66%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    .shell { width: min(98vw, 1800px); margin: 0 auto; padding: 16px; }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .left, .right { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--ink);
+      text-decoration: none;
+      font-size: 0.88rem;
+      line-height: 1;
+      padding: 9px 12px;
+      cursor: pointer;
+    }
+    .btn.primary { border-color: var(--accent); background: #edf6f0; color: #1f503d; }
+    .btn.secondary { border-color: var(--accent2); background: #edf4fb; color: #1b496d; }
+    .btn.disabled { opacity: .45; pointer-events: none; }
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+      padding: 14px;
+    }
+    h1 { margin: 0 0 6px; font-size: clamp(1.2rem, 2.8vw, 1.75rem); }
+    .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 14px; }
+    .viewer-tools {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .zoom-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .zoom-label {
+      color: var(--muted);
+      font-size: 0.84rem;
+      min-width: 64px;
+      text-align: right;
+    }
+    .zoom-range {
+      width: 160px;
+    }
+    .render {
+      border: 1px dashed #bbc5b9;
+      border-radius: 12px;
+      background: #fff;
+      min-height: calc(100vh - 320px);
+      overflow: auto;
+      padding: 8px;
+    }
+    .render.loading::before {
+      content: "Rendering UML...";
+      display: block;
+      color: var(--muted);
+      padding: 6px 8px 14px;
+      font-size: 0.9rem;
+    }
+    .render-canvas {
+      transform-origin: top left;
+      display: inline-block;
+    }
+    .render-canvas svg {
+      display: block;
+      max-width: none;
+      height: auto;
+    }
+    .error {
+      border: 1px solid #e5b4ab;
+      background: #fff3f1;
+      color: #7b2c1f;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 0.9rem;
+      margin-bottom: 10px;
+      display: none;
+    }
+    .source {
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fdfcf7;
+    }
+    summary {
+      cursor: pointer;
+      padding: 10px 12px;
+      font-weight: 600;
+      color: #2a4d3e;
+    }
+    pre {
+      margin: 0;
+      padding: 12px;
+      border-top: 1px solid var(--line);
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: "SF Mono", Menlo, monospace;
+      font-size: 0.84rem;
+      color: #223128;
+      background: #fff;
+      max-height: 340px;
+      overflow: auto;
+    }
+    .pager {
+      margin-top: 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .hint {
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 5px;
+      max-width: 420px;
+    }
+    @media (max-width: 900px) {
+      .shell { width: 100vw; padding: 10px; }
+      .render { min-height: calc(100vh - 300px); }
+      .zoom-range { width: 120px; }
+      .zoom-label { min-width: 52px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <nav class="topbar">
+      <div class="left">
+        <a class="btn" href="index.html">UML Main Menu</a>
+        <a class="btn" href="../sequence-diagrams/index.html">Sequence Main Menu</a>
+        <a class="btn" href="README.md" target="_blank" rel="noopener">UML README</a>
+      </div>
+      <div class="right">
+        <a class="btn secondary" href="https://www.plantuml.com/plantuml" target="_blank" rel="noopener">Open PlantUML Online</a>
+      </div>
+    </nav>
+
+    <section class="panel">
+      <h1 id="title"></h1>
+      <div id="meta" class="meta"></div>
+      <div id="error" class="error"></div>
+      <div class="viewer-tools">
+        <div class="zoom-controls">
+          <button id="fit" class="btn" type="button">Fit Width</button>
+          <button id="zoomOut" class="btn" type="button">-</button>
+          <button id="zoomIn" class="btn" type="button">+</button>
+          <button id="zoomReset" class="btn" type="button">100%</button>
+          <input id="zoomRange" class="zoom-range" type="range" min="40" max="320" value="100" step="5">
+          <span id="zoomLabel" class="zoom-label">100%</span>
+        </div>
+      </div>
+      <div id="render" class="render loading"></div>
+
+      <details class="source">
+        <summary>View Raw UML Source</summary>
+        <pre id="source"></pre>
+      </details>
+
+      <div class="pager">
+        <div>
+          <a id="prev" class="btn primary">Previous UML</a>
+          <div id="prevHint" class="hint"></div>
+        </div>
+        <div style="text-align: right;">
+          <a id="next" class="btn primary">Next UML</a>
+          <div id="nextHint" class="hint"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const diagrams = [
+      {
+        id: "component",
+        file: "ask-slm-component-diagram.puml",
+        title: "Ask-SLM Architecture Component Diagram",
+        source: `@startuml
+title Ask-SLM Architecture Component Diagram
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+actor "Research Engineer" as User
+
+component "runner.ipynb\\n(Notebook Orchestrator)" as Runner
+component "askslm.py + cli.py\\n(CLI Entry + Commands)" as CLI
+
+package "Workflow Services" {
+  component "managers/runner_pipeline_manager.py" as Pipeline
+}
+
+package "Inputs" {
+  database "Inputs/<view>/metadata.csv" as InMeta
+  database "Inputs/<view>/taxonomy.csv" as InTax
+}
+
+package "Accessors" {
+  component "SRAMetadataAccessor" as MetaAccessor
+  component "SRATaxonomyAccessor" as TaxAccessor
+  component "TaxonomyAccessor\\n(lineage DB)" as LineageAccessor
+}
+
+package "Engine Layer" {
+  component "Engines/MetadataMappingEngine\\n(MetadataMappingEngine)" as Processor
+}
+
+package "Managers (Jupyter UI)" {
+  component "MappingConfigManager" as MappingMgr
+  component "AlphaDiversityManager" as AlphaMgr
+  component "TaxonomicAbundanceManager" as AbundMgr
+}
+
+package "Analysis (Pure Functions)" {
+  component "Engines/AlphaDiversityComputationEngine" as AlphaAnalysis
+  component "Engines/TaxonomicAbundanceComputationEngine" as AbundAnalysis
+}
+
+package "View Workspace" {
+  folder "Workspaces/<view>/inputs" as WsInputs
+  folder "Workspaces/<view>/mapping_configs" as WsConfigs
+  folder "Workspaces/<view>/results" as WsResults
+  folder "Workspaces/<view>/Logs" as WsLogs
+}
+
+User --> Runner
+User --> CLI
+
+Runner --> Pipeline
+Pipeline --> MetaAccessor
+Pipeline --> TaxAccessor
+MetaAccessor --> InMeta
+TaxAccessor --> InTax
+
+Pipeline --> Processor
+Processor --> WsConfigs
+Pipeline --> WsInputs
+Pipeline --> WsResults
+Pipeline --> WsLogs
+Pipeline --> LineageAccessor
+
+Runner --> MappingMgr
+Runner --> AlphaMgr
+Runner --> AbundMgr
+MappingMgr --> WsConfigs
+AlphaMgr --> WsResults
+AbundMgr --> WsResults
+AlphaMgr --> LineageAccessor
+
+CLI --> Processor
+CLI --> AlphaAnalysis
+CLI --> AbundAnalysis
+CLI --> WsResults
+Processor --> InMeta
+CLI --> InTax
+
+note bottom
+Two-DataFrame rule:
+metadata.csv (1 row per acc) and taxonomy.csv (many rows per acc)
+flow separately through pipeline and are only joined narrowly for analysis outputs.
+end note
+
+@enduml`
+      },
+      {
+        id: "core-class",
+        file: "ask-slm-core-class-diagram.puml",
+        title: "Ask-SLM Core Runtime Class Diagram (Simplified)",
+        source: `@startuml
+title Ask-SLM Core Runtime Class Diagram (Simplified)
+
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+
+class RunnerContext {
+  +view_name: str
+  +source_view_input_dir: Path
+  +workspace_dir: Path
+  +workspace_input_dir: Path
+  +config_dir: Path
+  +results_dir: Path
+  +logs_dir: Path
+  +cache_dir: Path
+  +run_log_path: Path
+}
+
+class RunLogger {
+  +run_log_path: Path
+  +echo_default: bool
+  +log(message: str, echo: bool = None): None
+}
+
+class SRAProcessor {
+  +config_dir: Path
+  +refresh_template(metadata_df, project_id, view_name): None
+  +process(metadata_df, project_id, view_name): DataFrame
+}
+
+class TaxonomyAccessor {
+  +build_from_dataframe(df): None
+  +save_database(path): None
+  +aggregate_counts_at_rank(...): DataFrame
+}
+
+class MappingConfigManager {
+  +config_dir: Path
+  +run(): None
+}
+
+class AlphaDiversityManager {
+  +analysis_wide_df: DataFrame
+  +taxon_lookup_df: DataFrame
+  +metadata_cols: list
+  +run(): None
+}
+
+class TaxonomicAbundanceManager {
+  +abundance_metadata_matrix: DataFrame
+  +taxon_lookup_df: DataFrame
+  +metadata_cols: list
+  +run(): None
+}
+
+class RunnerPipeline {
+  +initialize_runner_context(view_name): (RunnerContext, RunLogger)
+  +prepare_workspace_inputs(context, logger)
+  +refresh_mapping_templates(metadata_df, context, logger)
+  +run_enrichment_stage(...)
+  +enrich_envo_columns(...)
+  +run_taxonomy_stage(...)
+  +run_merge_stage(...)
+  +build_or_load_tax_accessor(...)
+}
+
+RunnerPipeline ..> RunnerContext : creates
+RunnerPipeline ..> RunLogger : creates
+RunnerPipeline ..> SRAProcessor : uses
+RunnerPipeline ..> TaxonomyAccessor : uses
+
+MappingConfigManager ..> RunLogger : injected logger
+AlphaDiversityManager ..> TaxonomyAccessor : injected shared accessor
+AlphaDiversityManager ..> RunLogger : injected logger
+TaxonomicAbundanceManager ..> RunLogger : injected logger
+
+note right of RunnerPipeline
+Stages are cache-aware:
+- enrichment stamp
+- taxonomy stamp
+- merge stamp
+end note
+
+@enduml`
+      }
+    ];
+
+    function qp(name) {
+      const u = new URL(window.location.href);
+      return u.searchParams.get(name);
+    }
+
+    const requested = qp("diagram");
+    const idx = Math.max(0, diagrams.findIndex(d => d.id === requested));
+    const current = diagrams[idx];
+    const prev = idx > 0 ? diagrams[idx - 1] : null;
+    const next = idx < diagrams.length - 1 ? diagrams[idx + 1] : null;
+
+    const titleEl = document.getElementById("title");
+    const metaEl = document.getElementById("meta");
+    const sourceEl = document.getElementById("source");
+    const renderEl = document.getElementById("render");
+    const errEl = document.getElementById("error");
+    const fitBtn = document.getElementById("fit");
+    const zoomInBtn = document.getElementById("zoomIn");
+    const zoomOutBtn = document.getElementById("zoomOut");
+    const zoomResetBtn = document.getElementById("zoomReset");
+    const zoomRange = document.getElementById("zoomRange");
+    const zoomLabel = document.getElementById("zoomLabel");
+
+    let zoomPercent = 100;
+    let svgNode = null;
+    let canvasNode = null;
+
+    titleEl.textContent = current.title;
+    metaEl.textContent = "Source file: " + current.file;
+    sourceEl.textContent = current.source;
+
+    const prevEl = document.getElementById("prev");
+    const nextEl = document.getElementById("next");
+    const prevHint = document.getElementById("prevHint");
+    const nextHint = document.getElementById("nextHint");
+
+    if (prev) {
+      prevEl.href = "viewer.html?diagram=" + prev.id;
+      prevHint.textContent = prev.title;
+    } else {
+      prevEl.href = "#";
+      prevEl.classList.add("disabled");
+      prevHint.textContent = "This is the first UML diagram.";
+    }
+
+    if (next) {
+      nextEl.href = "viewer.html?diagram=" + next.id;
+      nextHint.textContent = next.title;
+    } else {
+      nextEl.href = "#";
+      nextEl.classList.add("disabled");
+      nextHint.textContent = "This is the last UML diagram.";
+    }
+
+    function applyZoom(percent) {
+      zoomPercent = Math.max(40, Math.min(320, percent));
+      const scale = zoomPercent / 100;
+      if (canvasNode) {
+        canvasNode.style.transform = "scale(" + scale + ")";
+      }
+      zoomRange.value = String(Math.round(zoomPercent));
+      zoomLabel.textContent = Math.round(zoomPercent) + "%";
+    }
+
+    function fitToWidth() {
+      if (!svgNode || !canvasNode) {
+        return;
+      }
+
+      const viewportWidth = renderEl.clientWidth - 20;
+      const bbox = svgNode.getBBox();
+      if (!bbox || !bbox.width) {
+        applyZoom(100);
+        return;
+      }
+
+      const fitScale = viewportWidth / bbox.width;
+      applyZoom(Math.round(fitScale * 100));
+      renderEl.scrollLeft = 0;
+      renderEl.scrollTop = 0;
+    }
+
+    zoomInBtn.addEventListener("click", () => applyZoom(zoomPercent + 10));
+    zoomOutBtn.addEventListener("click", () => applyZoom(zoomPercent - 10));
+    zoomResetBtn.addEventListener("click", () => applyZoom(100));
+    fitBtn.addEventListener("click", () => fitToWidth());
+    zoomRange.addEventListener("input", () => applyZoom(Number(zoomRange.value)));
+
+    renderEl.addEventListener("wheel", (event) => {
+      if (!event.ctrlKey) {
+        return;
+      }
+      event.preventDefault();
+      const delta = event.deltaY > 0 ? -8 : 8;
+      applyZoom(zoomPercent + delta);
+    }, { passive: false });
+
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "+" || event.key === "=") {
+        applyZoom(zoomPercent + 10);
+      } else if (event.key === "-") {
+        applyZoom(zoomPercent - 10);
+      } else if (event.key.toLowerCase() === "f") {
+        fitToWidth();
+      }
+    });
+
+    async function renderUml() {
+      try {
+        const res = await fetch("https://kroki.io/plantuml/svg", {
+          method: "POST",
+          headers: { "Content-Type": "text/plain" },
+          body: current.source
+        });
+
+        if (!res.ok) {
+          throw new Error("Render API returned " + res.status);
+        }
+
+        const svg = await res.text();
+        renderEl.classList.remove("loading");
+        renderEl.innerHTML = `<div id="renderCanvas" class="render-canvas">${svg}</div>`;
+        canvasNode = document.getElementById("renderCanvas");
+        svgNode = renderEl.querySelector("svg");
+
+        if (svgNode) {
+          svgNode.style.width = "auto";
+          svgNode.style.height = "auto";
+          fitToWidth();
+        }
+      } catch (err) {
+        renderEl.classList.remove("loading");
+        renderEl.innerHTML = "";
+        errEl.style.display = "block";
+        errEl.innerHTML = "Unable to render UML online from this browser context. You can still use Open PlantUML Online or view raw source below.";
+      }
+    }
+
+    renderUml();
+  </script>
+</body>
+</html>

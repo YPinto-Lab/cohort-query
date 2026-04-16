@@ -1,0 +1,87 @@
+@startuml
+title Ask-SLM Architecture Component Diagram
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+actor "Research Engineer" as User
+
+component "runner.ipynb\n(Notebook Orchestrator)" as Runner
+component "askslm.py + cli.py\n(CLI Entry + Commands)" as CLI
+
+package "Workflow Services" {
+  component "managers/runner_pipeline_manager.py" as Pipeline
+}
+
+package "Inputs" {
+  database "Inputs/<view>/metadata.csv" as InMeta
+  database "Inputs/<view>/taxonomy.csv" as InTax
+}
+
+package "Accessors" {
+  component "SRAMetadataAccessor" as MetaAccessor
+  component "SRATaxonomyAccessor" as TaxAccessor
+  component "TaxonomyAccessor\n(lineage DB)" as LineageAccessor
+}
+
+package "Engine Layer" {
+  component "Engines/MetadataMappingEngine\n(MetadataMappingEngine)" as Processor
+}
+
+package "Managers (Jupyter UI)" {
+  component "MappingConfigManager" as MappingMgr
+  component "AlphaDiversityManager" as AlphaMgr
+  component "TaxonomicAbundanceManager" as AbundMgr
+}
+
+package "Analysis (Pure Functions)" {
+  component "Engines/AlphaDiversityComputationEngine" as AlphaAnalysis
+  component "Engines/TaxonomicAbundanceComputationEngine" as AbundAnalysis
+}
+
+package "View Workspace" {
+  folder "Workspaces/<view>/inputs" as WsInputs
+  folder "Workspaces/<view>/mapping_configs" as WsConfigs
+  folder "Workspaces/<view>/results" as WsResults
+  folder "Workspaces/<view>/Logs" as WsLogs
+}
+
+User --> Runner
+User --> CLI
+
+Runner --> Pipeline
+Pipeline --> MetaAccessor
+Pipeline --> TaxAccessor
+MetaAccessor --> InMeta
+TaxAccessor --> InTax
+
+Pipeline --> Processor
+Processor --> WsConfigs
+Pipeline --> WsInputs
+Pipeline --> WsResults
+Pipeline --> WsLogs
+Pipeline --> LineageAccessor
+
+Runner --> MappingMgr
+Runner --> AlphaMgr
+Runner --> AbundMgr
+MappingMgr --> WsConfigs
+AlphaMgr --> WsResults
+AbundMgr --> WsResults
+AlphaMgr --> LineageAccessor
+
+CLI --> Processor
+CLI --> AlphaAnalysis
+CLI --> AbundAnalysis
+CLI --> WsResults
+Processor --> InMeta
+CLI --> InTax
+
+note bottom
+Two-DataFrame rule:
+metadata.csv (1 row per acc) and taxonomy.csv (many rows per acc)
+flow separately through pipeline and are only joined narrowly for analysis outputs.
+end note
+
+@enduml

@@ -22,43 +22,134 @@ python askslm.py abundance-matrix --view PhagesInBlood
 # Outputs go to results/<view>/
 ```
 
-## Architecture (iDesign Layered Pattern)
+## iDesign Architecture Cheat Sheet (How To Think Before Coding)
 
-The codebase follows a strict three-layer architecture:
+### 1) Core Philosophy: Volatility-Based Decomposition
+- Decompose by **what changes**, not by feature buckets.
+- Isolate each volatility axis in one component so changes do not ripple across the codebase.
+- Goal: if a requirement/algorithm/technology changes, a single layer or component absorbs most of the change.
 
-```
-Two CSV files → Accessors → Processors → Managers → Jupyter UI (ipywidgets)
-                                       ↓
-                               analysis/ functions → CLI (askslm.py)
-```
+### 2) Layer Hierarchy (Dependencies Flow Down Only)
 
-**Core design principle**: `metadata.csv` (1 row per acc) and `taxonomy.csv` (many rows per acc, one per taxon) flow as **two separate DataFrames** throughout the entire pipeline. They are never merged — the old SQL JOIN that duplicated metadata columns across every taxon row has been removed. Grouping joins only happen narrowly on small per-sample summary DataFrames inside managers.
+1. **Client (Trigger/UI)**
+  - Entry points such as Jupyter notebook cells and CLI command invocation.
+  - Captures input and presents output.
+  - Should not contain business logic.
 
-### Layer 1: Accessors (`/Accessors/`)
-Fetch and validate raw data at system boundaries. Each Accessor reads exactly one source.
-- **SRAMetadataAccessor** (`Accessors/SraAccessor/sra_metadata_accessor.py`): Reads `metadata.csv`, validates against `SRAMetadataSchema`
-- **SRATaxonomyAccessor** (`Accessors/SraAccessor/sra_taxonomy_accessor.py`): Reads `taxonomy.csv`, validates against `SRATaxonomySchema`
-- **TaxonomyAccessor** (`Accessors/TaxonomyAccessor/`): Builds an in-memory nested-set lineage DB from a taxonomy DataFrame — enables O(1) ancestor queries. Distinct from SRATaxonomyAccessor (which only reads files).
-- **MetalogAccessor**: Loads `metalog_human_schema.json` (1000+ standardized field definitions scraped from metalog.embl.de)
+2. **Manager (Orchestrator / Use-Case Volatility)**
+  - Coordinates steps and ordering for a use case.
+  - Knows *what* must happen and *when*.
+  - Delegates heavy computation and I/O details.
 
-### Layer 2: Processors (`/processors/`)
-Transform data using a "Guided Configuration" pattern. Receives only `metadata_df` (no taxonomy columns).
-1. First run: discovers all metadata keys in `jattr` (JSON) and `attributes` (CSV) columns → writes a `mapping_configs/<PROJECT_ID>.json.template` with sample values
-2. User manually creates `mapping_configs/<PROJECT_ID>.json` defining field mappings
-3. Subsequent runs: applies the mapping config to produce `enriched_metadata_df` with standardized columns (sex, Group, subject_id, etc.)
+3. **Engine (Rules/Algorithm Volatility)**
+  - Pure computation and business logic.
+  - Input -> logic -> output, with no external side effects.
+  - No direct DB/API/filesystem/UI access.
 
-### Layer 3: Managers (`/managers/`)
-Orchestrate analysis and present interactive Jupyter widget UIs. Each accepts `(taxonomy_df, metadata_df)`.
-- **MappingConfigManager**: Target-field-first UI for creating/editing mapping configs; supports static values, source key references, and value remapping
-- **AlphaDiversityManager**: Richness (# taxa) and Shannon index; taxon filtering; group comparison
-- **TaxonomicAbundanceManager**: Relative abundance, prevalence stats, CSV export
-- **LongitudinalAnalysisManager**: Trajectory visualization, paired comparisons, change-point detection. *(Pending refactor to (taxonomy_df, metadata_df) signature)*
+4. **Accessor (Resource/Technology Volatility)**
+  - Only layer allowed to touch external resources (files, APIs, databases, cloud services).
+  - Hides technology-specific complexity from Managers/Engines.
 
-### Layer 4: Analysis functions + CLI (`/analysis/`, `askslm.py`)
-Pure computation functions extracted from managers — no UI dependencies, usable from the CLI or notebooks.
-- `analysis/alpha_diversity.py` — `compute_alpha_diversity(taxonomy_df, metadata_df, rank, ...)`
-- `analysis/taxonomic_abundance.py` — `compute_taxonomic_abundance(taxonomy_df, metadata_df, rank, taxon, ...)`
-- `askslm.py` — command-line entry point: `alpha-diversity`, `taxonomic-abundance`, `abundance-matrix`
+### 3) Rules of Engagement (Who Can Call Whom)
+- **Client** -> Managers
+- **Manager** -> Managers, Engines, Accessors
+- **Engine** -> Engines, Accessors (only when data fetch is required)
+- **Accessor** -> Accessors, external systems/utilities
+- **Never call upward**. Higher layers do not get imported/called by lower layers.
+
+### 4) Key Terms
+- **Contract (Interface):** strict agreement between layers (schema models, typed payloads, expected columns).
+- **DTO (Data Transfer Object):** data-only payload moved across layers.
+- **Encapsulation:** hide implementation details; callers depend on behavior, not internals.
+- **Volatility examples:**
+  - Algorithm change (e.g., t-test -> Mann-Whitney) => Engine update.
+  - Process order change (pipeline step reorder) => Manager update.
+  - Resource change (storage/API migration) => Accessor update.
+
+### 5) Python/Data Science Pro Tips
+1. Keep Managers thin: orchestrate, do not become 1000-line pandas calculators.
+2. Accessors return validated, clean DataFrames that satisfy contracts.
+3. Keep UI in notebook/client and logic in `.py` modules.
+4. Prefer explicit artifacts and typed contracts over ad-hoc DataFrame assumptions.
+5. Preserve the two-DataFrame rule (`metadata_df` separate from `taxonomy_df`) until narrow, intentional joins.
+
+### 6) Ask-SLM Specific Mapping
+- **Client:** `runner.ipynb` cells, `askslm.py` CLI entry.
+- **Manager:** orchestration flow modules (for example `managers/runner_pipeline_manager.py`).
+- **Engine:** business/UI computation modules under `Engines/` (alpha diversity, taxonomic abundance, mapping config, metadata mapping).
+- **Accessor:** classes under `Accessors/` and external I/O boundaries.
+
+### 7) Canonical Folders (Current Migration State)
+- `Engines/` is the canonical home for engine code.
+- `managers/` is retained for orchestration and backward compatibility wrappers.
+- New code should import from `Engines/*` and orchestration managers directly.
+
+## Documentation Maintenance Rule (Mandatory)
+
+Any change that affects **flow, architecture, contracts, component responsibilities, stage order, caching behavior, or outputs** must trigger a docs review in the same PR/change set.
+
+Checklist:
+1. Did a layer responsibility change (Client/Manager/Engine/Accessor)?
+2. Did call direction or dependency flow change?
+3. Did input/output artifacts, file locations, or cache stamps change?
+4. Did mapping config schema or manager workflow change?
+5. Did UML/sequence diagrams become outdated?
+
+If yes to any item, update relevant docs immediately (for example: `CLAUDE.md`, `README.md`, `docs/product-documentation/sequence-diagrams/*`, `docs/product-documentation/uml/*`).
+
+## Engineering Standards & Principles Cheat Sheet
+
+### 1) SOLID Principles
+
+- **Single Responsibility (SRP):** a class/module has one reason to change.
+- **Open/Closed (OCP):** extend behavior with new code; avoid editing stable code paths.
+- **Liskov Substitution (LSP):** subtypes must preserve base contracts.
+- **Interface Segregation (ISP):** prefer focused interfaces over large, mixed interfaces.
+- **Dependency Inversion (DIP):** depend on abstractions, not concrete infrastructure.
+
+### 2) Essential Design Patterns (Use Pragmatically)
+
+- **Factory / Abstract Factory / Builder:** controlled construction of objects and families.
+- **Adapter / Facade / Decorator / Proxy:** integration boundaries and composition.
+- **Strategy / Observer / Command:** pluggable algorithms and decoupled behavior flow.
+- Avoid pattern overuse; choose the simplest pattern that solves the current volatility.
+
+### 3) Clean Code (Uncle Bob)
+
+#### Naming
+- Use intention-revealing, pronounceable, searchable names.
+- Avoid vague distinctions (`data`, `info`, `obj`) and misleading type hints in names.
+
+#### Functions
+- Keep functions small and single-purpose.
+- Use one abstraction level per function.
+- Prefer 0-2 parameters; justify larger signatures.
+- Apply Command Query Separation: mutate or return, not both when avoidable.
+
+#### Comments
+- Prefer self-explanatory code over verbose comments.
+- Keep comments for context/warnings/contracts/TODOs, not narration.
+- Delete commented-out dead code (source control retains history).
+
+#### Error Handling
+- Prefer exceptions to return-code branching.
+- Provide context-rich exception messages.
+- Avoid returning `None` where empty objects/collections are safer.
+
+### 4) KISS + YAGNI
+
+- Default to simple, explicit solutions.
+- Do not build speculative features.
+- Optimize for readability and maintainability over cleverness.
+- If two solutions are valid, choose the one future maintainers can understand fastest.
+
+### 5) Implementation Rules For AI/Contributors
+
+1. Before coding, identify the volatility axis (process, algorithm, or resource).
+2. Place code in the correct layer (`Accessors`, `Engines`, `managers`, `Client`).
+3. Keep dependency direction downward only.
+4. Prefer adding new modules/classes over editing stable, reused flows.
+5. If changing architecture/flow/contracts, update docs in the same change.
 
 ## Input Folder Structure
 
@@ -93,7 +184,7 @@ Each project needs a JSON config in `mapping_configs/`:
 }
 ```
 
-The `.json.template` file (auto-generated by SRAProcessor) shows all discoverable keys and their sample values to inform manual config creation.
+The `.json.template` file (auto-generated by `MetadataMappingEngine`, legacy alias: `SRAProcessor`) shows all discoverable keys and their sample values to inform manual config creation.
 
 ## Key Conventions
 

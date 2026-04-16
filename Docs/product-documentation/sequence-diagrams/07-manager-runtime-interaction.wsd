@@ -1,0 +1,28 @@
+title Manager Runtime Interaction in Notebook
+
+participant Engineer
+participant Notebook
+participant Pipeline
+participant SharedTaxDB as TaxonomyAccessor DB
+participant AlphaManager
+participant MappingManager
+participant AbundanceManager
+participant Results
+participant Logs
+
+Engineer->Notebook: Execute manager cells after artifacts are ready
+Notebook->Pipeline: build_or_load_tax_accessor(...)
+Pipeline->SharedTaxDB: Load cached lineage DB or rebuild
+
+Notebook->MappingManager: run()
+MappingManager->Logs: Emit stage logs through injected logger
+MappingManager->Results: Read templates/configs and save JSON configs
+
+Notebook->AlphaManager: run(analysis_wide_df, taxon_lookup_df, metadata_cols, tax_accessor)
+AlphaManager->SharedTaxDB: Reuse injected taxonomy accessor
+AlphaManager->Logs: Emit analysis and UI actions
+AlphaManager->Results: Save optional export files
+
+Notebook->AbundanceManager: run(abundance_metadata_matrix, taxon_lookup_df, metadata_cols)
+AbundanceManager->Logs: Emit stage logs through injected logger
+AbundanceManager->Results: Lazy-build heavy matrices only when needed

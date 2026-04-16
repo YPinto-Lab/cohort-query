@@ -1,0 +1,84 @@
+@startuml
+title Ask-SLM Core Runtime Class Diagram (Simplified)
+
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+
+class RunnerContext {
+  +view_name: str
+  +source_view_input_dir: Path
+  +workspace_dir: Path
+  +workspace_input_dir: Path
+  +config_dir: Path
+  +results_dir: Path
+  +logs_dir: Path
+  +cache_dir: Path
+  +run_log_path: Path
+}
+
+class RunLogger {
+  +run_log_path: Path
+  +echo_default: bool
+  +log(message: str, echo: bool = None): None
+}
+
+class SRAProcessor {
+  +config_dir: Path
+  +refresh_template(metadata_df, project_id, view_name): None
+  +process(metadata_df, project_id, view_name): DataFrame
+}
+
+class TaxonomyAccessor {
+  +build_from_dataframe(df): None
+  +save_database(path): None
+  +aggregate_counts_at_rank(...): DataFrame
+}
+
+class MappingConfigManager {
+  +config_dir: Path
+  +run(): None
+}
+
+class AlphaDiversityManager {
+  +analysis_wide_df: DataFrame
+  +taxon_lookup_df: DataFrame
+  +metadata_cols: list
+  +run(): None
+}
+
+class TaxonomicAbundanceManager {
+  +abundance_metadata_matrix: DataFrame
+  +taxon_lookup_df: DataFrame
+  +metadata_cols: list
+  +run(): None
+}
+
+class RunnerPipeline {
+  +initialize_runner_context(view_name): (RunnerContext, RunLogger)
+  +prepare_workspace_inputs(context, logger)
+  +refresh_mapping_templates(metadata_df, context, logger)
+  +run_enrichment_stage(...)
+  +enrich_envo_columns(...)
+  +run_taxonomy_stage(...)
+  +run_merge_stage(...)
+  +build_or_load_tax_accessor(...)
+}
+
+RunnerPipeline ..> RunnerContext : creates
+RunnerPipeline ..> RunLogger : creates
+RunnerPipeline ..> SRAProcessor : uses
+RunnerPipeline ..> TaxonomyAccessor : uses
+
+MappingConfigManager ..> RunLogger : injected logger
+AlphaDiversityManager ..> TaxonomyAccessor : injected shared accessor
+AlphaDiversityManager ..> RunLogger : injected logger
+TaxonomicAbundanceManager ..> RunLogger : injected logger
+
+note right of RunnerPipeline
+Stages are cache-aware:
+- enrichment stamp
+- taxonomy stamp
+- merge stamp
+end note
+
+@enduml

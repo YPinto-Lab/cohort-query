@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Diagram Viewer - Ask-SLM Docs</title>
+  <style>
+    :root {
+      --bg: #f7f5ef;
+      --paper: #fffdf6;
+      --ink: #1f2a20;
+      --muted: #55615b;
+      --line: #d8d2c2;
+      --accent: #2d6d54;
+      --accent2: #1f537f;
+      --shadow: 0 12px 30px rgba(39, 46, 42, 0.12);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(920px 520px at 96% -8%, #d2e3d4 0%, transparent 70%),
+        radial-gradient(850px 520px at -8% 24%, #d5e5ef 0%, transparent 65%),
+        var(--bg);
+    }
+
+    .shell {
+      max-width: 1220px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .left, .right {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-size: 0.88rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn.primary {
+      border-color: var(--accent);
+      background: #edf6f0;
+      color: #1d513c;
+    }
+
+    .btn.secondary {
+      border-color: var(--accent2);
+      background: #edf4fb;
+      color: #1b4a6f;
+    }
+
+    .btn.disabled {
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: clamp(1.2rem, 2.8vw, 1.75rem);
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 14px;
+    }
+
+    .diagram-wrap {
+      border: 1px dashed #b8c4b8;
+      border-radius: 12px;
+      padding: 14px;
+      background: #fff;
+      overflow: auto;
+      min-height: 280px;
+    }
+
+    .source {
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fdfcf7;
+    }
+
+    summary {
+      cursor: pointer;
+      padding: 10px 12px;
+      font-weight: 600;
+      color: #2a4d3e;
+    }
+
+    pre {
+      margin: 0;
+      padding: 12px;
+      border-top: 1px solid var(--line);
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: "SF Mono", Menlo, monospace;
+      font-size: 0.85rem;
+      color: #223128;
+      background: #fff;
+      max-height: 320px;
+      overflow: auto;
+    }
+
+    .pager {
+      margin-top: 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .caption {
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 5px;
+      max-width: 420px;
+    }
+
+    .empty {
+      border: 1px dashed #c1c9be;
+      border-radius: 12px;
+      background: #fff;
+      color: var(--muted);
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <nav class="topbar">
+      <div class="left">
+        <a class="btn" href="index.html">Main Menu</a>
+        <a class="btn" href="README.md" target="_blank" rel="noopener">Diagram README</a>
+      </div>
+      <div class="right">
+        <a id="openEditorTop" class="btn secondary" href="https://www.websequencediagrams.com/app" target="_blank" rel="noopener">Open WSD Editor</a>
+      </div>
+    </nav>
+
+    <section class="panel" id="content"></section>
+  </main>
+
+  <script>
+    const diagrams = [
+      {
+        id: "00-system-context",
+        file: "00-system-context.wsd",
+        title: "Ask-SLM System Context (Notebook and CLI)",
+        source: `title Ask-SLM System Context (Notebook and CLI)
+
+participant Engineer
+participant RunnerNotebook as Notebook
+participant RunnerPipeline as Workflow
+participant InputsFolder as Inputs
+participant MappingConfigs as Configs
+participant Workspace as Workspaces
+participant ManagersUI as Managers
+participant CLI
+participant AnalysisLayer as Analysis
+
+Engineer->Notebook: Run notebook cells for selected view
+Notebook->Workflow: initialize_runner_context(view_name)
+Workflow->Workspace: Prepare view-scoped folders
+Notebook->Workflow: prepare_workspace_inputs()
+Workflow->Inputs: Read metadata/taxonomy CSV parts
+Workflow->Workspace: Write canonical metadata.csv/taxonomy.csv
+Notebook->Workflow: run enrichment, taxonomy, merge stages
+Workflow->Configs: Read mapping JSON per project
+Workflow->Workspace: Write results, cache stamps, logs
+Notebook->Managers: Launch interactive managers
+Managers->Workspace: Read merged artifacts and write exports
+
+Engineer->CLI: Execute askslm.py command
+CLI->Inputs: Load metadata.csv and taxonomy.csv for view
+CLI->Configs: Apply per-project mapping configs
+CLI->Analysis: Run pure compute functions
+CLI->Workspace: Write CSV/HTML outputs under results/<view>/`
+      },
+      {
+        id: "01-runner-end-to-end",
+        file: "01-runner-end-to-end.wsd",
+        title: "Runner End-to-End Sequence (runner.ipynb)",
+        source: `title Runner End-to-End Sequence (runner.ipynb)
+
+participant Engineer
+participant Notebook
+participant Pipeline as runner_pipeline.py
+participant MetadataAccessor
+participant TaxonomyAccessor
+participant Processor as SRAProcessor
+participant Cache
+participant Results
+participant Logs
+participant AlphaManager
+participant AbundanceManager
+
+Engineer->Notebook: Set view_name and execute notebook
+Notebook->Pipeline: initialize_runner_context(view_name)
+Pipeline->Logs: Create new run_<timestamp>.log
+Pipeline->Pipeline: Return RunnerContext + RunLogger
+
+Notebook->Pipeline: prepare_workspace_inputs(context)
+Pipeline->MetadataAccessor: Load metadata CSV parts
+Pipeline->TaxonomyAccessor: Load taxonomy CSV parts
+Pipeline->Pipeline: Aggregate and deduplicate
+Pipeline->Results: Write canonical workspace inputs
+
+Notebook->Pipeline: refresh_mapping_templates(metadata_df)
+Pipeline->Processor: refresh_template(project_id, view_name)
+Pipeline->Results: Update *.json.template files
+
+Notebook->Pipeline: run_enrichment_stage(...)
+Pipeline->Cache: Check enrichment stamp + artifacts
+Pipeline->Processor: process project metadata where config exists
+Pipeline->Results: Save enriched metadata + mapped columns
+
+Notebook->Pipeline: enrich_envo_columns(...)
+Pipeline->Results: Write ENVO_Term_Dictionary.csv
+
+Notebook->Pipeline: run_taxonomy_stage(...)
+Pipeline->Cache: Check taxonomy stamp
+Pipeline->Results: Save abundance matrix + taxon lookup
+
+Notebook->Pipeline: run_merge_stage(...)
+Pipeline->Cache: Check merge stamp
+Pipeline->Results: Save Ask_SLM_Analysis_Wide_Dataset.csv
+
+Notebook->Pipeline: build_or_load_tax_accessor(...)
+Pipeline->Cache: Reuse or build lineage DB
+
+Notebook->AlphaManager: run()
+Notebook->AbundanceManager: run()`
+      },
+      {
+        id: "02-input-aggregation-and-canonicalization",
+        file: "02-input-aggregation-and-canonicalization.wsd",
+        title: "Input Aggregation and Canonicalization",
+        source: `title Input Aggregation and Canonicalization
+
+participant Notebook
+participant Pipeline
+participant SourceInputs as Inputs/<view>
+participant WorkspaceInputs as Workspaces/<view>/inputs
+participant MetadataAgg as Metadata Aggregator
+participant TaxonomyAgg as Taxonomy Aggregator
+
+Notebook->Pipeline: prepare_workspace_inputs(context)
+Pipeline->SourceInputs: Scan metadata patterns
+Pipeline->SourceInputs: Scan taxonomy patterns
+
+Pipeline->MetadataAgg: Concatenate metadata parts
+MetadataAgg->MetadataAgg: Drop duplicate acc rows (keep latest)
+MetadataAgg->WorkspaceInputs: Write metadata.csv
+
+Pipeline->TaxonomyAgg: Concatenate taxonomy parts
+TaxonomyAgg->TaxonomyAgg: Group by acc+taxon key columns
+TaxonomyAgg->TaxonomyAgg: Sum total_count and self_count
+TaxonomyAgg->WorkspaceInputs: Write taxonomy.csv
+
+Pipeline->Notebook: Return metadata_df, taxonomy_df, output paths`
+      },
+      {
+        id: "03-mapping-config-lifecycle",
+        file: "03-mapping-config-lifecycle.wsd",
+        title: "Mapping Config Lifecycle (Template -> UI -> JSON)",
+        source: `title Mapping Config Lifecycle (Template -> UI -> JSON)
+
+participant Notebook
+participant Pipeline
+participant Processor as SRAProcessor
+participant ConfigDir as Workspaces/<view>/mapping_configs
+participant MappingUI as MappingConfigManager
+participant Engineer
+
+Notebook->Pipeline: refresh_mapping_templates(metadata_df)
+Pipeline->Processor: For each bioproject, refresh_template(...)
+Processor->ConfigDir: Write <project>.json.template
+Pipeline->Notebook: Return project_status_df
+
+Notebook->MappingUI: MappingConfigManager.run()
+MappingUI->ConfigDir: Load *.json.template files
+MappingUI->ConfigDir: Load existing <project>.json when present
+MappingUI->Engineer: Render target-first mapping editor
+Engineer->MappingUI: Add target fields and mapping rules
+MappingUI->ConfigDir: Save per-project <project>.json configs
+
+Notebook->Pipeline: run_enrichment_stage(...)
+Pipeline->ConfigDir: Read project JSON configs
+Pipeline->Processor: Apply mappings to project metadata
+Pipeline->Notebook: Return enriched metadata + missing configs`
+      },
+      {
+        id: "04-stage-cache-decisions",
+        file: "04-stage-cache-decisions.wsd",
+        title: "Stage-Level Cache Decisions (Enrichment, Taxonomy, Merge)",
+        source: `title Stage-Level Cache Decisions (Enrichment, Taxonomy, Merge)
+
+participant Notebook
+participant Pipeline
+participant EnrichmentCache as _cache/enrichment_stage_stamp.json
+participant TaxonomyCache as _cache/taxonomy_stage_stamp.json
+participant MergeCache as _cache/merge_stage_stamp.json
+participant Results
+
+Notebook->Pipeline: run_enrichment_stage(...)
+Pipeline->EnrichmentCache: Compare current stamp vs previous stamp
+EnrichmentCache->Pipeline: cache hit or miss
+Pipeline->Results: Hit: load enriched artifacts
+Pipeline->Results: Miss: rebuild and write enriched artifacts
+
+Notebook->Pipeline: run_taxonomy_stage(...)
+Pipeline->TaxonomyCache: Compare taxonomy stamp
+TaxonomyCache->Pipeline: cache hit or miss
+Pipeline->Results: Hit: load abundance matrix + taxon lookup
+Pipeline->Results: Miss: rebuild and write taxonomy artifacts
+
+Notebook->Pipeline: run_merge_stage(...)
+Pipeline->MergeCache: Compare merge stamp
+MergeCache->Pipeline: cache hit or miss
+Pipeline->Results: Hit: load analysis-wide dataset
+Pipeline->Results: Miss: rebuild merged dataset
+Pipeline->Results: Update compatibility stamp Ask_SLM_Cache_Stamp.json`
+      },
+      {
+        id: "05-envo-resolution-flow",
+        file: "05-envo-resolution-flow.wsd",
+        title: "ENVO Resolution and Dictionary Export",
+        source: `title ENVO Resolution and Dictionary Export
+
+participant Notebook
+participant Pipeline
+participant Metadata
+participant EnvoCache as _cache/ontology_envo_cache.json
+participant OLS4 as EBI OLS4 API
+participant Results
+
+Notebook->Pipeline: enrich_envo_columns(metadata_df)
+Pipeline->EnvoCache: Load local ENVO cache if present
+Pipeline->Metadata: Scan candidate columns for ENVO IDs
+
+Pipeline->EnvoCache: For each ENVO term, check local cache
+Pipeline->OLS4: Fetch missing terms from OLS4 API
+OLS4->Pipeline: Return label and definition or fallback
+Pipeline->Metadata: Add *_label and *_definition columns
+
+Pipeline->EnvoCache: Persist updated local cache
+Pipeline->Results: Write ENVO_Term_Dictionary.csv
+Pipeline->Notebook: Return enriched metadata and ENVO report`
+      },
+      {
+        id: "06-cli-analysis-flow",
+        file: "06-cli-analysis-flow.wsd",
+        title: "CLI Analysis Flow (askslm.py + cli.py)",
+        source: `title CLI Analysis Flow (askslm.py + cli.py)
+
+participant Engineer
+participant EntryPoint as askslm.py
+participant Parser as cli.build_parser
+participant Command as cmd_*
+participant Loader as _load_and_enrich
+participant Inputs
+participant Configs
+participant Processor as SRAProcessor
+participant Analysis
+participant Output
+
+Engineer->EntryPoint: python askslm.py <command> --view <view> ...
+EntryPoint->Parser: Parse args and dispatch args.func
+Parser->Command: Execute selected command handler
+
+Command->Loader: _load_and_enrich(view, inputs_dir, config_dir)
+Loader->Inputs: Load metadata.csv and taxonomy.csv
+Loader->Configs: For each project, check <project>.json
+Loader->Processor: Apply mapping when config exists
+Loader->Command: Return taxonomy_df and enriched_metadata_df
+
+Command->Analysis: Run compute function for selected command
+Analysis->Command: Return result DataFrame(s)
+Command->Output: Write CSV/HTML outputs under results/<view>/<analysis>/
+Command->Engineer: Print summary and output paths`
+      },
+      {
+        id: "07-manager-runtime-interaction",
+        file: "07-manager-runtime-interaction.wsd",
+        title: "Manager Runtime Interaction in Notebook",
+        source: `title Manager Runtime Interaction in Notebook
+
+participant Engineer
+participant Notebook
+participant Pipeline
+participant SharedTaxDB as TaxonomyAccessor DB
+participant AlphaManager
+participant MappingManager
+participant AbundanceManager
+participant Results
+participant Logs
+
+Engineer->Notebook: Execute manager cells after artifacts are ready
+Notebook->Pipeline: build_or_load_tax_accessor(...)
+Pipeline->SharedTaxDB: Load cached lineage DB or rebuild
+
+Notebook->MappingManager: run()
+MappingManager->Logs: Emit stage logs through injected logger
+MappingManager->Results: Read templates/configs and save JSON configs
+
+Notebook->AlphaManager: run(analysis_wide_df, taxon_lookup_df, metadata_cols, tax_accessor)
+AlphaManager->SharedTaxDB: Reuse injected taxonomy accessor
+AlphaManager->Logs: Emit analysis and UI actions
+AlphaManager->Results: Save optional export files
+
+Notebook->AbundanceManager: run(abundance_metadata_matrix, taxon_lookup_df, metadata_cols)
+AbundanceManager->Logs: Emit stage logs through injected logger
+AbundanceManager->Results: Lazy-build heavy matrices only when needed`
+      }
+    ];
+
+    function esc(text) {
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function qp(name) {
+      const url = new URL(window.location.href);
+      return url.searchParams.get(name);
+    }
+
+    const content = document.getElementById("content");
+    const requested = qp("diagram");
+    const currentIndex = Math.max(0, diagrams.findIndex(d => d.id === requested));
+    const current = diagrams[currentIndex];
+
+    if (!current) {
+      content.innerHTML = `<div class="empty">Diagram was not found. <a href="index.html">Go back to main menu</a>.</div>`;
+    } else {
+      const prev = currentIndex > 0 ? diagrams[currentIndex - 1] : null;
+      const next = currentIndex < diagrams.length - 1 ? diagrams[currentIndex + 1] : null;
+
+      document.title = current.title + " - Ask-SLM Docs";
+
+      const cdrawUrl = "https://www.websequencediagrams.com/cgi-bin/cdraw?s=modern-blue&m=" + encodeURIComponent(current.source);
+
+      content.innerHTML = `
+        <h1>${current.title}</h1>
+        <div class="meta">Source file: ${current.file}</div>
+
+        <div class="diagram-wrap">
+          <div class="wsd" wsd-style="modern-blue" wsd-width="1120"><pre>${esc(current.source)}</pre></div>
+        </div>
+
+        <details class="source">
+          <summary>View Raw Diagram Source</summary>
+          <pre>${esc(current.source)}</pre>
+        </details>
+
+        <div class="pager">
+          <div>
+            <a class="btn primary ${prev ? "" : "disabled"}" href="${prev ? "viewer.html?diagram=" + prev.id : "#"}">Previous Diagram</a>
+            <div class="caption">${prev ? prev.title : "This is the first diagram."}</div>
+          </div>
+          <div style="text-align: right;">
+            <a class="btn primary ${next ? "" : "disabled"}" href="${next ? "viewer.html?diagram=" + next.id : "#"}">Next Diagram</a>
+            <div class="caption">${next ? next.title : "This is the last diagram."}</div>
+          </div>
+        </div>
+      `;
+
+      const editorTop = document.getElementById("openEditorTop");
+      editorTop.href = "https://www.websequencediagrams.com/?m=" + encodeURIComponent(current.source);
+
+      // Fallback: if embed script is blocked, show direct rendered image from cdraw endpoint.
+      setTimeout(() => {
+        const rendered = content.querySelector(".diagram-wrap img");
+        if (!rendered) {
+          const wrap = content.querySelector(".diagram-wrap");
+          wrap.innerHTML = `<img src="${cdrawUrl}" alt="${current.title}" style="max-width:100%;height:auto;display:block;">`;
+        }
+      }, 900);
+    }
+  </script>
+  <script src="https://www.websequencediagrams.com/service.js"></script>
+</body>
+</html>

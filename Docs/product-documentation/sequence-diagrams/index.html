@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ask-SLM Sequence Diagram Navigator</title>
+  <style>
+    :root {
+      --bg: #f7f6f1;
+      --bg-alt: #ece8dc;
+      --card: #fffdf6;
+      --ink: #1f2a20;
+      --muted: #55615b;
+      --accent: #3f7a61;
+      --accent-2: #0f4d8a;
+      --line: #d8d2c2;
+      --shadow: 0 12px 28px rgba(39, 46, 42, 0.12);
+      --radius-lg: 18px;
+      --radius-md: 12px;
+      --radius-sm: 10px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(1200px 700px at 92% -10%, #c8dbc9 0%, transparent 70%),
+        radial-gradient(900px 500px at -5% 20%, #cde1ef 0%, transparent 65%),
+        linear-gradient(180deg, var(--bg) 0%, var(--bg-alt) 100%);
+      min-height: 100vh;
+    }
+
+    .shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px 20px 48px;
+    }
+
+    .hero {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: linear-gradient(130deg, #fefdf7 0%, #f6f8f2 100%);
+      padding: 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 20px;
+    }
+
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: clamp(1.4rem, 3.4vw, 2rem);
+      letter-spacing: 0.2px;
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+      max-width: 900px;
+    }
+
+    .toolbar {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: 1fr auto auto;
+      margin: 18px 0 22px;
+    }
+
+    .toolbar input,
+    .toolbar select,
+    .toolbar a {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: #fff;
+      color: var(--ink);
+      font-size: 0.95rem;
+      text-decoration: none;
+      min-height: 42px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 14px;
+    }
+
+    .toolbar input {
+      width: 100%;
+      justify-content: flex-start;
+    }
+
+    .toolbar input:focus,
+    .toolbar select:focus {
+      outline: 2px solid #8cb4cb;
+      border-color: #8cb4cb;
+    }
+
+    .toolbar a:hover {
+      border-color: var(--accent-2);
+      color: var(--accent-2);
+    }
+
+    .stats {
+      color: var(--muted);
+      margin-bottom: 14px;
+      font-size: 0.92rem;
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(12, 1fr);
+    }
+
+    .card {
+      grid-column: span 6;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      box-shadow: 0 6px 18px rgba(39, 46, 42, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .card h2 {
+      margin: 0;
+      font-size: 1.02rem;
+      line-height: 1.35;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.85rem;
+      line-height: 1.45;
+    }
+
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 2px;
+    }
+
+    .tag {
+      border-radius: 999px;
+      border: 1px solid #cdd3c7;
+      padding: 3px 9px;
+      font-size: 0.78rem;
+      color: #41554a;
+      background: #f5f8f2;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .btn {
+      border: 1px solid #b6c6bb;
+      border-radius: 9px;
+      background: #ffffff;
+      color: #264236;
+      text-decoration: none;
+      font-size: 0.86rem;
+      padding: 8px 10px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .btn.primary {
+      border-color: var(--accent);
+      background: #edf6f0;
+      color: #21523f;
+    }
+
+    .btn.secondary {
+      border-color: var(--accent-2);
+      background: #edf4fb;
+      color: #184a73;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 5px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    .empty {
+      grid-column: span 12;
+      border: 1px dashed #bfc8bb;
+      border-radius: var(--radius-md);
+      padding: 24px;
+      color: var(--muted);
+      background: #fcfcf7;
+      text-align: center;
+    }
+
+    @media (max-width: 940px) {
+      .toolbar {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .toolbar a {
+        grid-column: span 1;
+      }
+
+      .card {
+        grid-column: span 12;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .toolbar {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <h1>Ask-SLM Sequence Diagram Navigator</h1>
+      <p>
+        Navigate the architecture and runtime flows for Ask-SLM product documentation.
+        Open each diagram in a dedicated viewer page with back/next navigation, while still keeping a direct shortcut to the WebSequenceDiagrams editor.
+      </p>
+    </section>
+
+    <section class="toolbar" aria-label="Diagram filters">
+      <input id="search" type="search" placeholder="Search by title, topic, or file name">
+      <select id="topic">
+        <option value="all">All topics</option>
+        <option value="architecture">Architecture</option>
+        <option value="pipeline">Pipeline</option>
+        <option value="cache">Cache</option>
+        <option value="mapping">Mapping</option>
+        <option value="ontology">Ontology</option>
+        <option value="cli">CLI</option>
+        <option value="managers">Managers</option>
+      </select>
+      <a href="README.md" target="_blank" rel="noopener">Open Diagram README</a>
+      <a href="../uml/index.html">Open UML Gallery</a>
+    </section>
+
+    <div id="stats" class="stats"></div>
+    <section id="grid" class="grid" aria-live="polite"></section>
+  </main>
+
+  <script>
+    const WSD_APP_URL = "https://www.websequencediagrams.com/app";
+
+    const diagrams = [
+      {
+        file: "00-system-context.wsd",
+        title: "System Context",
+        summary: "High-level boundaries for Notebook workflow and CLI workflow.",
+        topic: "architecture",
+        tags: ["notebook", "cli", "boundaries", "overview"]
+      },
+      {
+        file: "01-runner-end-to-end.wsd",
+        title: "Runner End-to-End",
+        summary: "Complete runner.ipynb orchestration from context init to manager startup.",
+        topic: "pipeline",
+        tags: ["runner", "orchestration", "artifacts"]
+      },
+      {
+        file: "02-input-aggregation-and-canonicalization.wsd",
+        title: "Input Aggregation and Canonicalization",
+        summary: "Merges metadata/taxonomy CSV parts into canonical workspace inputs.",
+        topic: "pipeline",
+        tags: ["inputs", "aggregation", "canonical"]
+      },
+      {
+        file: "03-mapping-config-lifecycle.wsd",
+        title: "Mapping Config Lifecycle",
+        summary: "Template generation, mapping UI editing, and per-project config persistence.",
+        topic: "mapping",
+        tags: ["template", "mapping", "ui", "project"]
+      },
+      {
+        file: "04-stage-cache-decisions.wsd",
+        title: "Stage Cache Decisions",
+        summary: "Cache hit/miss logic for enrichment, taxonomy, and merge stages.",
+        topic: "cache",
+        tags: ["stamp", "incremental", "rebuild"]
+      },
+      {
+        file: "05-envo-resolution-flow.wsd",
+        title: "ENVO Resolution Flow",
+        summary: "ENVO detection, cache usage, OLS4 lookups, and dictionary export.",
+        topic: "ontology",
+        tags: ["envo", "ols4", "dictionary"]
+      },
+      {
+        file: "06-cli-analysis-flow.wsd",
+        title: "CLI Analysis Flow",
+        summary: "Command dispatch, load-and-enrich, pure analysis, and outputs.",
+        topic: "cli",
+        tags: ["parser", "commands", "results"]
+      },
+      {
+        file: "07-manager-runtime-interaction.wsd",
+        title: "Manager Runtime Interaction",
+        summary: "Mapping, alpha, and abundance manager runtime interactions in Notebook.",
+        topic: "managers",
+        tags: ["managers", "logger", "tax accessor"]
+      }
+    ];
+
+    const grid = document.getElementById("grid");
+    const searchEl = document.getElementById("search");
+    const topicEl = document.getElementById("topic");
+    const statsEl = document.getElementById("stats");
+    function makeCard(item) {
+      const card = document.createElement("article");
+      card.className = "card";
+      const diagramId = item.file.replace(/\.wsd$/i, "");
+
+      const tags = item.tags.map(tag => `<span class=\"tag\">${tag}</span>`).join("");
+
+      card.innerHTML = `
+        <h2>${item.title}</h2>
+        <div class="meta">File: ${item.file}</div>
+        <div class="meta">${item.summary}</div>
+        <div class="tags">${tags}</div>
+        <div class="actions">
+          <a class="btn primary" href="viewer.html?diagram=${diagramId}">View Diagram</a>
+          <a class="btn secondary" href="${WSD_APP_URL}" target="_blank" rel="noopener">Open WSD Editor</a>
+        </div>
+      `;
+
+      return card;
+    }
+
+    function currentFiltered() {
+      const q = searchEl.value.trim().toLowerCase();
+      const topic = topicEl.value;
+
+      return diagrams.filter(item => {
+        const matchTopic = topic === "all" || item.topic === topic;
+        const haystack = [item.title, item.summary, item.file, ...item.tags].join(" ").toLowerCase();
+        const matchText = q.length === 0 || haystack.includes(q);
+        return matchTopic && matchText;
+      });
+    }
+
+    function render() {
+      const filtered = currentFiltered();
+      grid.innerHTML = "";
+
+      statsEl.textContent = "Showing " + filtered.length + " of " + diagrams.length + " diagrams";
+
+      if (filtered.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No diagrams match your current filters.";
+        grid.appendChild(empty);
+        return;
+      }
+
+      filtered.forEach(item => grid.appendChild(makeCard(item)));
+    }
+
+    searchEl.addEventListener("input", render);
+    topicEl.addEventListener("change", render);
+    render();
+  </script>
+</body>
+</html>

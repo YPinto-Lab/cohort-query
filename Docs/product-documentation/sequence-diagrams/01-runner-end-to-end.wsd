@@ -1,0 +1,50 @@
+title Runner End-to-End Sequence (runner.ipynb)
+
+participant Engineer
+participant Notebook
+participant Pipeline as runner_pipeline.py
+participant MetadataAccessor
+participant TaxonomyAccessor
+participant Processor as SRAProcessor
+participant Cache
+participant Results
+participant Logs
+participant AlphaManager
+participant AbundanceManager
+
+Engineer->Notebook: Set view_name and execute notebook
+Notebook->Pipeline: initialize_runner_context(view_name)
+Pipeline->Logs: Create new run_<timestamp>.log
+Pipeline->Pipeline: Return RunnerContext + RunLogger
+
+Notebook->Pipeline: prepare_workspace_inputs(context)
+Pipeline->MetadataAccessor: Load metadata CSV parts
+Pipeline->TaxonomyAccessor: Load taxonomy CSV parts
+Pipeline->Pipeline: Aggregate and deduplicate
+Pipeline->Results: Write canonical workspace inputs
+
+Notebook->Pipeline: refresh_mapping_templates(metadata_df)
+Pipeline->Processor: refresh_template(project_id, view_name)
+Pipeline->Results: Update *.json.template files
+
+Notebook->Pipeline: run_enrichment_stage(...)
+Pipeline->Cache: Check enrichment stamp + artifacts
+Pipeline->Processor: process project metadata where config exists
+Pipeline->Results: Save enriched metadata + mapped columns
+
+Notebook->Pipeline: enrich_envo_columns(...)
+Pipeline->Results: Write ENVO_Term_Dictionary.csv
+
+Notebook->Pipeline: run_taxonomy_stage(...)
+Pipeline->Cache: Check taxonomy stamp
+Pipeline->Results: Save abundance matrix + taxon lookup
+
+Notebook->Pipeline: run_merge_stage(...)
+Pipeline->Cache: Check merge stamp
+Pipeline->Results: Save Ask_SLM_Analysis_Wide_Dataset.csv
+
+Notebook->Pipeline: build_or_load_tax_accessor(...)
+Pipeline->Cache: Reuse or build lineage DB
+
+Notebook->AlphaManager: run()
+Notebook->AbundanceManager: run()
