@@ -1,23 +1,19 @@
 from __future__ import annotations
 
 import json
-import re
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.error import URLError, HTTPError
-from urllib.parse import quote
-from urllib.request import urlopen
 
 import pandas as pd
 
-from Accessors.SraAccessor.sra_metadata_accessor import SRAMetadataAccessor
-from Accessors.SraAccessor.sra_taxonomy_accessor import SRATaxonomyAccessor
+from Accessors.OntologyAccessor import EnvoOntologyAccessor
+from Accessors.SraAccessor import SRAWorkspaceInputAccessor
 from Accessors.TaxonomyAccessor import TaxonomyAccessor
+from Engines.EnvoResolutionEngine import resolve_envo_columns
 from Engines.MetadataMappingEngine.metadata_mapping_engine import MetadataMappingEngine
-
-ENVO_PATTERN = re.compile(r"\bENVO:\d{7,}\b", re.IGNORECASE)
+from Common.Logger import Logger
+from Common.RunnerContext import RunnerContext
 
 
 def _file_state(path: Path) -> Dict[str, Any]:
@@ -38,37 +34,8 @@ def _mapping_configs_state(config_dir: Path, project_ids: List[str]) -> Dict[str
     return state
 
 
-@dataclass
-class RunnerContext:
-    view_name: str
-    source_view_input_dir: Path
-    workspace_dir: Path
-    workspace_input_dir: Path
-    config_dir: Path
-    results_dir: Path
-    logs_dir: Path
-    cache_dir: Path
-    run_log_path: Path
-
-
-class RunLogger:
-    def __init__(self, run_log_path: Path, echo_default: bool = False):
-        self.run_log_path = run_log_path
-        self.echo_default = echo_default
-
-    def log(self, message: str, echo: Optional[bool] = None) -> None:
-        should_echo = self.echo_default if echo is None else echo
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        line = f"[{ts}] {message}"
-        if should_echo:
-            print(line)
-        with self.run_log_path.open("a", encoding="utf-8") as f:
-            f.write(line + "\n")
-
-
-def initialize_runner_context(view_name: str, inputs_root: Path = Path("Inputs"), workspace_root: Path = Path("Workspaces")) -> Tuple[RunnerContext, RunLogger]:
-    source_view_input_dir = inputs_root / view_name
-    workspace_dir = workspace_root / view_name
+def initialize_runner_context(workspace: str, workspace_root: Path = Path("Workspaces")) -> Tuple[RunnerContext, Logger]:
+    workspace_dir = workspace_root / workspace
     workspace_input_dir = workspace_dir / "inputs"
     config_dir = workspace_dir / "mapping_configs"
     results_dir = workspace_dir / "results"
@@ -84,12 +51,11 @@ def initialize_runner_context(view_name: str, inputs_root: Path = Path("Inputs")
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     run_log_path = logs_dir / f"run_{run_id}.log"
     with run_log_path.open("w", encoding="utf-8") as f:
-        f.write(f"Ask-SLM runner log for view={view_name}\n")
+        f.write(f"Ask-SLM runner log for view={workspace}\n")
         f.write(f"run_id={run_id}\n")
 
     context = RunnerContext(
-        view_name=view_name,
-        source_view_input_dir=source_view_input_dir,
+        view_name=workspace,
         workspace_dir=workspace_dir,
         workspace_input_dir=workspace_input_dir,
         config_dir=config_dir,
@@ -99,132 +65,19 @@ def initialize_runner_context(view_name: str, inputs_root: Path = Path("Inputs")
         run_log_path=run_log_path,
     )
 
-    logger = RunLogger(run_log_path)
+    logger = Logger(run_log_path)
     logger.log(f"Workspace initialized: {workspace_dir}")
-    logger.log(f"Reading raw inputs from: {source_view_input_dir}")
     logger.log(f"Canonical inputs will be written to: {workspace_input_dir}")
     logger.log(f"Log file path: {run_log_path}", echo=True)
 
     return context, logger
 
 
-def _collect_input_files(view_dir: Path, kind: str, logger: RunLogger) -> List[Path]:
-    patterns = [
-        f"{kind}.csv",
-        f"{kind}_*.csv",
-        f"{kind}/*.csv",
-        f"{kind}_parts/*.csv",
-    ]
-
-    discovered: List[Path] = []
-    seen = set()
-
-    logger.log(f"Scanning {kind} files in {view_dir}")
-    for pattern in patterns:
-        matches = sorted(view_dir.glob(pattern))
-        logger.log(f"  pattern '{pattern}' -> {len(matches)} file(s)")
-        for path in matches:
-            resolved = str(path.resolve())
-            if resolved not in seen:
-                seen.add(resolved)
-                discovered.append(path)
-
-    return discovered
+def prepare_workspace_inputs(context: RunnerContext, logger: Logger) -> Tuple[pd.DataFrame, pd.DataFrame, Path, Path]:
+    return SRAWorkspaceInputAccessor.prepare_workspace_inputs(context=context, logger=logger)
 
 
-def _aggregate_metadata(parts: List[pd.DataFrame], logger: RunLogger) -> pd.DataFrame:
-    metadata_df = pd.concat(parts, ignore_index=True)
-    before = len(metadata_df)
-    if "acc" in metadata_df.columns:
-        metadata_df = metadata_df.drop_duplicates(subset=["acc"], keep="last")
-    else:
-        metadata_df = metadata_df.drop_duplicates()
-    logger.log(f"Metadata rows: before={before}, after_dedup={len(metadata_df)}")
-    return metadata_df
-
-
-def _aggregate_taxonomy(parts: List[pd.DataFrame], logger: RunLogger) -> pd.DataFrame:
-    taxonomy_df = pd.concat(parts, ignore_index=True)
-
-    count_cols = [c for c in ["total_count", "self_count"] if c in taxonomy_df.columns]
-    key_cols = [c for c in ["acc", "tax_id", "rank", "name", "ileft", "iright"] if c in taxonomy_df.columns]
-
-    if key_cols and count_cols:
-        before = len(taxonomy_df)
-        grouped = taxonomy_df.groupby(key_cols, as_index=False)[count_cols].sum()
-        passthrough_cols = [c for c in taxonomy_df.columns if c not in set(key_cols + count_cols)]
-        if passthrough_cols:
-            passthrough = taxonomy_df[key_cols + passthrough_cols].drop_duplicates(subset=key_cols)
-            taxonomy_df = grouped.merge(passthrough, on=key_cols, how="left")
-        else:
-            taxonomy_df = grouped
-        logger.log(f"Taxonomy rows aggregated: before={before}, after_groupby={len(taxonomy_df)}")
-    else:
-        before = len(taxonomy_df)
-        taxonomy_df = taxonomy_df.drop_duplicates()
-        logger.log(f"Taxonomy rows deduped: before={before}, after={len(taxonomy_df)}")
-
-    return taxonomy_df
-
-
-def prepare_workspace_inputs(context: RunnerContext, logger: RunLogger) -> Tuple[pd.DataFrame, pd.DataFrame, Path, Path]:
-    metadata_output = context.workspace_input_dir / "metadata.csv"
-    taxonomy_output = context.workspace_input_dir / "taxonomy.csv"
-
-    logger.log(f"Preparing workspace inputs for view={context.view_name}")
-    metadata_files = _collect_input_files(context.source_view_input_dir, "metadata", logger)
-    taxonomy_files = _collect_input_files(context.source_view_input_dir, "taxonomy", logger)
-
-    if not metadata_files or not taxonomy_files:
-        logger.log("No new source files found in Inputs view folder.")
-        if metadata_output.exists() and taxonomy_output.exists():
-            logger.log("Falling back to existing canonical workspace inputs.")
-            metadata_df = SRAMetadataAccessor.get(metadata_output)
-            taxonomy_df = SRATaxonomyAccessor.get(taxonomy_output)
-            logger.log(f"Loaded fallback metadata rows={len(metadata_df)} from {metadata_output}")
-            logger.log(f"Loaded fallback taxonomy rows={len(taxonomy_df)} from {taxonomy_output}")
-            return metadata_df, taxonomy_df, metadata_output, taxonomy_output
-
-        missing = []
-        if not metadata_files:
-            missing.append("metadata")
-        if not taxonomy_files:
-            missing.append("taxonomy")
-
-        guidance = (
-            "Create one of these under Inputs/<view>: metadata.csv / taxonomy.csv, "
-            "metadata_*.csv / taxonomy_*.csv, metadata/*.csv / taxonomy/*.csv, "
-            "or metadata_parts/*.csv / taxonomy_parts/*.csv"
-        )
-        logger.log(f"ERROR: missing input CSVs for {', '.join(missing)}")
-        logger.log(guidance)
-        raise FileNotFoundError(
-            f"Missing input CSVs for {', '.join(missing)} in {context.source_view_input_dir}. {guidance}. "
-            f"See log file: {context.run_log_path}"
-        )
-
-    metadata_parts = [pd.read_csv(path) for path in metadata_files]
-    taxonomy_parts = [pd.read_csv(path) for path in taxonomy_files]
-
-    metadata_df = _aggregate_metadata(metadata_parts, logger)
-    taxonomy_df = _aggregate_taxonomy(taxonomy_parts, logger)
-
-    metadata_df.to_csv(metadata_output, index=False)
-    taxonomy_df.to_csv(taxonomy_output, index=False)
-
-    logger.log(f"Metadata sources ({len(metadata_files)}):")
-    for p in metadata_files:
-        logger.log(f"  - {p}")
-    logger.log(f"Taxonomy sources ({len(taxonomy_files)}):")
-    for p in taxonomy_files:
-        logger.log(f"  - {p}")
-    logger.log(f"Wrote canonical metadata: {metadata_output}")
-    logger.log(f"Wrote canonical taxonomy: {taxonomy_output}")
-
-    return metadata_df, taxonomy_df, metadata_output, taxonomy_output
-
-
-def refresh_mapping_templates(metadata_df: pd.DataFrame, context: RunnerContext, logger: RunLogger) -> Tuple[MetadataMappingEngine, List[str], pd.DataFrame]:
+def refresh_mapping_templates(metadata_df: pd.DataFrame, context: RunnerContext, logger: Logger) -> Tuple[MetadataMappingEngine, List[str], pd.DataFrame]:
     processor = MetadataMappingEngine(config_dir=context.config_dir)
     project_ids = sorted(metadata_df["bioproject"].dropna().unique())
 
@@ -250,7 +103,7 @@ def run_enrichment_stage(
     processor: MetadataMappingEngine,
     project_ids: List[str],
     context: RunnerContext,
-    logger: RunLogger,
+    logger: Logger,
     strict_missing_configs: bool = False,
 ) -> Tuple[pd.DataFrame, List[str], List[str], Dict[str, Any]]:
     cache_dir = context.cache_dir
@@ -320,42 +173,7 @@ def run_enrichment_stage(
     return enriched, mapped_cols, missing_configs, current_stamp
 
 
-def _fetch_envo_term(envo_id: str, timeout_seconds: int = 8) -> Dict[str, str]:
-    normalized = envo_id.strip().upper().replace("_", ":")
-    if not ENVO_PATTERN.search(normalized):
-        return {"id": normalized, "label": normalized, "definition": "", "source": "invalid"}
-
-    numeric = normalized.split(":", 1)[1]
-    iri = f"http://purl.obolibrary.org/obo/ENVO_{numeric}"
-    encoded_iri = quote(iri, safe="")
-    url = f"https://www.ebi.ac.uk/ols4/api/ontologies/envo/terms/{encoded_iri}"
-
-    try:
-        with urlopen(url, timeout=timeout_seconds) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-
-        label = payload.get("label") or normalized
-        definition = ""
-        definitions = payload.get("description") or []
-        if definitions:
-            definition = str(definitions[0])
-
-        return {
-            "id": normalized,
-            "label": str(label),
-            "definition": definition,
-            "source": "ols4",
-        }
-    except (URLError, HTTPError, TimeoutError, ValueError):
-        return {
-            "id": normalized,
-            "label": normalized,
-            "definition": "",
-            "source": "fallback",
-        }
-
-
-def enrich_envo_columns(metadata_df: pd.DataFrame, context: RunnerContext, logger: RunLogger, candidate_columns: Optional[List[str]] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def enrich_envo_columns(metadata_df: pd.DataFrame, context: RunnerContext, logger: Logger, candidate_columns: Optional[List[str]] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
     cache_path = context.cache_dir / "ontology_envo_cache.json"
     report_path = context.results_dir / "ENVO_Term_Dictionary.csv"
 
@@ -375,62 +193,33 @@ def enrich_envo_columns(metadata_df: pd.DataFrame, context: RunnerContext, logge
             if "env_" in c.lower() or "envo" in c.lower() or "material" in c.lower() or "biome" in c.lower()
         ]
 
-    found_ids = set()
-    used_columns = []
+    ontology_accessor = EnvoOntologyAccessor()
+    resolution_result = resolve_envo_columns(
+        metadata_df=enriched,
+        envo_cache=envo_cache,
+        candidate_columns=candidate_columns,
+        fetch_term=ontology_accessor.fetch_term,
+    )
 
-    for col in candidate_columns:
-        if col not in enriched.columns:
-            continue
+    cache_path.write_text(json.dumps(resolution_result.envo_cache, indent=2), encoding="utf-8")
 
-        values = enriched[col].dropna().astype(str)
-        ids = sorted({match.group(0).upper() for value in values for match in ENVO_PATTERN.finditer(value)})
-        if not ids:
-            continue
-
-        used_columns.append(col)
-        found_ids.update(ids)
-
-        label_map: Dict[str, str] = {}
-        definition_map: Dict[str, str] = {}
-
-        for term in ids:
-            if term not in envo_cache:
-                envo_cache[term] = _fetch_envo_term(term)
-            label_map[term] = envo_cache[term].get("label", term)
-            definition_map[term] = envo_cache[term].get("definition", "")
-
-        normalized_col = enriched[col].astype(str).str.upper()
-        enriched[f"{col}_label"] = normalized_col.map(label_map).where(normalized_col.isin(label_map), enriched[col])
-        enriched[f"{col}_definition"] = normalized_col.map(definition_map).fillna("")
-
-    cache_path.write_text(json.dumps(envo_cache, indent=2), encoding="utf-8")
-
-    if not found_ids:
+    if not resolution_result.found_ids:
         logger.log("ENVO decode: no ENVO-like IDs detected in metadata.")
-        return enriched, pd.DataFrame(columns=["envo_id", "label", "definition", "source"])
+        return resolution_result.enriched_df, resolution_result.report_df
 
-    rows = []
-    for term in sorted(found_ids):
-        item = envo_cache.get(term, {})
-        rows.append(
-            {
-                "envo_id": term,
-                "label": item.get("label", term),
-                "definition": item.get("definition", ""),
-                "source": item.get("source", "cache"),
-            }
-        )
-
-    report_df = pd.DataFrame(rows)
+    report_df = resolution_result.report_df
     report_df.to_csv(report_path, index=False)
 
-    logger.log(f"ENVO decode: resolved {len(found_ids)} term(s) across {len(used_columns)} column(s)")
+    logger.log(
+        f"ENVO decode: resolved {len(resolution_result.found_ids)} term(s) "
+        f"across {len(resolution_result.used_columns)} column(s)"
+    )
     logger.log(f"ENVO dictionary saved to: {report_path}")
 
-    return enriched, report_df
+    return resolution_result.enriched_df, report_df
 
 
-def run_taxonomy_stage(taxonomy_df: pd.DataFrame, context: RunnerContext, logger: RunLogger, taxon_key_sep: str = "||") -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
+def run_taxonomy_stage(taxonomy_df: pd.DataFrame, context: RunnerContext, logger: Logger, taxon_key_sep: str = "||") -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
     taxa_matrix_path = context.results_dir / "Ask_SLM_Taxon_Abundance_Matrix.csv"
     taxon_lookup_path = context.results_dir / "Ask_SLM_Taxon_Lookup.csv"
     taxonomy_stamp_path = context.cache_dir / "taxonomy_stage_stamp.json"
@@ -497,7 +286,7 @@ def run_merge_stage(
     enrichment_stamp: Dict[str, Any],
     taxonomy_stamp: Dict[str, Any],
     context: RunnerContext,
-    logger: RunLogger,
+    logger: Logger,
 ) -> Tuple[pd.DataFrame, List[str], Dict[str, Any]]:
     canonical_dataset_path = context.results_dir / "Ask_SLM_Analysis_Wide_Dataset.csv"
     metadata_columns_path = context.results_dir / "Ask_SLM_Metadata_Columns.json"
@@ -551,7 +340,7 @@ def run_merge_stage(
     return abundance_metadata_matrix, metadata_columns, current_stamp
 
 
-def build_or_load_tax_accessor(taxon_lookup_df: pd.DataFrame, taxonomy_stamp: Dict[str, Any], context: RunnerContext, logger: RunLogger) -> TaxonomyAccessor:
+def build_or_load_tax_accessor(taxon_lookup_df: pd.DataFrame, taxonomy_stamp: Dict[str, Any], context: RunnerContext, logger: Logger) -> TaxonomyAccessor:
     db_path = context.cache_dir / "taxonomy_lineage_db.json"
     stamp_path = context.cache_dir / "taxonomy_lineage_db_stamp.json"
 

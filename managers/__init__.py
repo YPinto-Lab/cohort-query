@@ -1,10 +1,4 @@
-# Managers package for business logic orchestration
-from .MappingConfigManager import MappingConfigManager
-from .AlphaDiversityManager import AlphaDiversityManager
-from .LongitudinalAnalysisManager import LongitudinalAnalysisManager
+# Managers package for business logic orchestration.
+# Keep package imports side-effect free because legacy wrappers were removed.
 
-__all__ = [
-    'MappingConfigManager',
-    'AlphaDiversityManager',
-    'LongitudinalAnalysisManager',
-]
+__all__ = []
