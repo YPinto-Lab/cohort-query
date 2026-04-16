@@ -28,7 +28,7 @@ class SRAProcessor:
         self.top_n_values = top_n_values
         self.config_dir.mkdir(exist_ok=True)
 
-    def process(self, df: pd.DataFrame, project_id: str) -> pd.DataFrame:
+    def process(self, df: pd.DataFrame, project_id: str, view_name: Optional[str] = None) -> pd.DataFrame:
         """
         Processes the DataFrame by applying mappings defined in a project-specific
         config file. If the config doesn't exist, generates a template to guide
@@ -47,7 +47,7 @@ class SRAProcessor:
 
         if not config_path.exists():
             logger.debug("Configuration file not found for project %s", project_id)
-            self._generate_mapping_template(df, template_path)
+            self._generate_mapping_template(df, template_path, view_name=view_name)
             logger.info("Created configuration template at %s", template_path)
             logger.info("Template includes sample values for each key")
             logger.info("Edit template, rename to %s.json, and rerun", project_id)
@@ -56,6 +56,12 @@ class SRAProcessor:
         # If config exists, load it and apply the mappings
         with open(config_path, 'r') as f:
             config = json.load(f)
+
+        config_view_name = config.get("view_name")
+        if view_name and config_view_name and config_view_name != view_name:
+            raise ValueError(
+                f"Config view_name mismatch for {project_id}: expected '{view_name}', got '{config_view_name}'"
+            )
         
         logger.info("Found configuration for project %s. Applying mappings", project_id)
         return self._apply_mappings(df, config)
@@ -122,7 +128,7 @@ class SRAProcessor:
             "from_attributes": format_source(attr_key_samples, jattr_key_samples)
         }
 
-    def refresh_template(self, df: pd.DataFrame, project_id: str) -> Path:
+    def refresh_template(self, df: pd.DataFrame, project_id: str, view_name: Optional[str] = None) -> Path:
         """
         (Re)generate the .json.template file so discovered keys and value counts
         are always up to date.  Safe to call at any time — only the template is
@@ -131,10 +137,10 @@ class SRAProcessor:
         Returns the path to the template file.
         """
         template_path = self.config_dir / f"{project_id}.json.template"
-        self._generate_mapping_template(df, template_path)
+        self._generate_mapping_template(df, template_path, view_name=view_name)
         return template_path
 
-    def _generate_mapping_template(self, df: pd.DataFrame, template_path: Path):
+    def _generate_mapping_template(self, df: pd.DataFrame, template_path: Path, view_name: Optional[str] = None):
         """Generates a .json.template file with source-separated sample values."""
         project_id = df['bioproject'].iloc[0] if not df.empty else "unknown_project"
         discovered_keys = self._scan_for_keys_and_values(df)
@@ -143,6 +149,7 @@ class SRAProcessor:
             "_comment": "This template contains discovered metadata keys and sample values. "
                         "Use the interactive UI in the notebook to create mappings, or manually create a .json config file.",
             "project_id": project_id,
+            "view_name": view_name or "",
             "discovered_keys": discovered_keys
         }
 
@@ -314,3 +321,7 @@ class SRAProcessor:
             processed_df[target_col] = processed_df.apply(find_value, axis=1)
         
         return processed_df
+
+
+# Canonical iDesign name for this engine.
+MetadataMappingEngine = SRAProcessor

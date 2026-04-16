@@ -33,7 +33,7 @@ def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
 
     from Accessors.SraAccessor.sra_metadata_accessor import SRAMetadataAccessor
     from Accessors.SraAccessor.sra_taxonomy_accessor import SRATaxonomyAccessor
-    from processors.sra_processor import SRAProcessor
+    from Engines.MetadataMappingEngine.metadata_mapping_engine import MetadataMappingEngine
 
     view_path = inputs_dir / view
     if not view_path.is_dir():
@@ -49,7 +49,7 @@ def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
     print(f"Loaded: {len(metadata_df)} samples, {len(taxonomy_df)} taxon observations")
 
     # Apply mapping configs per project
-    processor = SRAProcessor(config_dir=config_dir)
+    processor = MetadataMappingEngine(config_dir=config_dir)
     parts = []
     for project_id in metadata_df['bioproject'].unique():
         config_path = config_dir / f"{project_id}.json"
@@ -75,7 +75,7 @@ def _ensure_output_dir(output_dir: Path, view: str, analyzer: str | None = None)
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 def cmd_alpha_diversity(args):
-    from analysis.alpha_diversity import compute_alpha_diversity
+    from Engines.AlphaDiversityComputationEngine.alpha_diversity_computation_engine import compute_alpha_diversity
 
     taxonomy_df, metadata_df = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
@@ -140,7 +140,7 @@ def cmd_alpha_diversity(args):
 
 
 def cmd_taxonomic_abundance(args):
-    from analysis.taxonomic_abundance import compute_taxonomic_abundance
+    from Engines.TaxonomicAbundanceComputationEngine.taxonomic_abundance_computation_engine import compute_taxonomic_abundance
 
     taxonomy_df, metadata_df = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
@@ -234,10 +234,10 @@ def cmd_metadata_overview(args):
 
     # Load raw metadata to run discovered-key scanning per project (runner-style insight).
     from Accessors.SraAccessor.sra_metadata_accessor import SRAMetadataAccessor
-    from processors.sra_processor import SRAProcessor
+    from Engines.MetadataMappingEngine.metadata_mapping_engine import MetadataMappingEngine
 
     raw_metadata_df = SRAMetadataAccessor.get(inputs_dir / args.view / "metadata.csv")
-    processor = SRAProcessor(config_dir=config_dir)
+    processor = MetadataMappingEngine(config_dir=config_dir)
 
     discovered_rows = []
     for project_id in sorted(raw_metadata_df["bioproject"].dropna().unique()):

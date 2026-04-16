@@ -9,7 +9,7 @@ import pandas as pd
 from typing import Optional
 
 from Accessors.TaxonomyAccessor import TaxonomyAccessor
-from managers.AlphaDiversityManager.alpha_diversity_manager import (
+from Engines.AlphaDiversityEngine.alpha_diversity_engine import (
     AlphaDiversityManager,
     STANDARD_RANKS,
 )
