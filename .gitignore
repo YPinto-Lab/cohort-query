@@ -43,3 +43,5 @@ commit_message.txt
 
 # E2E test debug artifacts
 tests/e2e/artifacts/
+
+Workspaces/
