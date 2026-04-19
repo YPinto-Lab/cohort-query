@@ -1,0 +1,30 @@
+title CLI Runtime Paths and Lineage Guardrails
+
+participant Engineer
+participant Entry as askslm.py
+participant Runtime as cli._resolve_runtime_paths
+participant Command as cmd_*
+participant Loader as _load_and_enrich
+participant Cache as results/_cache
+participant Taxonomy as taxonomy.csv
+
+Engineer->Entry: python askslm.py <command> --view <view> [optional paths]
+Entry->Runtime: resolve inputs/config/output directories
+Runtime->Command: use Workspaces/<view>/inputs,mapping_configs,results (or explicit overrides)
+
+alt command == build-taxonomy-lineage
+  Command->Taxonomy: load taxonomy.csv
+  Command->Cache: compare taxonomy_lineage_db_stamp.json (sha256-based)
+  Cache->Command: hit or miss
+  Command->Cache: write taxonomy_lineage_db.json + stamp on miss
+end
+
+alt command == alpha-diversity
+  Command->Cache: validate taxonomy_lineage_db.json exists
+  alt lineage DB missing
+    Command->Engineer: exit with remediation message to run build-taxonomy-lineage
+  else lineage DB present
+    Command->Loader: load/enrich metadata + taxonomy
+    Command->Engineer: produce alpha CSV + HTML outputs
+  end
+end

@@ -235,13 +235,11 @@
       <input id="search" type="search" placeholder="Search by title, topic, or file name">
       <select id="topic">
         <option value="all">All topics</option>
-        <option value="architecture">Architecture</option>
         <option value="pipeline">Pipeline</option>
         <option value="cache">Cache</option>
         <option value="mapping">Mapping</option>
-        <option value="ontology">Ontology</option>
         <option value="cli">CLI</option>
-        <option value="managers">Managers</option>
+        <option value="analysis">Analysis</option>
       </select>
       <a href="README.md" target="_blank" rel="noopener">Open Diagram README</a>
       <a href="../uml/index.html">Open UML Gallery</a>
@@ -256,60 +254,32 @@
 
     const diagrams = [
       {
-        file: "00-system-context.wsd",
-        title: "System Context",
-        summary: "High-level boundaries for Notebook workflow and CLI workflow.",
-        topic: "architecture",
-        tags: ["notebook", "cli", "boundaries", "overview"]
-      },
-      {
-        file: "01-runner-end-to-end.wsd",
-        title: "Runner End-to-End",
-        summary: "Complete runner.ipynb orchestration from context init to manager startup.",
-        topic: "pipeline",
-        tags: ["runner", "orchestration", "artifacts"]
-      },
-      {
-        file: "02-input-aggregation-and-canonicalization.wsd",
-        title: "Input Aggregation and Canonicalization",
-        summary: "Merges metadata/taxonomy CSV parts into canonical workspace inputs.",
-        topic: "pipeline",
-        tags: ["inputs", "aggregation", "canonical"]
-      },
-      {
-        file: "03-mapping-config-lifecycle.wsd",
-        title: "Mapping Config Lifecycle",
-        summary: "Template generation, mapping UI editing, and per-project config persistence.",
-        topic: "mapping",
-        tags: ["template", "mapping", "ui", "project"]
-      },
-      {
-        file: "04-stage-cache-decisions.wsd",
-        title: "Stage Cache Decisions",
-        summary: "Cache hit/miss logic for enrichment, taxonomy, and merge stages.",
+        file: "01-runner-orchestration-and-cache.wsd",
+        title: "Runner Orchestration and Stage Cache Decisions",
+        summary: "Main runner pipeline stages and cache-hit/cache-miss decisions that drive rebuild cost.",
         topic: "cache",
-        tags: ["stamp", "incremental", "rebuild"]
+        tags: ["runner", "pipeline", "stamps", "cache"]
       },
       {
-        file: "05-envo-resolution-flow.wsd",
-        title: "ENVO Resolution Flow",
-        summary: "ENVO detection, cache usage, OLS4 lookups, and dictionary export.",
-        topic: "ontology",
-        tags: ["envo", "ols4", "dictionary"]
+        file: "02-mapping-config-decision-flow.wsd",
+        title: "Mapping Configuration Decision Flow",
+        summary: "Per-project include/fallback behavior for mapping configs, including strict-mode failure path.",
+        topic: "mapping",
+        tags: ["mapping", "configs", "fallback", "strict mode"]
       },
       {
-        file: "06-cli-analysis-flow.wsd",
-        title: "CLI Analysis Flow",
-        summary: "Command dispatch, load-and-enrich, pure analysis, and outputs.",
+        file: "03-cli-runtime-and-lineage-guardrails.wsd",
+        title: "CLI Runtime Paths and Lineage Guardrails",
+        summary: "Runtime path resolution and lineage precondition behavior for CLI analysis commands.",
         topic: "cli",
-        tags: ["parser", "commands", "results"]
+        tags: ["cli", "runtime", "lineage", "guardrails"]
       },
       {
-        file: "07-manager-runtime-interaction.wsd",
-        title: "Manager Runtime Interaction",
-        summary: "Mapping, alpha, and abundance manager runtime interactions in Notebook.",
-        topic: "managers",
-        tags: ["managers", "logger", "tax accessor"]
+        file: "04-taxonomy-to-analysis-artifact-chain.wsd",
+        title: "Taxonomy to Analysis Artifact Chain",
+        summary: "How taxonomy artifacts feed merge outputs and shared lineage into interactive analysis engines.",
+        topic: "analysis",
+        tags: ["taxonomy", "merge", "lineage", "analysis"]
       }
     ];
 

@@ -186,274 +186,152 @@
   <script>
     const diagrams = [
       {
-        id: "00-system-context",
-        file: "00-system-context.wsd",
-        title: "Ask-SLM System Context (Notebook and CLI)",
-        source: `title Ask-SLM System Context (Notebook and CLI)
+        id: "01-runner-orchestration-and-cache",
+        file: "01-runner-orchestration-and-cache.wsd",
+        title: "Runner Orchestration and Stage Cache Decisions",
+        source: `title Runner Orchestration and Stage Cache Decisions
 
-participant Engineer
-participant RunnerNotebook as Notebook
-participant RunnerPipelineManager as Workflow
-participant InputsFolder as Inputs
-participant MappingConfigs as Configs
-participant Workspace as Workspaces
-participant ManagersUI as Managers
-participant CLI
-participant ComputeEngines as Analysis
+participant Notebook as runner.ipynb
+participant Pipeline as runner_pipeline_manager
+participant Workspace as Workspaces/<view>
+participant Cache as results/_cache
+participant Mapping as MetadataMappingEngine
+participant Ontology as EnvoResolutionEngine
 
-Engineer->Notebook: Run notebook cells for selected view
-Notebook->Workflow: initialize_runner_context(view_name)
-Workflow->Workspace: Prepare view-scoped folders
-Notebook->Workflow: prepare_workspace_inputs()
-Workflow->Inputs: Read metadata/taxonomy CSV parts
-Workflow->Workspace: Write canonical metadata.csv/taxonomy.csv
-Notebook->Workflow: run enrichment, taxonomy, merge stages
-Workflow->Configs: Read mapping JSON per project
-Workflow->Workspace: Write results, cache stamps, logs
-Notebook->Managers: Launch interactive managers
-Managers->Workspace: Read merged artifacts and write exports
-
-Engineer->CLI: Execute askslm.py command
-CLI->Inputs: Load metadata.csv and taxonomy.csv for view
-CLI->Configs: Apply per-project mapping configs
-CLI->Analysis: Run pure compute functions
-CLI->Workspace: Write CSV/HTML outputs under <output_dir>/<view>/`
-      },
-      {
-        id: "01-runner-end-to-end",
-        file: "01-runner-end-to-end.wsd",
-        title: "Runner End-to-End Sequence (runner.ipynb)",
-        source: `title Runner End-to-End Sequence (runner.ipynb)
-
-participant Engineer
-participant Notebook
-participant Pipeline as managers/runner_pipeline_manager.py
-participant MetadataAccessor
-participant TaxonomyAccessor
-participant Processor as MetadataMappingEngine
-participant Cache
-participant Results
-participant Logs
-participant AlphaManager
-participant AbundanceManager
-
-Engineer->Notebook: Set view_name and execute notebook
-Notebook->Pipeline: initialize_runner_context(view_name)
-Pipeline->Logs: Create new run_<timestamp>.log
-Pipeline->Pipeline: Return RunnerContext + RunLogger
+Notebook->Pipeline: initialize_runner_context(workspace)
+Pipeline->Workspace: ensure inputs, mapping_configs, results, Logs
 
 Notebook->Pipeline: prepare_workspace_inputs(context)
-Pipeline->MetadataAccessor: Load metadata CSV parts
-Pipeline->TaxonomyAccessor: Load taxonomy CSV parts
-Pipeline->Pipeline: Aggregate and deduplicate
-Pipeline->Results: Write canonical workspace inputs
+Pipeline->Workspace: canonicalize metadata.csv + taxonomy.csv as needed
 
 Notebook->Pipeline: refresh_mapping_templates(metadata_df)
-Pipeline->Processor: refresh_template(project_id, view_name)
-Pipeline->Results: Update *.json.template files
+Pipeline->Mapping: refresh_template per bioproject
+Pipeline->Workspace: write <project>.json.template files
 
 Notebook->Pipeline: run_enrichment_stage(...)
-Pipeline->Cache: Check enrichment stamp + artifacts
-Pipeline->Processor: process project metadata where config exists
-Pipeline->Results: Save enriched metadata + mapped columns
+Pipeline->Cache: compare enrichment_stage_stamp.json
+Cache->Pipeline: hit or miss
+Pipeline->Mapping: apply configs on miss
+Pipeline->Workspace: write enriched_metadata.csv + mapped columns
 
 Notebook->Pipeline: enrich_envo_columns(...)
-Pipeline->Results: Write ENVO_Term_Dictionary.csv
+Pipeline->Ontology: resolve ENVO terms when present
+Pipeline->Workspace: write ENVO_Term_Dictionary.csv when terms found
 
 Notebook->Pipeline: run_taxonomy_stage(...)
-Pipeline->Cache: Check taxonomy stamp
-Pipeline->Results: Save abundance matrix + taxon lookup
+Pipeline->Cache: compare taxonomy_stage_stamp.json
+Cache->Pipeline: hit or miss
+Pipeline->Workspace: write abundance matrix + taxon lookup on miss
 
 Notebook->Pipeline: run_merge_stage(...)
-Pipeline->Cache: Check merge stamp
-Pipeline->Results: Save Ask_SLM_Analysis_Wide_Dataset.csv
-
-Notebook->Pipeline: build_or_load_tax_accessor(...)
-Pipeline->Cache: Reuse or build lineage DB
-
-Notebook->AlphaManager: run()
-Notebook->AbundanceManager: run()`
+Pipeline->Cache: compare merge_stage_stamp.json
+Cache->Pipeline: hit or miss
+Pipeline->Workspace: write analysis-wide dataset + metadata columns + compatibility stamp`
       },
       {
-        id: "02-input-aggregation-and-canonicalization",
-        file: "02-input-aggregation-and-canonicalization.wsd",
-        title: "Input Aggregation and Canonicalization",
-        source: `title Input Aggregation and Canonicalization
+        id: "02-mapping-config-decision-flow",
+        file: "02-mapping-config-decision-flow.wsd",
+        title: "Mapping Configuration Decision Flow",
+        source: `title Mapping Configuration Decision Flow
 
 participant Notebook
-participant Pipeline
-participant SourceInputs as Inputs/<view>
-participant WorkspaceInputs as Workspaces/<view>/inputs
-participant MetadataAgg as Metadata Aggregator
-participant TaxonomyAgg as Taxonomy Aggregator
-
-Notebook->Pipeline: prepare_workspace_inputs(context)
-Pipeline->SourceInputs: Scan metadata patterns
-Pipeline->SourceInputs: Scan taxonomy patterns
-
-Pipeline->MetadataAgg: Concatenate metadata parts
-MetadataAgg->MetadataAgg: Drop duplicate acc rows (keep latest)
-MetadataAgg->WorkspaceInputs: Write metadata.csv
-
-Pipeline->TaxonomyAgg: Concatenate taxonomy parts
-TaxonomyAgg->TaxonomyAgg: Group by acc+taxon key columns
-TaxonomyAgg->TaxonomyAgg: Sum total_count and self_count
-TaxonomyAgg->WorkspaceInputs: Write taxonomy.csv
-
-Pipeline->Notebook: Return metadata_df, taxonomy_df, output paths`
-      },
-      {
-        id: "03-mapping-config-lifecycle",
-        file: "03-mapping-config-lifecycle.wsd",
-        title: "Mapping Config Lifecycle (Template -> UI -> JSON)",
-        source: `title Mapping Config Lifecycle (Template -> UI -> JSON)
-
-participant Notebook
-participant Pipeline
-participant Processor as MetadataMappingEngine
+participant Pipeline as run_enrichment_stage
 participant ConfigDir as Workspaces/<view>/mapping_configs
-participant MappingUI as MappingConfigManager
-participant Engineer
+participant Mapping as MetadataMappingEngine
+participant Output as enriched metadata
 
-Notebook->Pipeline: refresh_mapping_templates(metadata_df)
-Pipeline->Processor: For each bioproject, refresh_template(...)
-Processor->ConfigDir: Write <project>.json.template
-Pipeline->Notebook: Return project_status_df
+Notebook->Pipeline: run_enrichment_stage(metadata_df, project_ids, strict_missing_configs)
 
-Notebook->MappingUI: MappingConfigManager.run()
-MappingUI->ConfigDir: Load *.json.template files
-MappingUI->ConfigDir: Load existing <project>.json when present
-MappingUI->Engineer: Render target-first mapping editor
-Engineer->MappingUI: Add target fields and mapping rules
-MappingUI->ConfigDir: Save per-project <project>.json configs
+loop for each bioproject
+  Pipeline->ConfigDir: check <project>.json
 
-Notebook->Pipeline: run_enrichment_stage(...)
-Pipeline->ConfigDir: Read project JSON configs
-Pipeline->Processor: Apply mappings to project metadata
-Pipeline->Notebook: Return enriched metadata + missing configs`
+  alt config exists
+    Pipeline->Mapping: map(project_metadata, project_id)
+    Mapping->Output: mapped project dataframe
+  else config missing
+    Pipeline->Mapping: refresh_template(project_metadata, project_id)
+    Pipeline->ConfigDir: write <project>.json.template
+    Pipeline->Output: append raw project metadata
+  end
+end
+
+alt strict_missing_configs=True and any missing
+  Pipeline->Notebook: raise FileNotFoundError
+else continue
+  Pipeline->Output: concatenate project outputs
+  Pipeline->Output: return enriched_df, mapped_cols, missing_projects
+end`
       },
       {
-        id: "04-stage-cache-decisions",
-        file: "04-stage-cache-decisions.wsd",
-        title: "Stage-Level Cache Decisions (Enrichment, Taxonomy, Merge)",
-        source: `title Stage-Level Cache Decisions (Enrichment, Taxonomy, Merge)
-
-participant Notebook
-participant Pipeline
-participant EnrichmentCache as _cache/enrichment_stage_stamp.json
-participant TaxonomyCache as _cache/taxonomy_stage_stamp.json
-participant MergeCache as _cache/merge_stage_stamp.json
-participant Results
-
-Notebook->Pipeline: run_enrichment_stage(...)
-Pipeline->EnrichmentCache: Compare current stamp vs previous stamp
-EnrichmentCache->Pipeline: cache hit or miss
-Pipeline->Results: Hit: load enriched artifacts
-Pipeline->Results: Miss: rebuild and write enriched artifacts
-
-Notebook->Pipeline: run_taxonomy_stage(...)
-Pipeline->TaxonomyCache: Compare taxonomy stamp
-TaxonomyCache->Pipeline: cache hit or miss
-Pipeline->Results: Hit: load abundance matrix + taxon lookup
-Pipeline->Results: Miss: rebuild and write taxonomy artifacts
-
-Notebook->Pipeline: run_merge_stage(...)
-Pipeline->MergeCache: Compare merge stamp
-MergeCache->Pipeline: cache hit or miss
-Pipeline->Results: Hit: load analysis-wide dataset
-Pipeline->Results: Miss: rebuild merged dataset
-Pipeline->Results: Update compatibility stamp Ask_SLM_Cache_Stamp.json`
-      },
-      {
-        id: "05-envo-resolution-flow",
-        file: "05-envo-resolution-flow.wsd",
-        title: "ENVO Resolution and Dictionary Export",
-        source: `title ENVO Resolution and Dictionary Export
-
-participant Notebook
-participant Pipeline
-participant Metadata
-participant EnvoCache as _cache/ontology_envo_cache.json
-participant OLS4 as EBI OLS4 API
-participant Results
-
-Notebook->Pipeline: enrich_envo_columns(metadata_df)
-Pipeline->EnvoCache: Load local ENVO cache if present
-Pipeline->Metadata: Scan candidate columns for ENVO IDs
-
-Pipeline->EnvoCache: For each ENVO term, check local cache
-Pipeline->OLS4: Fetch missing terms from OLS4 API
-OLS4->Pipeline: Return label and definition or fallback
-Pipeline->Metadata: Add *_label and *_definition columns
-
-Pipeline->EnvoCache: Persist updated local cache
-Pipeline->Results: Write ENVO_Term_Dictionary.csv
-Pipeline->Notebook: Return enriched metadata and ENVO report`
-      },
-      {
-        id: "06-cli-analysis-flow",
-        file: "06-cli-analysis-flow.wsd",
-        title: "CLI Analysis Flow (askslm.py + cli.py)",
-        source: `title CLI Analysis Flow (askslm.py + cli.py)
+        id: "03-cli-runtime-and-lineage-guardrails",
+        file: "03-cli-runtime-and-lineage-guardrails.wsd",
+        title: "CLI Runtime Paths and Lineage Guardrails",
+        source: `title CLI Runtime Paths and Lineage Guardrails
 
 participant Engineer
-participant EntryPoint as askslm.py
-participant Parser as cli.build_parser
+participant Entry as askslm.py
+participant Runtime as cli._resolve_runtime_paths
 participant Command as cmd_*
 participant Loader as _load_and_enrich
-participant Inputs
-participant Configs
-participant Processor as MetadataMappingEngine
-participant Analysis
-participant Output
+participant Cache as results/_cache
+participant Taxonomy as taxonomy.csv
 
-Engineer->EntryPoint: python askslm.py <command> --view <view> ...
-EntryPoint->Parser: Parse args and dispatch args.func
-Parser->Command: Execute selected command handler
+Engineer->Entry: python askslm.py <command> --view <view> [optional paths]
+Entry->Runtime: resolve inputs/config/output directories
+Runtime->Command: use Workspaces/<view>/inputs,mapping_configs,results (or explicit overrides)
 
-Command->Loader: _load_and_enrich(view, inputs_dir, config_dir)
-Loader->Inputs: Load metadata.csv and taxonomy.csv
-Loader->Configs: For each project, check <project>.json
-Loader->Processor: Apply mapping when config exists
-Loader->Command: Return taxonomy_df and enriched_metadata_df
+alt command == build-taxonomy-lineage
+  Command->Taxonomy: load taxonomy.csv
+  Command->Cache: compare taxonomy_lineage_db_stamp.json (sha256-based)
+  Cache->Command: hit or miss
+  Command->Cache: write taxonomy_lineage_db.json + stamp on miss
+end
 
-Command->Analysis: Run compute function for selected command
-Analysis->Command: Return result DataFrame(s)
-Command->Output: Write CSV/HTML outputs under <output_dir>/<view>/<analysis>/
-Command->Engineer: Print summary and output paths`
+alt command == alpha-diversity
+  Command->Cache: validate taxonomy_lineage_db.json exists
+  alt lineage DB missing
+    Command->Engineer: exit with remediation message to run build-taxonomy-lineage
+  else lineage DB present
+    Command->Loader: load/enrich metadata + taxonomy
+    Command->Engineer: produce alpha CSV + HTML outputs
+  end
+end`
       },
       {
-        id: "07-manager-runtime-interaction",
-        file: "07-manager-runtime-interaction.wsd",
-        title: "Manager Runtime Interaction in Notebook",
-        source: `title Manager Runtime Interaction in Notebook
+        id: "04-taxonomy-to-analysis-artifact-chain",
+        file: "04-taxonomy-to-analysis-artifact-chain.wsd",
+        title: "Taxonomy to Analysis Artifact Chain",
+        source: `title Taxonomy to Analysis Artifact Chain
 
-participant Engineer
 participant Notebook
 participant Pipeline
-participant SharedTaxDB as TaxonomyAccessor DB
-participant AlphaManager
-participant MappingManager
-participant AbundanceManager
-participant Results
-participant Logs
+participant TaxStage as run_taxonomy_stage
+participant MergeStage as run_merge_stage
+participant Lineage as build_or_load_tax_accessor
+participant Alpha as AlphaDiversityEngine
+participant Abundance as TaxonomicAbundanceEngine
+participant Results as Workspaces/<view>/results
+participant Cache as results/_cache
 
-Engineer->Notebook: Execute manager cells after artifacts are ready
-Notebook->Pipeline: build_or_load_tax_accessor(...)
-Pipeline->SharedTaxDB: Load cached lineage DB or rebuild
+Notebook->TaxStage: run_taxonomy_stage(taxonomy_df, taxon_key_sep)
+TaxStage->Results: Ask_SLM_Taxon_Abundance_Matrix.csv
+TaxStage->Results: Ask_SLM_Taxon_Lookup.csv
+TaxStage->Cache: taxonomy_stage_stamp.json
 
-Notebook->MappingManager: run()
-MappingManager->Logs: Emit stage logs through injected logger
-MappingManager->Results: Read templates/configs and save JSON configs
+Notebook->MergeStage: run_merge_stage(enriched_metadata_df, abundance_matrix, stamps)
+MergeStage->Results: Ask_SLM_Analysis_Wide_Dataset.csv
+MergeStage->Results: Ask_SLM_Metadata_Columns.json
+MergeStage->Cache: merge_stage_stamp.json + Ask_SLM_Cache_Stamp.json
 
-Notebook->AlphaManager: run(analysis_wide_df, taxon_lookup_df, metadata_cols, tax_accessor)
-AlphaManager->SharedTaxDB: Reuse injected taxonomy accessor
-AlphaManager->Logs: Emit analysis and UI actions
-AlphaManager->Results: Save optional export files
+Notebook->Lineage: build_or_load_tax_accessor(taxon_lookup_df, taxonomy_stamp)
+Lineage->Cache: compare taxonomy_lineage_db_stamp.json
+Lineage->Cache: reuse or rebuild taxonomy_lineage_db.json
 
-Notebook->AbundanceManager: run(abundance_metadata_matrix, taxon_lookup_df, metadata_cols)
-AbundanceManager->Logs: Emit stage logs through injected logger
-AbundanceManager->Results: Lazy-build heavy matrices only when needed`
+Notebook->Alpha: run(..., tax_accessor)
+Alpha->Results: interactive analysis + optional exports
+
+Notebook->Abundance: run(...)
+Abundance->Results: interactive analysis + optional exports`
       }
     ];
 

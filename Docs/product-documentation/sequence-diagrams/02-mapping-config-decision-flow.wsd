@@ -1,0 +1,29 @@
+title Mapping Configuration Decision Flow
+
+participant Notebook
+participant Pipeline as run_enrichment_stage
+participant ConfigDir as Workspaces/<view>/mapping_configs
+participant Mapping as MetadataMappingEngine
+participant Output as enriched metadata
+
+Notebook->Pipeline: run_enrichment_stage(metadata_df, project_ids, strict_missing_configs)
+
+loop for each bioproject
+  Pipeline->ConfigDir: check <project>.json
+
+  alt config exists
+    Pipeline->Mapping: map(project_metadata, project_id)
+    Mapping->Output: mapped project dataframe
+  else config missing
+    Pipeline->Mapping: refresh_template(project_metadata, project_id)
+    Pipeline->ConfigDir: write <project>.json.template
+    Pipeline->Output: append raw project metadata
+  end
+end
+
+alt strict_missing_configs=True and any missing
+  Pipeline->Notebook: raise FileNotFoundError
+else continue
+  Pipeline->Output: concatenate project outputs
+  Pipeline->Output: return enriched_df, mapped_cols, missing_projects
+end

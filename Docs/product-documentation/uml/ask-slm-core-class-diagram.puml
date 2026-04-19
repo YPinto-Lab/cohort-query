@@ -1,12 +1,11 @@
 @startuml
-title Ask-SLM Core Runtime Class Diagram (Simplified)
+title Ask-SLM Core Runtime Class Diagram (Expanded)
 
 skinparam shadowing false
 skinparam classAttributeIconSize 0
 
 class RunnerContext {
   +view_name: str
-  +source_view_input_dir: Path
   +workspace_dir: Path
   +workspace_input_dir: Path
   +config_dir: Path
@@ -22,63 +21,127 @@ class RunLogger {
   +log(message: str, echo: bool = None): None
 }
 
+class SRAWorkspaceInputAccessor {
+  +prepare_workspace_inputs(context, logger): (DataFrame, DataFrame, Path, Path)
+  +_collect_input_files(view_dir, kind, logger): List[Path]
+  +_aggregate_metadata(parts, logger): DataFrame
+  +_aggregate_taxonomy(parts, logger): DataFrame
+}
+
 class MetadataMappingEngine {
   +config_dir: Path
   +refresh_template(metadata_df, project_id, view_name): None
-  +process(metadata_df, project_id, view_name): DataFrame
+  +map(metadata_df, project_id, view_name): DataFrame
 }
 
 class TaxonomyAccessor {
   +build_from_dataframe(df): None
   +save_database(path): None
+  +load_database(path): None
+  +get_ancestor_at_rank(tax_id, rank): Dict
   +aggregate_counts_at_rank(...): DataFrame
 }
 
-class MappingConfigManager {
+class EnvoResolutionEngine {
+  +resolve_envo_columns(metadata_df, envo_cache, candidate_columns, fetch_term): EnvoResolutionResult
+}
+
+class EnvoOntologyAccessor {
+  +fetch_term(envo_id): Dict
+}
+
+class MappingConfigEngine {
   +config_dir: Path
+  +_load_projects(): bool
+  +_build_project_metadata_value_summaries(): None
   +run(): None
 }
 
-class AlphaDiversityManager {
+class AlphaDiversityEngine {
   +analysis_wide_df: DataFrame
   +taxon_lookup_df: DataFrame
   +metadata_cols: list
   +run(): None
 }
 
-class TaxonomicAbundanceManager {
+class TaxonomicAbundanceEngine {
   +abundance_metadata_matrix: DataFrame
   +taxon_lookup_df: DataFrame
   +metadata_cols: list
+  +_calculate_abundance(rank, taxon): DataFrame
   +run(): None
 }
 
 class RunnerPipeline {
-  +initialize_runner_context(view_name): (RunnerContext, RunLogger)
+  +initialize_runner_context(workspace): (RunnerContext, RunLogger)
   +prepare_workspace_inputs(context, logger)
   +refresh_mapping_templates(metadata_df, context, logger)
-  +run_enrichment_stage(...)
-  +enrich_envo_columns(...)
-  +run_taxonomy_stage(...)
-  +run_merge_stage(...)
-  +build_or_load_tax_accessor(...)
+  +run_enrichment_stage(...): (DataFrame, List[str], List[str], Dict[str, Any])
+  +enrich_envo_columns(...): (DataFrame, DataFrame)
+  +run_taxonomy_stage(...): (DataFrame, DataFrame, Dict[str, Any])
+  +run_merge_stage(...): (DataFrame, List[str], Dict[str, Any])
+  +build_or_load_tax_accessor(...): TaxonomyAccessor
+}
+
+class CliRuntime {
+  +_resolve_runtime_paths(args): None
+  +_resolve_view_input_dir(view, inputs_dir): Path
+  +_resolve_lineage_paths(args): (Path, Path)
+}
+
+class CliCommands {
+  +cmd_build_taxonomy_lineage(args): None
+  +cmd_alpha_diversity(args): None
+  +cmd_taxonomic_abundance(args): None
+  +cmd_single_taxon_abundance(args): None
+  +cmd_abundance_matrix(args): None
+  +cmd_metadata_overview(args): None
+}
+
+class LineageStamp {
+  +schema_version: str
+  +view_name: str
+  +taxonomy_sha256: str
+  +taxonomy_rows: int
+}
+
+class StageStamp {
+  +schema_version: str
+  +view_name: str
+  +dependencies: Dict[str, Any]
 }
 
 RunnerPipeline ..> RunnerContext : creates
 RunnerPipeline ..> RunLogger : creates
+RunnerPipeline ..> SRAWorkspaceInputAccessor : uses
 RunnerPipeline ..> MetadataMappingEngine : uses
+RunnerPipeline ..> EnvoResolutionEngine : uses
+RunnerPipeline ..> EnvoOntologyAccessor : uses
 RunnerPipeline ..> TaxonomyAccessor : uses
+RunnerPipeline ..> StageStamp : reads/writes
 
-MappingConfigManager ..> RunLogger : injected logger
-AlphaDiversityManager ..> TaxonomyAccessor : injected shared accessor
-AlphaDiversityManager ..> RunLogger : injected logger
-TaxonomicAbundanceManager ..> RunLogger : injected logger
+MappingConfigEngine ..> RunLogger : injected logger
+AlphaDiversityEngine ..> TaxonomyAccessor : injected shared accessor
+AlphaDiversityEngine ..> RunLogger : injected logger
+TaxonomicAbundanceEngine ..> RunLogger : injected logger
+
+CliCommands ..> CliRuntime : uses path resolution
+CliCommands ..> MetadataMappingEngine : uses for enrichment
+CliCommands ..> TaxonomyAccessor : uses lineage DB build/load
+CliCommands ..> LineageStamp : reads/writes
 
 note right of RunnerPipeline
 Stages are cache-aware:
 - enrichment stamp
 - taxonomy stamp
 - merge stamp
+- lineage DB stamp (runner cache)
+end note
+
+note right of CliCommands
+Alpha-diversity has a hard precondition:
+taxonomy lineage DB must exist.
+If missing, CLI exits with actionable remediation.
 end note
 
 @enduml

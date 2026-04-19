@@ -234,9 +234,9 @@ package "Workflow Services" {
   component "managers/runner_pipeline_manager.py" as Pipeline
 }
 
-package "Inputs" {
-  database "Inputs/<view>/metadata.csv" as InMeta
-  database "Inputs/<view>/taxonomy.csv" as InTax
+package "Input Layouts" {
+  database "Workspaces/<view>/inputs/metadata.csv" as WsMeta
+  database "Workspaces/<view>/inputs/taxonomy.csv" as WsTax
 }
 
 package "Accessors" {
@@ -249,10 +249,10 @@ package "Engine Layer" {
   component "Engines/MetadataMappingEngine\\n(MetadataMappingEngine)" as Processor
 }
 
-package "Managers (Jupyter UI)" {
-  component "MappingConfigManager" as MappingMgr
-  component "AlphaDiversityManager" as AlphaMgr
-  component "TaxonomicAbundanceManager" as AbundMgr
+package "Notebook Interactive Engines" {
+  component "MappingConfigEngine" as MappingEngine
+  component "AlphaDiversityEngine" as AlphaEngine
+  component "TaxonomicAbundanceEngine" as AbundanceEngine
 }
 
 package "Analysis (Pure Functions)" {
@@ -273,8 +273,8 @@ User --> CLI
 Runner --> Pipeline
 Pipeline --> MetaAccessor
 Pipeline --> TaxAccessor
-MetaAccessor --> InMeta
-TaxAccessor --> InTax
+MetaAccessor --> WsMeta
+TaxAccessor --> WsTax
 
 Pipeline --> Processor
 Processor --> WsConfigs
@@ -283,20 +283,20 @@ Pipeline --> WsResults
 Pipeline --> WsLogs
 Pipeline --> LineageAccessor
 
-Runner --> MappingMgr
-Runner --> AlphaMgr
-Runner --> AbundMgr
-MappingMgr --> WsConfigs
-AlphaMgr --> WsResults
-AbundMgr --> WsResults
-AlphaMgr --> LineageAccessor
+Runner --> MappingEngine
+Runner --> AlphaEngine
+Runner --> AbundanceEngine
+MappingEngine --> WsConfigs
+AlphaEngine --> WsResults
+AbundanceEngine --> WsResults
+AlphaEngine --> LineageAccessor
 
 CLI --> Processor
 CLI --> AlphaAnalysis
 CLI --> AbundAnalysis
 CLI --> WsResults
-Processor --> InMeta
-CLI --> InTax
+Processor --> WsMeta
+CLI --> WsTax
 
 note bottom
 Two-DataFrame rule:
@@ -318,7 +318,6 @@ skinparam classAttributeIconSize 0
 
 class RunnerContext {
   +view_name: str
-  +source_view_input_dir: Path
   +workspace_dir: Path
   +workspace_input_dir: Path
   +config_dir: Path
@@ -346,19 +345,19 @@ class TaxonomyAccessor {
   +aggregate_counts_at_rank(...): DataFrame
 }
 
-class MappingConfigManager {
+class MappingConfigEngine {
   +config_dir: Path
   +run(): None
 }
 
-class AlphaDiversityManager {
+class AlphaDiversityEngine {
   +analysis_wide_df: DataFrame
   +taxon_lookup_df: DataFrame
   +metadata_cols: list
   +run(): None
 }
 
-class TaxonomicAbundanceManager {
+class TaxonomicAbundanceEngine {
   +abundance_metadata_matrix: DataFrame
   +taxon_lookup_df: DataFrame
   +metadata_cols: list
@@ -366,7 +365,7 @@ class TaxonomicAbundanceManager {
 }
 
 class RunnerPipeline {
-  +initialize_runner_context(view_name): (RunnerContext, RunLogger)
+  +initialize_runner_context(workspace): (RunnerContext, RunLogger)
   +prepare_workspace_inputs(context, logger)
   +refresh_mapping_templates(metadata_df, context, logger)
   +run_enrichment_stage(...)
@@ -381,10 +380,10 @@ RunnerPipeline ..> RunLogger : creates
 RunnerPipeline ..> MetadataMappingEngine : uses
 RunnerPipeline ..> TaxonomyAccessor : uses
 
-MappingConfigManager ..> RunLogger : injected logger
-AlphaDiversityManager ..> TaxonomyAccessor : injected shared accessor
-AlphaDiversityManager ..> RunLogger : injected logger
-TaxonomicAbundanceManager ..> RunLogger : injected logger
+MappingConfigEngine ..> RunLogger : injected logger
+AlphaDiversityEngine ..> TaxonomyAccessor : injected shared accessor
+AlphaDiversityEngine ..> RunLogger : injected logger
+TaxonomicAbundanceEngine ..> RunLogger : injected logger
 
 note right of RunnerPipeline
 Stages are cache-aware:

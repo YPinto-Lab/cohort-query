@@ -1,0 +1,31 @@
+title Taxonomy to Analysis Artifact Chain
+
+participant Notebook
+participant Pipeline
+participant TaxStage as run_taxonomy_stage
+participant MergeStage as run_merge_stage
+participant Lineage as build_or_load_tax_accessor
+participant Alpha as AlphaDiversityEngine
+participant Abundance as TaxonomicAbundanceEngine
+participant Results as Workspaces/<view>/results
+participant Cache as results/_cache
+
+Notebook->TaxStage: run_taxonomy_stage(taxonomy_df, taxon_key_sep)
+TaxStage->Results: Ask_SLM_Taxon_Abundance_Matrix.csv
+TaxStage->Results: Ask_SLM_Taxon_Lookup.csv
+TaxStage->Cache: taxonomy_stage_stamp.json
+
+Notebook->MergeStage: run_merge_stage(enriched_metadata_df, abundance_matrix, stamps)
+MergeStage->Results: Ask_SLM_Analysis_Wide_Dataset.csv
+MergeStage->Results: Ask_SLM_Metadata_Columns.json
+MergeStage->Cache: merge_stage_stamp.json + Ask_SLM_Cache_Stamp.json
+
+Notebook->Lineage: build_or_load_tax_accessor(taxon_lookup_df, taxonomy_stamp)
+Lineage->Cache: compare taxonomy_lineage_db_stamp.json
+Lineage->Cache: reuse or rebuild taxonomy_lineage_db.json
+
+Notebook->Alpha: run(..., tax_accessor)
+Alpha->Results: interactive analysis + optional exports
+
+Notebook->Abundance: run(...)
+Abundance->Results: interactive analysis + optional exports

@@ -45,5 +45,5 @@ and `viewer.html?diagram=<id>` for direct per-diagram pages.
 
 ## Maintenance Rule
 
-When changing workflow contracts, manager dependencies, or cache strategy,
+When changing workflow contracts, notebook engine dependencies, or cache strategy,
 update these UML diagrams in the same pull request.
