@@ -9,10 +9,13 @@ runs the requested analysis, and writes structured outputs to results/<view>/.
 Usage examples:
     python askslm.py alpha-diversity     --view PhagesInBlood --rank species --group Group
     python askslm.py taxonomic-abundance --view PhagesInBlood --rank genus --taxon Prevotella --group Group
+    python askslm.py single-taxon-abundance --view PhagesInBlood --taxon Viruses --source-keys day_run host_subject_id_sam
     python askslm.py abundance-matrix    --view PhagesInBlood
 """
 import argparse
 import sys
+import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -23,6 +26,88 @@ from Common.contracts.sra_schema import SRAMetadataSchema
 
 
 _BASE_METADATA_COLS = set(SRAMetadataSchema.__fields__.keys())
+
+
+def _extract_source_key_value(row: pd.Series, key: str) -> str:
+    """Extract a source key value from direct columns, jattr JSON, or attributes text."""
+    requested_key = str(key).strip()
+    requested_key_lower = requested_key.lower()
+
+    if requested_key in row.index and pd.notna(row.get(requested_key)):
+        return str(row.get(requested_key))
+
+    for col in row.index:
+        if str(col).strip().lower() == requested_key_lower and pd.notna(row.get(col)):
+            return str(row.get(col))
+
+    if 'jattr' in row.index and pd.notna(row.get('jattr')):
+        try:
+            parsed = json.loads(row['jattr'])
+            if isinstance(parsed, dict):
+                raw = None
+                if requested_key in parsed:
+                    raw = parsed[requested_key]
+                else:
+                    for k, v in parsed.items():
+                        if str(k).strip().lower() == requested_key_lower:
+                            raw = v
+                            break
+                if raw is not None:
+                    return " ".join(raw) if isinstance(raw, list) else str(raw)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    if 'attributes' in row.index and pd.notna(row.get('attributes')):
+        try:
+            for attr_key, attr_val in re.findall(r"k\s*=\s*([^,]+),\s*v\s*=\s*([^}]+)", str(row['attributes'])):
+                if str(attr_key).strip().lower() == requested_key_lower:
+                    return str(attr_val).strip()
+        except Exception:
+            pass
+
+    return ""
+
+
+def _attach_source_keys(metadata_df: pd.DataFrame, source_keys: list[str]) -> pd.DataFrame:
+    """Return minimal metadata table with requested source keys materialized."""
+    def _normalize_scalar(value) -> str:
+        if pd.isna(value):
+            return ""
+        text = str(value).strip()
+        if text.lower() in {"", "nan", "none"}:
+            return ""
+        # Clean float-like integer formatting from CSV inference (e.g. 5.0 -> 5)
+        if re.fullmatch(r"-?\d+\.0", text):
+            return text[:-2]
+        return text
+
+    keep_cols = ['acc', 'bioproject']
+    if 'jattr' in metadata_df.columns:
+        keep_cols.append('jattr')
+    if 'attributes' in metadata_df.columns:
+        keep_cols.append('attributes')
+
+    meta = metadata_df[[c for c in keep_cols if c in metadata_df.columns]].drop_duplicates(subset=['acc']).copy()
+
+    for source_key in source_keys:
+        if source_key in metadata_df.columns:
+            direct = metadata_df[['acc', source_key]].drop_duplicates(subset=['acc']).set_index('acc')[source_key]
+            meta = meta.merge(direct.rename(source_key), left_on='acc', right_index=True, how='left')
+
+        extracted = meta.apply(lambda row: _extract_source_key_value(row, source_key), axis=1)
+        if source_key in meta.columns:
+            meta[source_key] = meta[source_key].where(meta[source_key].notna(), extracted)
+            meta[source_key] = meta[source_key].replace({'nan': ''})
+        else:
+            meta[source_key] = extracted
+
+        meta[source_key] = meta[source_key].apply(_normalize_scalar)
+
+    drop_cols = [c for c in ['jattr', 'attributes'] if c in meta.columns]
+    if drop_cols:
+        meta = meta.drop(columns=drop_cols)
+
+    return meta
 
 
 def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
@@ -202,6 +287,77 @@ def cmd_taxonomic_abundance(args):
     print(summary_df.to_string(index=False))
 
 
+def cmd_single_taxon_abundance(args):
+    from Engines.TaxonomicAbundanceComputationEngine.taxonomic_abundance_computation_engine import compute_taxonomic_abundance
+
+    taxonomy_df, metadata_df = _load_and_enrich(
+        args.view, Path(args.inputs_dir), Path(args.config_dir)
+    )
+    out_dir = _ensure_output_dir(Path(args.output_dir), args.view, "single_taxon_abundance")
+
+    print(
+        f"Computing single taxon abundance for taxon='{args.taxon}', "
+        f"rank='{args.rank}', source_keys={args.source_keys} ..."
+    )
+    abundance_df, summary_df = compute_taxonomic_abundance(
+        taxonomy_df=taxonomy_df,
+        metadata_df=metadata_df,
+        rank=args.rank,
+        taxon=args.taxon,
+        group_col=args.group,
+    )
+
+    source_keys = [k for k in args.source_keys if str(k).strip()]
+    source_meta = _attach_source_keys(metadata_df, source_keys)
+    raw_df = abundance_df.merge(source_meta, on=['acc', 'bioproject'], how='left')
+
+    ordered_cols = ['acc', 'bioproject'] + source_keys + ['total_sample_reads', 'taxon_reads', 'relative_abundance']
+    ordered_cols = [c for c in ordered_cols if c in raw_df.columns]
+    raw_df = raw_df[ordered_cols]
+
+    safe_taxon = args.taxon.replace(' ', '_')
+    raw_path = out_dir / f"single_taxon_abundance_{safe_taxon}_raw.csv"
+    summary_path = out_dir / f"single_taxon_abundance_{safe_taxon}_summary.csv"
+    html_path = out_dir / f"single_taxon_abundance_{safe_taxon}.html"
+
+    raw_df.to_csv(raw_path, index=False)
+    summary_df.to_csv(summary_path, index=False)
+
+    print(f"  → {raw_path}")
+    print(f"  → {summary_path}")
+
+    group_col = args.group if args.group and args.group in raw_df.columns else None
+    title = f"Single Taxon Abundance — {args.taxon} ({args.rank.title()})"
+    if group_col:
+        fig = px.box(
+            raw_df.sort_values(group_col),
+            x=group_col,
+            y='relative_abundance',
+            color=group_col,
+            points='all',
+            hover_data=[c for c in ['acc', 'taxon_reads', 'total_sample_reads'] + source_keys if c in raw_df.columns],
+            title=title,
+            template='plotly_white',
+            height=520,
+        )
+    else:
+        fig = px.bar(
+            raw_df.sort_values('relative_abundance', ascending=False),
+            x='acc',
+            y='relative_abundance',
+            hover_data=[c for c in ['taxon_reads', 'total_sample_reads'] + source_keys if c in raw_df.columns],
+            title=title,
+            template='plotly_white',
+            height=520,
+        )
+    fig.update_layout(yaxis_title="Relative Abundance", yaxis_tickformat=".2%")
+    fig.write_html(str(html_path))
+    print(f"  → {html_path}")
+
+    print("\nPrevalence Summary:")
+    print(summary_df.to_string(index=False))
+
+
 def cmd_abundance_matrix(args):
     taxonomy_df, _ = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
@@ -375,6 +531,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_abund.add_argument("--group", default=None,
                          help="Metadata column to group samples by in the plot")
     p_abund.set_defaults(func=cmd_taxonomic_abundance)
+
+    # single-taxon-abundance
+    p_single = sub.add_parser(
+        "single-taxon-abundance",
+        parents=[shared],
+        help="Run single taxon abundance with selected source keys (defaults to Viruses, day_run, host_subject_id_sam)",
+    )
+    p_single.add_argument("--rank", default="superkingdom",
+                          help="Taxonomic rank of the target taxon (default: superkingdom)")
+    p_single.add_argument("--taxon", default="Viruses",
+                          help="Name of the taxon to analyse (default: Viruses)")
+    p_single.add_argument("--source-keys", nargs="+", default=["day_run", "host_subject_id_sam"],
+                          help="Source keys to include in raw output (default: day_run host_subject_id_sam)")
+    p_single.add_argument("--group", default=None,
+                          help="Optional metadata/source-key column to group samples by in the plot")
+    p_single.set_defaults(func=cmd_single_taxon_abundance)
 
     # abundance-matrix (preferred)
     p_abund_matrix = sub.add_parser("abundance-matrix", parents=[shared],

@@ -3,6 +3,7 @@
 Usage examples:
   python askslm.py alpha-diversity --view PhagesInBlood --rank species --group Group
   python askslm.py taxonomic-abundance --view PhagesInBlood --rank genus --taxon Prevotella --group Group
+  python askslm.py single-taxon-abundance --view PhagesInBlood --taxon Viruses --source-keys day_run host_subject_id_sam
   python askslm.py abundance-matrix --view PhagesInBlood
 """
 
