@@ -7,12 +7,13 @@ Usage examples:
   python askslm.py abundance-matrix --view PhagesInBlood
 """
 
-from cli import build_parser
+from cli import build_parser, _resolve_runtime_paths
 
 
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    _resolve_runtime_paths(args)
     args.func(args)
 
 

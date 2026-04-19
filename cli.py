@@ -2,9 +2,18 @@
 Ask-SLM Command Line Interface.
 
 Provides non-interactive access to analyses for use on remote servers or
-in scripted pipelines. Each command reads from a named view folder
-(Inputs/<view>/metadata.csv + taxonomy.csv), applies mapping configs,
-runs the requested analysis, and writes structured outputs to results/<view>/.
+in scripted pipelines.
+
+Default layout (workspace-native):
+    Workspaces/<view>/inputs/metadata.csv
+    Workspaces/<view>/inputs/taxonomy.csv
+    Workspaces/<view>/mapping_configs/*.json
+    Workspaces/<view>/results/
+
+Legacy layout is still supported when paths are provided explicitly:
+    Inputs/<view>/metadata.csv + Inputs/<view>/taxonomy.csv
+    mapping_configs/
+    results/<view>/
 
 Usage examples:
     python askslm.py alpha-diversity     --view PhagesInBlood --rank species --group Group
@@ -110,6 +119,127 @@ def _attach_source_keys(metadata_df: pd.DataFrame, source_keys: list[str]) -> pd
     return meta
 
 
+def _format_top_values_with_counts(values_with_counts: list[dict], sample_count: int) -> str:
+    """Format value samples as `value (count)` with adaptive truncation.
+
+    Show many/all values when cardinality is meaningfully lower than sample count,
+    and truncate only for near one-value-per-record fields.
+    """
+    normalized = []
+    for item in values_with_counts:
+        value = str(item.get("value", ""))
+        try:
+            count = int(item.get("count", 0))
+        except (TypeError, ValueError):
+            count = 0
+        normalized.append({"value": value, "count": count})
+
+    if not normalized:
+        return ""
+
+    normalized.sort(key=lambda x: -x["count"])
+    unique_values_count = len(normalized)
+    denominator = max(int(sample_count), 1)
+    uniqueness_ratio = unique_values_count / denominator
+
+    # Near one-value-per-record fields can explode in size; trim those.
+    if uniqueness_ratio >= 0.8:
+        limit = 30
+    else:
+        # For repeated cohorts (e.g., many tests per subject), show far more values.
+        limit = 500
+
+    visible = normalized[:limit]
+    rendered = " | ".join(f"{item['value']} ({item['count']})" for item in visible)
+    if unique_values_count > limit:
+        rendered += f" | ... (+{unique_values_count - limit} more)"
+    return rendered
+
+
+def _resolve_case_insensitive_path(path: Path) -> Path:
+    """Resolve path by case-insensitive child lookup when exact casing does not exist."""
+    if path.exists():
+        return path
+    parent = path.parent
+    if not parent.exists():
+        return path
+    matches = [child for child in parent.iterdir() if child.name.lower() == path.name.lower()]
+    if len(matches) == 1:
+        return matches[0]
+    return path
+
+
+def _resolve_view_input_dir(view: str, inputs_dir: Path) -> Path:
+    """Resolve where metadata.csv/taxonomy.csv live for a given view.
+
+    Supports both:
+      - root/view/metadata.csv (legacy)
+      - root/metadata.csv (workspace inputs dir)
+    """
+    inputs_dir = _resolve_case_insensitive_path(inputs_dir)
+
+    candidate_legacy = _resolve_case_insensitive_path(inputs_dir / view)
+    if candidate_legacy.is_dir() and (candidate_legacy / "metadata.csv").exists() and (candidate_legacy / "taxonomy.csv").exists():
+        return candidate_legacy
+
+    if inputs_dir.is_dir() and (inputs_dir / "metadata.csv").exists() and (inputs_dir / "taxonomy.csv").exists():
+        return inputs_dir
+
+    print(
+        "Error: could not locate inputs. Expected either:\n"
+        f"  - {candidate_legacy}/metadata.csv and taxonomy.csv\n"
+        f"  - {inputs_dir}/metadata.csv and taxonomy.csv",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+def _resolve_runtime_paths(args) -> None:
+    """Fill args paths from workspace defaults when omitted.
+
+    Defaults to Workspaces/<view>/* when present, otherwise falls back to legacy roots.
+    """
+    view = args.view
+    workspace_root = _resolve_case_insensitive_path(Path(args.workspace_root))
+    workspace_dir = _resolve_case_insensitive_path(workspace_root / view)
+
+    default_inputs = workspace_dir / "inputs"
+    default_configs = workspace_dir / "mapping_configs"
+    default_results = workspace_dir / "results"
+
+    if args.inputs_dir:
+        inputs_dir = Path(args.inputs_dir)
+    else:
+        inputs_dir = default_inputs if default_inputs.exists() else Path("Inputs")
+
+    if args.config_dir:
+        config_dir = Path(args.config_dir)
+    else:
+        config_dir = default_configs if default_configs.exists() else Path("mapping_configs")
+
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    else:
+        output_dir = default_results if default_results.exists() else Path("results")
+
+    inputs_dir = _resolve_case_insensitive_path(inputs_dir)
+    config_dir = _resolve_case_insensitive_path(config_dir)
+    output_dir = _resolve_case_insensitive_path(output_dir)
+
+    workspace_layout = (
+        inputs_dir.name.lower() == "inputs"
+        and config_dir.name == "mapping_configs"
+        and output_dir.name == "results"
+        and inputs_dir.parent == config_dir.parent == output_dir.parent
+        and inputs_dir.parent.name == view
+    )
+
+    args.inputs_dir = str(inputs_dir)
+    args.config_dir = str(config_dir)
+    args.output_dir = str(output_dir)
+    args.workspace_layout = workspace_layout
+
+
 def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
     """Load both DataFrames for a view and apply mapping configs."""
     import sys, os
@@ -120,10 +250,7 @@ def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
     from Accessors.SraAccessor.sra_taxonomy_accessor import SRATaxonomyAccessor
     from Engines.MetadataMappingEngine.metadata_mapping_engine import MetadataMappingEngine
 
-    view_path = inputs_dir / view
-    if not view_path.is_dir():
-        print(f"Error: view folder not found: {view_path}", file=sys.stderr)
-        sys.exit(1)
+    view_path = _resolve_view_input_dir(view, inputs_dir)
 
     print(f"Loading metadata from {view_path / 'metadata.csv'} ...")
     metadata_df = SRAMetadataAccessor.get(view_path / "metadata.csv")
@@ -149,8 +276,15 @@ def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
     return taxonomy_df, enriched_metadata_df
 
 
-def _ensure_output_dir(output_dir: Path, view: str, analyzer: str | None = None) -> Path:
-    out = output_dir / view
+def _ensure_output_dir(
+    output_dir: Path,
+    view: str,
+    analyzer: str | None = None,
+    workspace_layout: bool = False,
+) -> Path:
+    out = output_dir
+    if not workspace_layout:
+        out = output_dir / view
     if analyzer:
         out = out / analyzer
     out.mkdir(parents=True, exist_ok=True)
@@ -165,7 +299,12 @@ def cmd_alpha_diversity(args):
     taxonomy_df, metadata_df = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
     )
-    out_dir = _ensure_output_dir(Path(args.output_dir), args.view, "alpha_diversity")
+    out_dir = _ensure_output_dir(
+        Path(args.output_dir),
+        args.view,
+        "alpha_diversity",
+        workspace_layout=bool(getattr(args, "workspace_layout", False)),
+    )
 
     print(f"Computing alpha diversity at rank '{args.rank}' ...")
     diversity_df = compute_alpha_diversity(
@@ -230,7 +369,12 @@ def cmd_taxonomic_abundance(args):
     taxonomy_df, metadata_df = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
     )
-    out_dir = _ensure_output_dir(Path(args.output_dir), args.view, "taxonomic_abundance")
+    out_dir = _ensure_output_dir(
+        Path(args.output_dir),
+        args.view,
+        "taxonomic_abundance",
+        workspace_layout=bool(getattr(args, "workspace_layout", False)),
+    )
 
     print(f"Computing abundance of '{args.taxon}' at rank '{args.rank}' ...")
     abundance_df, summary_df = compute_taxonomic_abundance(
@@ -293,7 +437,12 @@ def cmd_single_taxon_abundance(args):
     taxonomy_df, metadata_df = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
     )
-    out_dir = _ensure_output_dir(Path(args.output_dir), args.view, "single_taxon_abundance")
+    out_dir = _ensure_output_dir(
+        Path(args.output_dir),
+        args.view,
+        "single_taxon_abundance",
+        workspace_layout=bool(getattr(args, "workspace_layout", False)),
+    )
 
     print(
         f"Computing single taxon abundance for taxon='{args.taxon}', "
@@ -362,7 +511,12 @@ def cmd_abundance_matrix(args):
     taxonomy_df, _ = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
     )
-    out_dir = _ensure_output_dir(Path(args.output_dir), args.view, "abundance_matrix")
+    out_dir = _ensure_output_dir(
+        Path(args.output_dir),
+        args.view,
+        "abundance_matrix",
+        workspace_layout=bool(getattr(args, "workspace_layout", False)),
+    )
 
     print("Building abundance matrix (samples × taxa) ...")
     abundance_matrix = taxonomy_df.pivot_table(
@@ -386,31 +540,62 @@ def cmd_metadata_overview(args):
     _, metadata_df = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
     )
-    out_dir = _ensure_output_dir(Path(args.output_dir), args.view, "metadata_overview")
+    out_dir = _ensure_output_dir(
+        Path(args.output_dir),
+        args.view,
+        "metadata_overview",
+        workspace_layout=bool(getattr(args, "workspace_layout", False)),
+    )
 
     # Load raw metadata to run discovered-key scanning per project (runner-style insight).
     from Accessors.SraAccessor.sra_metadata_accessor import SRAMetadataAccessor
     from Engines.MetadataMappingEngine.metadata_mapping_engine import MetadataMappingEngine
 
-    raw_metadata_df = SRAMetadataAccessor.get(inputs_dir / args.view / "metadata.csv")
+    resolved_view_input_dir = _resolve_view_input_dir(args.view, inputs_dir)
+    raw_metadata_df = SRAMetadataAccessor.get(resolved_view_input_dir / "metadata.csv")
     processor = MetadataMappingEngine(config_dir=config_dir)
 
     discovered_rows = []
     for project_id in sorted(raw_metadata_df["bioproject"].dropna().unique()):
         project_df = raw_metadata_df[raw_metadata_df["bioproject"] == project_id].copy()
+        project_sample_count = int(len(project_df))
         discovered = processor._scan_for_keys_and_values(project_df)
 
         for source_name in ["from_jattr", "from_attributes"]:
             for item in discovered.get(source_name, []):
+                values_with_counts = item.get("values_with_counts", [])
+                if not values_with_counts and item.get("top_values"):
+                    # Backward-compatible fallback when only top_values are available.
+                    values_with_counts = [{"value": v, "count": 0} for v in item.get("top_values", [])]
                 discovered_rows.append(
                     {
                         "project_id": project_id,
                         "source": source_name,
                         "key_name": item.get("key_name", ""),
-                        "unique_values_count": len(item.get("values_with_counts", [])),
-                        "top_values": " | ".join(item.get("top_values", [])),
+                        "unique_values_count": len(values_with_counts),
+                        "top_values": _format_top_values_with_counts(values_with_counts, project_sample_count),
                     }
                 )
+
+        # Also include direct metadata fields in the same discovered reports.
+        for field_name in [c for c in project_df.columns if c not in ["jattr", "attributes"]]:
+            series = project_df[field_name].dropna().astype(str).str.strip()
+            series = series[series != ""]
+            unique_values_count = int(series.nunique()) if not series.empty else 0
+            values_with_counts = (
+                [{"value": str(value), "count": int(count)} for value, count in series.value_counts().items()]
+                if not series.empty
+                else []
+            )
+            discovered_rows.append(
+                {
+                    "project_id": project_id,
+                    "source": "metadata",
+                    "key_name": field_name,
+                    "unique_values_count": unique_values_count,
+                    "top_values": _format_top_values_with_counts(values_with_counts, project_sample_count),
+                }
+            )
 
     discovered_by_project_df = pd.DataFrame(discovered_rows)
     if discovered_by_project_df.empty:
@@ -498,13 +683,15 @@ def build_parser() -> argparse.ArgumentParser:
     # Shared arguments
     shared = argparse.ArgumentParser(add_help=False)
     shared.add_argument("--view", required=True,
-                        help="View name (subfolder under --inputs-dir)")
-    shared.add_argument("--inputs-dir", default="Inputs",
-                        help="Root folder containing view subfolders (default: Inputs)")
-    shared.add_argument("--output-dir", default="results",
-                        help="Root folder for output files (default: results)")
-    shared.add_argument("--config-dir", default="mapping_configs",
-                        help="Folder containing mapping config JSON files (default: mapping_configs)")
+                        help="Workspace/view name (e.g. ABX or PhagesInBlood)")
+    shared.add_argument("--workspace-root", default="Workspaces",
+                        help="Root folder containing workspace directories (default: Workspaces)")
+    shared.add_argument("--inputs-dir", default=None,
+                        help="Optional override for inputs directory or root")
+    shared.add_argument("--output-dir", default=None,
+                        help="Optional override for output directory or root")
+    shared.add_argument("--config-dir", default=None,
+                        help="Optional override for mapping config directory")
 
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -570,4 +757,5 @@ if __name__ == "__main__":
     # Backward-compatible wrapper: prefer using askslm.py as primary entrypoint.
     parser = build_parser()
     args = parser.parse_args()
+    _resolve_runtime_paths(args)
     args.func(args)
