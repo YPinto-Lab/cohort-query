@@ -209,6 +209,7 @@ class SRAProcessor:
         
         for filter_rule in sample_filters:
             action = filter_rule.get("action", "include")
+            source = filter_rule.get("source", "source_key")
             key = filter_rule.get("key")
             operator = filter_rule.get("operator", "equals")
             value = filter_rule.get("value", "")
@@ -219,7 +220,15 @@ class SRAProcessor:
             
             # Create mask based on operator
             def check_condition(row):
-                field_value = self._get_field_value(row, key)
+                if source == "metadata":
+                    if key not in row.index:
+                        field_value = None
+                    else:
+                        raw = row.get(key)
+                        field_value = None if pd.isna(raw) else str(raw)
+                else:
+                    # Backward-compatible default: source keys from jattr/attributes.
+                    field_value = self._get_field_value(row, key)
                 
                 if operator == "is_empty":
                     return field_value is None or field_value == ""
@@ -249,7 +258,8 @@ class SRAProcessor:
                 result_df = result_df[~mask]
             
             logger.info(
-                "Filter '%s %s %s' (%s): %d samples remaining",
+                "Filter '[%s] %s %s %s' (%s): %d samples remaining",
+                source,
                 key,
                 operator,
                 value,

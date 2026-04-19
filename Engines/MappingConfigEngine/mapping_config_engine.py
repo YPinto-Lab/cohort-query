@@ -13,6 +13,7 @@ import webbrowser
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Set
 
+import pandas as pd
 import ipywidgets as widgets
 from ipywidgets import (
     VBox, HBox, Layout, Dropdown, Text, Button, Output, 
@@ -21,6 +22,12 @@ from ipywidgets import (
 from IPython.display import display, clear_output
 
 from Accessors.MetalogAccessor.metalog_accessor import MetalogAccessor, MetalogField
+from Common.contracts.sra_schema import SRAMetadataSchema
+
+
+_BASE_METADATA_FILTER_COLS = sorted(
+    c for c in SRAMetadataSchema.__fields__.keys() if c not in {"jattr", "attributes"}
+)
 
 
 class MappingConfigManager:
@@ -49,8 +56,10 @@ class MappingConfigManager:
         # Project data loaded from templates
         self._projects: Dict[str, dict] = {}  # project_id -> template data
         self._project_source_keys: Dict[str, List[str]] = {}  # project_id -> source keys
+        self._project_metadata_fields: Dict[str, List[str]] = {}  # project_id -> metadata fields
         self._project_key_values: Dict[str, Dict[str, List[str]]] = {}  # project_id -> key -> values
         self._project_key_values_with_counts: Dict[str, Dict[str, List[dict]]] = {}  # project_id -> key -> [{value, count}]
+        self._project_metadata_values_with_counts: Dict[str, Dict[str, List[dict]]] = {}  # project_id -> field -> [{value, count}]
         self._existing_configs: Dict[str, dict] = {}  # project_id -> existing config
         
         # Target fields state
@@ -135,6 +144,8 @@ class MappingConfigManager:
                         key_values_map[key_name] = top_values
             
             self._project_source_keys[project_id] = sorted(set(k['key_name'] for k in jattr_keys + attr_keys))
+            metadata_fields = template_data.get("metadata_columns", []) or _BASE_METADATA_FILTER_COLS
+            self._project_metadata_fields[project_id] = sorted(set(str(c) for c in metadata_fields))
             self._project_key_values[project_id] = key_values_map
             self._project_key_values_with_counts[project_id] = key_values_with_counts
             
@@ -152,6 +163,9 @@ class MappingConfigManager:
             desc = config.get('description', '')
             if desc:
                 self._project_descriptions[project_id] = desc
+
+        # Build metadata-field value summaries from workspace metadata when available.
+        self._build_project_metadata_value_summaries()
         
         # Extract existing target fields from all configs
         existing_targets: Set[str] = set()
@@ -167,6 +181,50 @@ class MappingConfigManager:
             self._stage_log(f"MappingConfigManager: found {len(self._target_fields)} existing target fields")
         
         return True
+
+    def _build_project_metadata_value_summaries(self) -> None:
+        """Populate per-project metadata value counts using workspace metadata.csv when available."""
+        metadata_csv_path = self.config_dir.parent / "inputs" / "metadata.csv"
+        if not metadata_csv_path.exists():
+            self._stage_log(
+                f"MappingConfigManager: metadata summary skipped; file not found at {metadata_csv_path}"
+            )
+            return
+
+        try:
+            metadata_df = pd.read_csv(metadata_csv_path)
+        except Exception as exc:
+            self._stage_log(
+                f"MappingConfigManager: failed reading metadata for summary ({exc})"
+            )
+            return
+
+        if "bioproject" not in metadata_df.columns:
+            self._stage_log("MappingConfigManager: metadata summary skipped; bioproject column missing")
+            return
+
+        for project_id in self._projects.keys():
+            project_df = metadata_df[metadata_df["bioproject"].astype(str) == str(project_id)]
+            if project_df.empty:
+                continue
+
+            fields = self._project_metadata_fields.get(project_id, [])
+            summaries: Dict[str, List[dict]] = {}
+
+            for field in fields:
+                if field not in project_df.columns:
+                    continue
+                values = project_df[field].dropna().astype(str).str.strip()
+                values = values[values != ""]
+                if values.empty:
+                    continue
+
+                counts = values.value_counts()
+                summaries[field] = [
+                    {"value": str(value), "count": int(count)} for value, count in counts.items()
+                ]
+
+            self._project_metadata_values_with_counts[project_id] = summaries
     
     def _project_label(self, project_id: str) -> str:
         """Return project ID with its description if available."""
@@ -825,6 +883,117 @@ class MappingConfigManager:
         accordion.set_title(0, f'🔍 Discovered Source Keys ({len(all_keys)} unique keys across {len(self._projects)} projects)')
         
         return accordion
+
+    def _create_metadata_fields_summary(self) -> Accordion:
+        """Create summary of metadata fields across all projects with project filter buttons."""
+
+        all_fields: Dict[str, Set[str]] = {}  # field_name -> set of projects that have it
+        for project_id, fields in self._project_metadata_fields.items():
+            for field in fields:
+                if field not in all_fields:
+                    all_fields[field] = set()
+                all_fields[field].add(project_id)
+
+        project_buttons: Dict[str, Button] = {}
+        for project_id in sorted(self._projects.keys()):
+            btn = Button(
+                description=self._project_label(project_id),
+                button_style='',
+                layout=Layout(width='auto', margin='2px')
+            )
+            project_buttons[project_id] = btn
+
+        buttons_row = HBox(
+            list(project_buttons.values()),
+            layout=Layout(margin='0 0 10px 0', flex_wrap='wrap')
+        )
+
+        fields_container = VBox([], layout=Layout(max_height='250px', overflow_y='auto', padding='5px'))
+        selected_projects: Set[str] = set()
+
+        def build_fields_display():
+            if not selected_projects:
+                filtered_fields = all_fields
+            else:
+                filtered_fields = {
+                    f: p for f, p in all_fields.items() if p.intersection(selected_projects)
+                }
+
+            sorted_fields = sorted(filtered_fields.items(), key=lambda x: (-len(x[1]), x[0]))
+            rows = []
+
+            for field_name, projects in sorted_fields[:40]:
+                if selected_projects:
+                    in_selected = len(projects.intersection(selected_projects))
+                    coverage_text = f"{in_selected}/{len(selected_projects)} selected"
+                    coverage_color = 'green' if in_selected == len(selected_projects) else '#666'
+                    aggregate_projects = [pid for pid in selected_projects if pid in projects]
+                else:
+                    coverage_text = f"{len(projects)}/{len(self._projects)} projects"
+                    coverage_color = 'green' if len(projects) == len(self._projects) else '#666'
+                    aggregate_projects = list(projects)
+
+                aggregated: Dict[str, int] = {}
+                for pid in aggregate_projects:
+                    vals_with_counts = self._project_metadata_values_with_counts.get(pid, {}).get(field_name, [])
+                    for vc in vals_with_counts:
+                        val = str(vc.get('value', ''))
+                        count = int(vc.get('count', 0))
+                        aggregated[val] = aggregated.get(val, 0) + count
+
+                values_display = []
+                for val, count in sorted(aggregated.items(), key=lambda x: -x[1])[:30]:
+                    values_display.append(
+                        f"<code>{val}</code> <span style='color:#888;font-size:0.8em;'>({count})</span>"
+                    )
+
+                vals_str = ', '.join(values_display) if values_display else "<i>no examples</i>"
+                num_values = len(aggregated)
+
+                rows.append(HTML(
+                    f"<div style='margin: 3px 0; padding: 4px 8px; background: #f5f5f5; border-radius: 4px;'>"
+                    f"<b>{field_name}</b> — <span style='color: {coverage_color};'>{coverage_text}</span>"
+                    f"<details style='margin-top: 2px;'>"
+                    f"<summary style='color: #666; font-size: 12px; cursor: pointer;'>Values ({num_values})</summary>"
+                    f"<span style='color: #666; font-size: 12px;'>{vals_str}</span>"
+                    f"</details>"
+                    f"</div>"
+                ))
+
+            if not rows:
+                rows.append(HTML("<span style='color: #666;'>No metadata fields found for selected projects</span>"))
+
+            fields_container.children = rows
+
+        def on_button_click(project_id: str):
+            def handler(b):
+                if project_id in selected_projects:
+                    selected_projects.remove(project_id)
+                    b.button_style = ''
+                else:
+                    selected_projects.add(project_id)
+                    b.button_style = 'info'
+                build_fields_display()
+            return handler
+
+        for project_id, btn in project_buttons.items():
+            btn.on_click(on_button_click(project_id))
+
+        build_fields_display()
+
+        hint = HTML(
+            "<span style='color: #888; font-size: 11px;'>"
+            "💡 Click project buttons to filter fields. No selection = show all.</span>"
+        )
+
+        content = VBox([hint, buttons_row, fields_container], layout=Layout(padding='10px'))
+        accordion = Accordion(children=[content], selected_index=None)
+        accordion.set_title(
+            0,
+            f'🧾 Metadata Fields ({len(all_fields)} unique fields across {len(self._projects)} projects)'
+        )
+
+        return accordion
     
     def _create_filter_row(
         self, 
@@ -835,14 +1004,22 @@ class MappingConfigManager:
         """Create a single filter row for sample filtering."""
         
         source_keys = self._project_source_keys.get(project_id, [])
+        metadata_fields = self._project_metadata_fields.get(project_id, _BASE_METADATA_FILTER_COLS)
         key_values_map = self._project_key_values.get(project_id, {})
         
         # Get initial values
         init_action = initial_values.get('action', 'include') if initial_values else 'include'
         init_key = initial_values.get('key', '') if initial_values else ''
+        init_source = initial_values.get('source', '') if initial_values else ''
         init_operator = initial_values.get('operator', 'equals') if initial_values else 'equals'
         init_value = initial_values.get('value', '') if initial_values else ''
         init_comment = initial_values.get('comment', '') if initial_values else ''
+
+        if init_source not in {'source_key', 'metadata'}:
+            if init_key and init_key in metadata_fields and init_key not in source_keys:
+                init_source = 'metadata'
+            else:
+                init_source = 'source_key'
         
         # Action: include or exclude matching samples
         action_dropdown = Dropdown(
@@ -853,11 +1030,25 @@ class MappingConfigManager:
         )
         
         where_label = HTML("<span style='margin: 0 8px; color: #666;'>samples where</span>")
+
+        source_label = HTML("<span style='margin: 0 6px; color: #666;'>from</span>")
+
+        source_dropdown = Dropdown(
+            options=[('Source key', 'source_key'), ('Metadata field', 'metadata')],
+            value=init_source,
+            layout=Layout(width='130px'),
+            style={'description_width': '0px'}
+        )
+
+        def key_options_for(source: str) -> List[tuple]:
+            if source == 'metadata':
+                return [('Select metadata field...', '')] + [(k, k) for k in metadata_fields]
+            return [('Select source key...', '')] + [(k, k) for k in source_keys]
         
         # Key dropdown
         key_dropdown = Dropdown(
-            options=[('Select key...', '')] + [(k, k) for k in source_keys],
-            value=init_key if init_key in source_keys else '',
+            options=key_options_for(init_source),
+            value=init_key if init_key in [opt[1] for opt in key_options_for(init_source)] else '',
             layout=Layout(width='180px'),
             style={'description_width': '0px'}
         )
@@ -889,7 +1080,7 @@ class MappingConfigManager:
         
         # Value suggestions dropdown
         initial_suggestions = [('▼', '')]
-        if init_key and init_key in key_values_map:
+        if init_source == 'source_key' and init_key and init_key in key_values_map:
             values = key_values_map[init_key]
             initial_suggestions = [('▼', '')] + [(str(v)[:25], v) for v in values[:20]]
         
@@ -901,13 +1092,28 @@ class MappingConfigManager:
         
         def on_key_change(change):
             key = change.new
-            if key and key in key_values_map:
+            if source_dropdown.value == 'source_key' and key and key in key_values_map:
                 values = key_values_map[key]
                 value_suggestions.options = [('▼', '')] + [(str(v)[:25], v) for v in values[:20]]
             else:
                 value_suggestions.options = [('▼', '')]
         
         key_dropdown.observe(on_key_change, names='value')
+
+        def on_source_change(change):
+            new_options = key_options_for(change.new)
+            key_dropdown.options = new_options
+            allowed_values = [v for _, v in new_options]
+            key_dropdown.value = key_dropdown.value if key_dropdown.value in allowed_values else ''
+
+            if change.new == 'metadata':
+                value_suggestions.options = [('▼', '')]
+                value_suggestions.layout.display = 'none' if operator_dropdown.value in ['is_empty', 'is_not_empty'] else 'block'
+            else:
+                # Repopulate suggestions for selected source key.
+                on_key_change(type('obj', (object,), {'new': key_dropdown.value})())
+
+        source_dropdown.observe(on_source_change, names='value')
         
         def on_suggestion_select(change):
             if change.new:
@@ -922,7 +1128,7 @@ class MappingConfigManager:
                 value_suggestions.layout.display = 'none'
             else:
                 value_input.layout.display = 'block'
-                value_suggestions.layout.display = 'block'
+                value_suggestions.layout.display = 'block' if source_dropdown.value == 'source_key' else 'none'
         
         operator_dropdown.observe(on_operator_change, names='value')
         
@@ -942,7 +1148,7 @@ class MappingConfigManager:
         )
         
         primary_row = HBox(
-            [action_dropdown, where_label, key_dropdown, operator_dropdown, value_input, value_suggestions, delete_button],
+            [action_dropdown, where_label, source_label, source_dropdown, key_dropdown, operator_dropdown, value_input, value_suggestions, delete_button],
             layout=Layout(margin='2px 0', align_items='center')
         )
 
@@ -954,6 +1160,7 @@ class MappingConfigManager:
         # Store widget references
         filter_row._filter_widgets = {
             'action': action_dropdown,
+            'source': source_dropdown,
             'key': key_dropdown,
             'operator': operator_dropdown,
             'value': value_input,
@@ -1069,6 +1276,7 @@ class MappingConfigManager:
                         if key:
                             filter_entry = {
                                 "action": fw['action'].value,
+                                "source": fw['source'].value,
                                 "key": key,
                                 "operator": fw['operator'].value
                             }
@@ -1109,7 +1317,7 @@ class MappingConfigManager:
             f"color: white; padding: 15px; border-radius: 8px; margin-bottom: 10px;'>"
             f"<h3 style='margin: 0;'>🔧 Project Filters</h3>"
             f"<p style='margin: 5px 0 0 0; opacity: 0.9; font-size: 13px;'>"
-            f"Exclude entire projects or filter specific samples before mapping</p>"
+            f"Exclude entire projects or filter specific samples by source keys or metadata fields before mapping</p>"
             f"</div>"
         )
         
@@ -1143,6 +1351,7 @@ class MappingConfigManager:
         
         # Discovered keys summary
         keys_accordion = self._create_discovered_keys_summary()
+        metadata_fields_accordion = self._create_metadata_fields_summary()
         
         # Filters section (before mapping)
         filters_section = self._create_filters_section()
@@ -1204,6 +1413,7 @@ class MappingConfigManager:
         main_ui = VBox([
             descriptions_section,
             keys_accordion,
+            metadata_fields_accordion,
             filters_section,
             header,
             add_target_ui,
