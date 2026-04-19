@@ -119,6 +119,23 @@ class SRAWorkspaceInputAccessor:
                 f"See log file: {context.run_log_path}"
             )
 
+        # When the workspace already has canonical files and no split parts are used,
+        # avoid rewriting these files. Rewrites change mtime and can invalidate
+        # downstream cache stamps even when data is unchanged.
+        metadata_canonical_only = (
+            len(metadata_files) == 1 and metadata_files[0].resolve() == metadata_output.resolve()
+        )
+        taxonomy_canonical_only = (
+            len(taxonomy_files) == 1 and taxonomy_files[0].resolve() == taxonomy_output.resolve()
+        )
+        if metadata_canonical_only and taxonomy_canonical_only:
+            logger.log("Using canonical workspace inputs directly (no rewrite needed).")
+            metadata_df = SRAMetadataAccessor.get(metadata_output)
+            taxonomy_df = SRATaxonomyAccessor.get(taxonomy_output)
+            logger.log(f"Loaded canonical metadata rows={len(metadata_df)} from {metadata_output}")
+            logger.log(f"Loaded canonical taxonomy rows={len(taxonomy_df)} from {taxonomy_output}")
+            return metadata_df, taxonomy_df, metadata_output, taxonomy_output
+
         metadata_parts = [pd.read_csv(path) for path in metadata_files]
         taxonomy_parts = [pd.read_csv(path) for path in taxonomy_files]
 
