@@ -149,7 +149,7 @@ def run_enrichment_stage(
             )
             continue
 
-        processed_parts.append(processor.process(project_metadata, project_id, view_name=context.view_name))
+        processed_parts.append(processor.map(project_metadata, project_id, view_name=context.view_name))
 
     if strict_missing_configs and missing_configs:
         missing = ", ".join(missing_configs)

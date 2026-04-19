@@ -1,3 +1,3 @@
-from .taxonomic_abundance_engine import TaxonomicAbundanceEngine, TaxonomicAbundanceManager
+from .taxonomic_abundance_engine import TaxonomicAbundanceEngine, TaxonomicAbundanceEngine
 
-__all__ = ["TaxonomicAbundanceEngine", "TaxonomicAbundanceManager"]
+__all__ = ["TaxonomicAbundanceEngine", "TaxonomicAbundanceEngine"]

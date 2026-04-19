@@ -10,11 +10,6 @@ Default layout (workspace-native):
     Workspaces/<view>/mapping_configs/*.json
     Workspaces/<view>/results/
 
-Legacy layout is still supported when paths are provided explicitly:
-    Inputs/<view>/metadata.csv + Inputs/<view>/taxonomy.csv
-    mapping_configs/
-    results/<view>/
-
 Usage examples:
     python askslm.py alpha-diversity     --view PhagesInBlood --rank species --group Group
     python askslm.py taxonomic-abundance --view PhagesInBlood --rank genus --taxon Prevotella --group Group
@@ -173,23 +168,17 @@ def _resolve_case_insensitive_path(path: Path) -> Path:
 def _resolve_view_input_dir(view: str, inputs_dir: Path) -> Path:
     """Resolve where metadata.csv/taxonomy.csv live for a given view.
 
-    Supports both:
-      - root/view/metadata.csv (legacy)
-      - root/metadata.csv (workspace inputs dir)
+    Expects a directory that directly contains metadata.csv and taxonomy.csv.
     """
     inputs_dir = _resolve_case_insensitive_path(inputs_dir)
-
-    candidate_legacy = _resolve_case_insensitive_path(inputs_dir / view)
-    if candidate_legacy.is_dir() and (candidate_legacy / "metadata.csv").exists() and (candidate_legacy / "taxonomy.csv").exists():
-        return candidate_legacy
 
     if inputs_dir.is_dir() and (inputs_dir / "metadata.csv").exists() and (inputs_dir / "taxonomy.csv").exists():
         return inputs_dir
 
     print(
-        "Error: could not locate inputs. Expected either:\n"
-        f"  - {candidate_legacy}/metadata.csv and taxonomy.csv\n"
-        f"  - {inputs_dir}/metadata.csv and taxonomy.csv",
+        "Error: could not locate inputs. Expected:\n"
+        f"  - {inputs_dir}/metadata.csv\n"
+        f"  - {inputs_dir}/taxonomy.csv",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -198,7 +187,7 @@ def _resolve_view_input_dir(view: str, inputs_dir: Path) -> Path:
 def _resolve_runtime_paths(args) -> None:
     """Fill args paths from workspace defaults when omitted.
 
-    Defaults to Workspaces/<view>/* when present, otherwise falls back to legacy roots.
+    Defaults to Workspaces/<view>/* unless explicit overrides are provided.
     """
     view = args.view
     workspace_root = _resolve_case_insensitive_path(Path(args.workspace_root))
@@ -211,29 +200,23 @@ def _resolve_runtime_paths(args) -> None:
     if args.inputs_dir:
         inputs_dir = Path(args.inputs_dir)
     else:
-        inputs_dir = default_inputs if default_inputs.exists() else Path("Inputs")
+        inputs_dir = default_inputs
 
     if args.config_dir:
         config_dir = Path(args.config_dir)
     else:
-        config_dir = default_configs if default_configs.exists() else Path("mapping_configs")
+        config_dir = default_configs
 
     if args.output_dir:
         output_dir = Path(args.output_dir)
     else:
-        output_dir = default_results if default_results.exists() else Path("results")
+        output_dir = default_results
 
     inputs_dir = _resolve_case_insensitive_path(inputs_dir)
     config_dir = _resolve_case_insensitive_path(config_dir)
     output_dir = _resolve_case_insensitive_path(output_dir)
 
-    workspace_layout = (
-        inputs_dir.name.lower() == "inputs"
-        and config_dir.name == "mapping_configs"
-        and output_dir.name == "results"
-        and inputs_dir.parent == config_dir.parent == output_dir.parent
-        and inputs_dir.parent.name == view
-    )
+    workspace_layout = True
 
     args.inputs_dir = str(inputs_dir)
     args.config_dir = str(config_dir)
@@ -254,12 +237,9 @@ def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
 
 
 def _resolve_lineage_paths(args) -> tuple[Path, Path]:
-    """Resolve lineage DB and stamp paths for current runtime mode."""
+    """Resolve lineage DB and stamp paths under the active output directory."""
     output_dir = Path(args.output_dir)
-    if bool(getattr(args, "workspace_layout", False)):
-        cache_dir = output_dir / "_cache"
-    else:
-        cache_dir = output_dir / args.view / "_cache"
+    cache_dir = output_dir / "_cache"
 
     lineage_db_path = Path(args.lineage_db_path) if getattr(args, "lineage_db_path", None) else cache_dir / "taxonomy_lineage_db.json"
     stamp_path = lineage_db_path.parent / "taxonomy_lineage_db_stamp.json"
@@ -296,7 +276,7 @@ def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
             parts.append(metadata_df[metadata_df['bioproject'] == project_id].copy())
             continue
         project_df = metadata_df[metadata_df['bioproject'] == project_id].copy()
-        parts.append(processor.process(project_df, project_id))
+        parts.append(processor.map(project_df, project_id))
 
     enriched_metadata_df = pd.concat(parts, ignore_index=True)
     return taxonomy_df, enriched_metadata_df
@@ -321,8 +301,6 @@ def _ensure_output_dir(
     workspace_layout: bool = False,
 ) -> Path:
     out = output_dir
-    if not workspace_layout:
-        out = output_dir / view
     if analyzer:
         out = out / analyzer
     out.mkdir(parents=True, exist_ok=True)
@@ -790,7 +768,7 @@ def build_parser() -> argparse.ArgumentParser:
     shared.add_argument("--config-dir", default=None,
                         help="Optional override for mapping config directory")
     shared.add_argument("--lineage-db-path", default=None,
-                        help="Optional path to taxonomy lineage DB (default: workspace/legacy cache location)")
+                        help="Optional path to taxonomy lineage DB (default: <output-dir>/_cache/taxonomy_lineage_db.json)")
 
     sub = parser.add_subparsers(dest="command", required=True)
 

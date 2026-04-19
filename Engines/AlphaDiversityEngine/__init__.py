@@ -1,3 +1,3 @@
-from .alpha_diversity_engine import AlphaDiversityEngine, AlphaDiversityManager
+from .alpha_diversity_engine import AlphaDiversityEngine, AlphaDiversityEngine
 
-__all__ = ["AlphaDiversityEngine", "AlphaDiversityManager"]
+__all__ = ["AlphaDiversityEngine", "AlphaDiversityEngine"]

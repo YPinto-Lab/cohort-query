@@ -28,7 +28,7 @@ _BASE_METADATA_COLS = set(SRAMetadataSchema.__fields__.keys())
 
 
 
-class AlphaDiversityManager:
+class AlphaDiversityEngine:
     """
     Manager for interactive alpha diversity analysis in Jupyter notebooks.
     Provides a widget-based UI for users to:
@@ -538,4 +538,4 @@ class AlphaDiversityManager:
 
 
 # Canonical iDesign name for this engine.
-AlphaDiversityEngine = AlphaDiversityManager
+AlphaDiversityEngine = AlphaDiversityEngine

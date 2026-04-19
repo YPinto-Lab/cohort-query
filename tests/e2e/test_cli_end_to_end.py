@@ -58,33 +58,21 @@ class TestCliEndToEnd(unittest.TestCase):
         try:
 
             view_name = "MockView"
-            inputs_root = tmp_path / "Inputs"
-            config_root = tmp_path / "mapping_configs"
-            output_root = tmp_path / "results"
             workspace_root = tmp_path / "Workspaces"
             workspace_dir = workspace_root / view_name
             workspace_inputs = workspace_dir / "inputs"
             workspace_configs = workspace_dir / "mapping_configs"
             workspace_results = workspace_dir / "results"
             expected_root = tmp_path / "expected"
-            view_dir = inputs_root / view_name
 
-            view_dir.mkdir(parents=True, exist_ok=True)
-            config_root.mkdir(parents=True, exist_ok=True)
-            output_root.mkdir(parents=True, exist_ok=True)
             expected_root.mkdir(parents=True, exist_ok=True)
             workspace_inputs.mkdir(parents=True, exist_ok=True)
             workspace_configs.mkdir(parents=True, exist_ok=True)
             workspace_results.mkdir(parents=True, exist_ok=True)
 
-            self._write_mock_metadata_csv(view_dir / "metadata.csv")
-            self._write_mock_taxonomy_csv(view_dir / "taxonomy.csv")
-            self._write_mock_mapping_config(config_root / "PRJTEST1.json")
-
-            # Duplicate fixtures under workspace-native layout for path-resolution testing.
-            shutil.copy2(view_dir / "metadata.csv", workspace_inputs / "metadata.csv")
-            shutil.copy2(view_dir / "taxonomy.csv", workspace_inputs / "taxonomy.csv")
-            shutil.copy2(config_root / "PRJTEST1.json", workspace_configs / "PRJTEST1.json")
+            self._write_mock_metadata_csv(workspace_inputs / "metadata.csv")
+            self._write_mock_taxonomy_csv(workspace_inputs / "taxonomy.csv")
+            self._write_mock_mapping_config(workspace_configs / "PRJTEST1.json")
             expected_files = self._write_expected_outputs(expected_root)
 
             # Act + Assert: abundance-matrix
@@ -95,15 +83,15 @@ class TestCliEndToEnd(unittest.TestCase):
                 "--view",
                 view_name,
                 "--inputs-dir",
-                str(inputs_root),
+                str(workspace_inputs),
                 "--config-dir",
-                str(config_root),
+                str(workspace_configs),
                 "--output-dir",
-                str(output_root),
+                str(workspace_results),
             ]
             abundance_run = self._run_cli(abundance_cmd, cwd=repo_root)
 
-            abundance_out = output_root / view_name / "abundance_matrix" / "abundance_matrix.csv"
+            abundance_out = workspace_results / "abundance_matrix" / "abundance_matrix.csv"
             self.assertTrue(abundance_out.exists(), f"abundance_matrix.csv was not created.\nSTDOUT:\n{abundance_run.stdout}")
             self.assertIn("Shape: 3 samples", abundance_run.stdout, "Feature matrix shape summary missing from stdout")
 
@@ -191,18 +179,18 @@ class TestCliEndToEnd(unittest.TestCase):
                 "--view",
                 view_name,
                 "--inputs-dir",
-                str(inputs_root),
+                str(workspace_inputs),
                 "--config-dir",
-                str(config_root),
+                str(workspace_configs),
                 "--output-dir",
-                str(output_root),
+                str(workspace_results),
             ]
             metadata_run = self._run_cli(metadata_cmd, cwd=repo_root)
 
-            metadata_summary_out = output_root / view_name / "metadata_overview" / "metadata_overview_summary.csv"
-            metadata_projects_out = output_root / view_name / "metadata_overview" / "metadata_overview_projects.csv"
-            metadata_discovered_by_project_out = output_root / view_name / "metadata_overview" / "metadata_overview_discovered_keys_by_project.csv"
-            metadata_discovered_unique_out = output_root / view_name / "metadata_overview" / "metadata_overview_discovered_keys_unique.csv"
+            metadata_summary_out = workspace_results / "metadata_overview" / "metadata_overview_summary.csv"
+            metadata_projects_out = workspace_results / "metadata_overview" / "metadata_overview_projects.csv"
+            metadata_discovered_by_project_out = workspace_results / "metadata_overview" / "metadata_overview_discovered_keys_by_project.csv"
+            metadata_discovered_unique_out = workspace_results / "metadata_overview" / "metadata_overview_discovered_keys_unique.csv"
 
             self.assertTrue(metadata_summary_out.exists(), "Metadata overview summary CSV was not created")
             self.assertTrue(metadata_projects_out.exists(), "Metadata overview projects CSV was not created")
@@ -239,15 +227,15 @@ class TestCliEndToEnd(unittest.TestCase):
                 "--view",
                 view_name,
                 "--inputs-dir",
-                str(inputs_root),
+                str(workspace_inputs),
                 "--config-dir",
-                str(config_root),
+                str(workspace_configs),
                 "--output-dir",
-                str(output_root),
+                str(workspace_results),
             ]
             lineage_run = self._run_cli(lineage_cmd, cwd=repo_root)
-            lineage_db_out = output_root / view_name / "_cache" / "taxonomy_lineage_db.json"
-            lineage_stamp_out = output_root / view_name / "_cache" / "taxonomy_lineage_db_stamp.json"
+            lineage_db_out = workspace_results / "_cache" / "taxonomy_lineage_db.json"
+            lineage_stamp_out = workspace_results / "_cache" / "taxonomy_lineage_db_stamp.json"
             self.assertTrue(lineage_db_out.exists(), "taxonomy_lineage_db.json was not created")
             self.assertTrue(lineage_stamp_out.exists(), "taxonomy_lineage_db_stamp.json was not created")
             self.assertIn("Built taxonomy lineage DB", lineage_run.stdout)
@@ -263,16 +251,16 @@ class TestCliEndToEnd(unittest.TestCase):
                 "--rank",
                 "genus",
                 "--inputs-dir",
-                str(inputs_root),
+                str(workspace_inputs),
                 "--config-dir",
-                str(config_root),
+                str(workspace_configs),
                 "--output-dir",
-                str(output_root),
+                str(workspace_results),
             ]
             alpha_run = self._run_cli(alpha_cmd, cwd=repo_root)
 
-            alpha_csv = output_root / view_name / "alpha_diversity" / "alpha_diversity.csv"
-            alpha_html = output_root / view_name / "alpha_diversity" / "alpha_diversity.html"
+            alpha_csv = workspace_results / "alpha_diversity" / "alpha_diversity.csv"
+            alpha_html = workspace_results / "alpha_diversity" / "alpha_diversity.html"
             self.assertTrue(alpha_csv.exists(), f"alpha_diversity.csv was not created.\nSTDOUT:\n{alpha_run.stdout}")
             self.assertTrue(alpha_html.exists(), "alpha_diversity.html was not created")
             self.assertIn("Summary:", alpha_run.stdout, "Alpha diversity summary missing from stdout")
@@ -296,17 +284,17 @@ class TestCliEndToEnd(unittest.TestCase):
                 "--taxon",
                 "Some genus 1",
                 "--inputs-dir",
-                str(inputs_root),
+                str(workspace_inputs),
                 "--config-dir",
-                str(config_root),
+                str(workspace_configs),
                 "--output-dir",
-                str(output_root),
+                str(workspace_results),
             ]
             abundance_run = self._run_cli(abundance_cmd, cwd=repo_root)
 
-            abundance_csv = output_root / view_name / "taxonomic_abundance" / "taxonomic_abundance_Some_genus_1.csv"
-            abundance_summary_csv = output_root / view_name / "taxonomic_abundance" / "taxonomic_abundance_Some_genus_1_summary.csv"
-            abundance_html = output_root / view_name / "taxonomic_abundance" / "taxonomic_abundance_Some_genus_1.html"
+            abundance_csv = workspace_results / "taxonomic_abundance" / "taxonomic_abundance_Some_genus_1.csv"
+            abundance_summary_csv = workspace_results / "taxonomic_abundance" / "taxonomic_abundance_Some_genus_1_summary.csv"
+            abundance_html = workspace_results / "taxonomic_abundance" / "taxonomic_abundance_Some_genus_1.html"
 
             self.assertTrue(abundance_csv.exists(), "Taxonomic abundance CSV was not created")
             self.assertTrue(abundance_summary_csv.exists(), "Taxonomic abundance summary CSV was not created")

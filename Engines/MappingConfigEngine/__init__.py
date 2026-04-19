@@ -1,3 +1,3 @@
-from .mapping_config_engine import MappingConfigEngine, MappingConfigManager
+from .mapping_config_engine import MappingConfigEngine, MappingConfigEngine
 
-__all__ = ["MappingConfigEngine", "MappingConfigManager"]
+__all__ = ["MappingConfigEngine", "MappingConfigEngine"]

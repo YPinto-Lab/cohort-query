@@ -11,7 +11,7 @@ from pathlib import Path
 
 from Accessors.TaxonomyAccessor import TaxonomyAccessor
 from Engines.AlphaDiversityEngine.alpha_diversity_engine import (
-    AlphaDiversityManager,
+    AlphaDiversityEngine,
     STANDARD_RANKS,
 )
 
@@ -94,8 +94,8 @@ def compute_alpha_diversity(
             counts = group['count'].values
             rows.append({
                 'acc': sample,
-                'richness': AlphaDiversityManager.calculate_richness(counts),
-                'shannon': AlphaDiversityManager.calculate_shannon(counts),
+                'richness': AlphaDiversityEngine.calculate_richness(counts),
+                'shannon': AlphaDiversityEngine.calculate_shannon(counts),
             })
         diversity_df = pd.DataFrame(rows)
 

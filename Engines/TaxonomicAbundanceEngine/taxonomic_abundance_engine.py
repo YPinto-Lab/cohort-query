@@ -22,7 +22,7 @@ from Common.contracts.sra_schema import SRAMetadataSchema
 _BASE_METADATA_COLS = set(SRAMetadataSchema.__fields__.keys())
 
 
-class TaxonomicAbundanceManager:
+class TaxonomicAbundanceEngine:
     _ACTIVE_UIS = []
 
     """
@@ -640,24 +640,24 @@ class TaxonomicAbundanceManager:
         return ui
 
     def run(self):
-        if not hasattr(TaxonomicAbundanceManager, '_ACTIVE_UIS'):
-            TaxonomicAbundanceManager._ACTIVE_UIS = []
+        if not hasattr(TaxonomicAbundanceEngine, '_ACTIVE_UIS'):
+            TaxonomicAbundanceEngine._ACTIVE_UIS = []
 
         # Ensure only one taxonomic abundance UI is alive at a time across instances.
-        for ui in list(TaxonomicAbundanceManager._ACTIVE_UIS):
+        for ui in list(TaxonomicAbundanceEngine._ACTIVE_UIS):
             try:
                 ui.close()
             except Exception:
                 pass
-        TaxonomicAbundanceManager._ACTIVE_UIS.clear()
+        TaxonomicAbundanceEngine._ACTIVE_UIS.clear()
 
         if self._ui is not None:
             self._ui.close()
             self._ui = None
         ui = self._create_ui()
-        TaxonomicAbundanceManager._ACTIVE_UIS.append(ui)
+        TaxonomicAbundanceEngine._ACTIVE_UIS.append(ui)
         display(ui)
 
 
 # Canonical iDesign name for this engine.
-TaxonomicAbundanceEngine = TaxonomicAbundanceManager
+TaxonomicAbundanceEngine = TaxonomicAbundanceEngine

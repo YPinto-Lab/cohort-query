@@ -19,7 +19,7 @@ from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
-class SRAProcessor:
+class MetadataMappingEngine:
     """
     Processes SRA metadata DataFrames based on a guided, configurable mapping.
     """
@@ -28,7 +28,7 @@ class SRAProcessor:
         self.top_n_values = top_n_values
         self.config_dir.mkdir(exist_ok=True)
 
-    def process(self, df: pd.DataFrame, project_id: str, view_name: Optional[str] = None) -> pd.DataFrame:
+    def map(self, df: pd.DataFrame, project_id: str, view_name: Optional[str] = None) -> pd.DataFrame:
         """
         Processes the DataFrame by applying mappings defined in a project-specific
         config file. If the config doesn't exist, generates a template to guide
@@ -337,4 +337,4 @@ class SRAProcessor:
 
 
 # Canonical iDesign name for this engine.
-MetadataMappingEngine = SRAProcessor
+MetadataMappingEngine = metadata_mapping_engine

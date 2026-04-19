@@ -30,7 +30,7 @@ _BASE_METADATA_FILTER_COLS = sorted(
 )
 
 
-class MappingConfigManager:
+class MappingConfigEngine:
     """
     Manager for interactive mapping configuration in Jupyter notebooks.
     
@@ -1426,4 +1426,4 @@ class MappingConfigManager:
 
 
 # Canonical iDesign name for this engine.
-MappingConfigEngine = MappingConfigManager
+MappingConfigEngine = MappingConfigEngine
