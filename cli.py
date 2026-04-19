@@ -25,6 +25,7 @@ import argparse
 import sys
 import json
 import re
+import hashlib
 from pathlib import Path
 
 import pandas as pd
@@ -240,6 +241,31 @@ def _resolve_runtime_paths(args) -> None:
     args.workspace_layout = workspace_layout
 
 
+def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    """Compute SHA256 hash for a file."""
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        while True:
+            block = f.read(chunk_size)
+            if not block:
+                break
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _resolve_lineage_paths(args) -> tuple[Path, Path]:
+    """Resolve lineage DB and stamp paths for current runtime mode."""
+    output_dir = Path(args.output_dir)
+    if bool(getattr(args, "workspace_layout", False)):
+        cache_dir = output_dir / "_cache"
+    else:
+        cache_dir = output_dir / args.view / "_cache"
+
+    lineage_db_path = Path(args.lineage_db_path) if getattr(args, "lineage_db_path", None) else cache_dir / "taxonomy_lineage_db.json"
+    stamp_path = lineage_db_path.parent / "taxonomy_lineage_db_stamp.json"
+    return lineage_db_path, stamp_path
+
+
 def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
     """Load both DataFrames for a view and apply mapping configs."""
     import sys, os
@@ -276,6 +302,18 @@ def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
     return taxonomy_df, enriched_metadata_df
 
 
+def _load_taxonomy_only(view: str, inputs_dir: Path) -> tuple[pd.DataFrame, Path]:
+    """Load taxonomy dataframe and return its source CSV path."""
+    from Accessors.SraAccessor.sra_taxonomy_accessor import SRATaxonomyAccessor
+
+    view_path = _resolve_view_input_dir(view, inputs_dir)
+    taxonomy_csv_path = view_path / "taxonomy.csv"
+    print(f"Loading taxonomy from {taxonomy_csv_path} ...")
+    taxonomy_df = SRATaxonomyAccessor.get(taxonomy_csv_path)
+    print(f"Loaded: {len(taxonomy_df)} taxon observations")
+    return taxonomy_df, taxonomy_csv_path
+
+
 def _ensure_output_dir(
     output_dir: Path,
     view: str,
@@ -306,6 +344,17 @@ def cmd_alpha_diversity(args):
         workspace_layout=bool(getattr(args, "workspace_layout", False)),
     )
 
+    lineage_db_path, _ = _resolve_lineage_paths(args)
+    if not lineage_db_path.exists():
+        print(
+            "Error: lineage DB is required for alpha-diversity and was not found at:\n"
+            f"  {lineage_db_path}\n\n"
+            "Build it first with:\n"
+            f"  python askslm.py build-taxonomy-lineage --view {args.view}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     print(f"Computing alpha diversity at rank '{args.rank}' ...")
     diversity_df = compute_alpha_diversity(
         taxonomy_df=taxonomy_df,
@@ -314,6 +363,7 @@ def cmd_alpha_diversity(args):
         group_col=args.group,
         filter_rank=args.filter_rank,
         filter_taxon=args.filter_taxon,
+        lineage_db_path=str(lineage_db_path),
     )
 
     # Save CSV
@@ -672,6 +722,53 @@ def cmd_metadata_overview(args):
     print(summary_df.to_string(index=False))
 
 
+def cmd_build_taxonomy_lineage(args):
+    from Accessors.TaxonomyAccessor import TaxonomyAccessor
+
+    taxonomy_df, taxonomy_csv_path = _load_taxonomy_only(args.view, Path(args.inputs_dir))
+    lineage_db_path, stamp_path = _resolve_lineage_paths(args)
+
+    required_cols = {"acc", "tax_id", "rank", "name", "ileft", "iright"}
+    missing_cols = required_cols - set(taxonomy_df.columns)
+    if missing_cols:
+        print(
+            "Error: taxonomy.csv is missing required lineage columns: "
+            f"{sorted(missing_cols)}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    taxonomy_hash = _sha256_file(taxonomy_csv_path)
+    current_stamp = {
+        "schema_version": "lineage_v1",
+        "view_name": args.view,
+        "taxonomy_csv": str(taxonomy_csv_path),
+        "taxonomy_sha256": taxonomy_hash,
+        "taxonomy_rows": int(len(taxonomy_df)),
+    }
+
+    if lineage_db_path.exists() and stamp_path.exists():
+        try:
+            previous_stamp = json.loads(stamp_path.read_text(encoding="utf-8"))
+            if previous_stamp == current_stamp:
+                print(f"✅ Taxonomy lineage cache hit: {lineage_db_path}")
+                return
+        except Exception:
+            pass
+
+    lineage_source = taxonomy_df[["acc", "tax_id", "rank", "name", "ileft", "iright"]].copy()
+    lineage_source = lineage_source.dropna(subset=["acc", "tax_id", "rank", "name", "ileft", "iright"])
+
+    accessor = TaxonomyAccessor()
+    accessor.build_from_dataframe(lineage_source)
+    accessor.save_database(lineage_db_path)
+    stamp_path.parent.mkdir(parents=True, exist_ok=True)
+    stamp_path.write_text(json.dumps(current_stamp, indent=2), encoding="utf-8")
+
+    print(f"✅ Built taxonomy lineage DB: {lineage_db_path}")
+    print(f"✅ Saved lineage stamp: {stamp_path}")
+
+
 # ── Argument parser ───────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -692,6 +789,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Optional override for output directory or root")
     shared.add_argument("--config-dir", default=None,
                         help="Optional override for mapping config directory")
+    shared.add_argument("--lineage-db-path", default=None,
+                        help="Optional path to taxonomy lineage DB (default: workspace/legacy cache location)")
 
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -749,6 +848,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_meta = sub.add_parser("metadata-overview", parents=[shared],
                             help="Export metadata summary and per-project sample counts")
     p_meta.set_defaults(func=cmd_metadata_overview)
+
+    # build-taxonomy-lineage
+    p_lineage = sub.add_parser("build-taxonomy-lineage", parents=[shared],
+                               help="Build or refresh taxonomy lineage DB in cache")
+    p_lineage.set_defaults(func=cmd_build_taxonomy_lineage)
 
     return parser
 

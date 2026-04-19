@@ -7,6 +7,7 @@ usable both from the Jupyter notebook manager and from the CLI.
 import numpy as np
 import pandas as pd
 from typing import Optional
+from pathlib import Path
 
 from Accessors.TaxonomyAccessor import TaxonomyAccessor
 from Engines.AlphaDiversityEngine.alpha_diversity_engine import (
@@ -22,6 +23,7 @@ def compute_alpha_diversity(
     group_col: Optional[str] = None,
     filter_rank: Optional[str] = None,
     filter_taxon: Optional[str] = None,
+    lineage_db_path: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Compute per-sample richness and Shannon index.
@@ -36,6 +38,7 @@ def compute_alpha_diversity(
                      (e.g. 'superkingdom').
         filter_taxon: Taxon name at filter_rank to keep (e.g. 'Bacteria').
                       Ignored if filter_rank is None.
+        lineage_db_path: Optional path to prebuilt taxonomy lineage DB.
 
     Returns:
         DataFrame with columns: acc, richness, shannon, [group_col].
@@ -45,10 +48,15 @@ def compute_alpha_diversity(
     all_samples = taxonomy_df['acc'].unique()
     working_df = taxonomy_df.copy()
 
+    tax_accessor: Optional[TaxonomyAccessor] = None
+    if lineage_db_path:
+        tax_accessor = TaxonomyAccessor(lineage_db_path=Path(lineage_db_path))
+
     # Apply optional taxon filter
     if filter_rank and filter_taxon:
-        tax_accessor = TaxonomyAccessor()
-        tax_accessor.build_from_dataframe(taxonomy_df)
+        if tax_accessor is None:
+            tax_accessor = TaxonomyAccessor()
+            tax_accessor.build_from_dataframe(taxonomy_df)
 
         matching_tax_ids: set = set()
         for tax_id, lineage in tax_accessor.database.items():
@@ -66,8 +74,9 @@ def compute_alpha_diversity(
     rank_df = working_df[working_df['rank'].astype(str).str.lower() == rank.lower()].copy()
 
     # Build (or rebuild) TaxonomyAccessor on rank-filtered data.
-    tax_accessor = TaxonomyAccessor()
-    tax_accessor.build_from_dataframe(rank_df if not rank_df.empty else taxonomy_df)
+    if tax_accessor is None:
+        tax_accessor = TaxonomyAccessor()
+        tax_accessor.build_from_dataframe(rank_df if not rank_df.empty else taxonomy_df)
 
     if rank_df.empty:
         diversity_df = pd.DataFrame({'acc': all_samples, 'richness': 0, 'shannon': 0.0})
