@@ -1,0 +1,77 @@
+"""
+Pure matrix artifact computation functions.
+
+These functions contain only DataFrame transformations and do not perform file I/O.
+They are used by runner stage orchestration methods that own cache/stamp decisions.
+"""
+
+from __future__ import annotations
+
+from typing import List, Tuple
+
+import pandas as pd
+
+
+def build_taxonomy_stage_artifacts(
+    taxonomy_df: pd.DataFrame,
+    taxon_key_sep: str = "||",
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Build taxonomy-stage outputs from canonical taxonomy input.
+
+    Returns:
+        abundance_matrix: sample x taxon_key matrix of total_count values.
+        taxon_lookup_df: one row per taxon_key with rank/name/tax_id and lineage columns when present.
+    """
+    lineage_columns = [c for c in ["ileft", "iright"] if c in taxonomy_df.columns]
+
+    taxonomy_for_wide = taxonomy_df[["acc", "tax_id", "rank", "name", "total_count"] + lineage_columns].copy()
+    taxonomy_for_wide["taxon_key"] = (
+        taxonomy_for_wide["rank"].astype(str)
+        + taxon_key_sep
+        + taxonomy_for_wide["name"].astype(str)
+        + taxon_key_sep
+        + taxonomy_for_wide["tax_id"].astype(str)
+    )
+    taxonomy_for_wide = (
+        taxonomy_for_wide[["acc", "taxon_key", "total_count"]]
+        .groupby(["acc", "taxon_key"], as_index=False)["total_count"]
+        .sum()
+    )
+
+    abundance_matrix = taxonomy_for_wide.pivot(index="acc", columns="taxon_key", values="total_count").fillna(0)
+
+    lookup_base = taxonomy_df[["tax_id", "rank", "name"] + lineage_columns].copy()
+    lookup_base["taxon_key"] = (
+        lookup_base["rank"].astype(str)
+        + taxon_key_sep
+        + lookup_base["name"].astype(str)
+        + taxon_key_sep
+        + lookup_base["tax_id"].astype(str)
+    )
+    taxon_lookup_columns = ["taxon_key", "rank", "name", "tax_id"] + lineage_columns
+    taxon_lookup_df = lookup_base[taxon_lookup_columns].drop_duplicates(subset=["taxon_key"])
+
+    return abundance_matrix, taxon_lookup_df
+
+
+def build_analysis_wide_dataset(
+    enriched_metadata_df: pd.DataFrame,
+    abundance_matrix: pd.DataFrame,
+) -> Tuple[pd.DataFrame, List[str]]:
+    """Build the merged analysis-wide dataset from enriched metadata and abundance features.
+
+    Returns:
+        abundance_metadata_matrix: enriched metadata + taxa feature columns.
+        metadata_columns: ordered metadata columns captured before joining taxa features.
+    """
+    metadata_columns = list(enriched_metadata_df.columns)
+
+    abundance_features = abundance_matrix.copy()
+    abundance_features.index.name = "acc"
+    merged = enriched_metadata_df.set_index("acc", drop=False).join(abundance_features, how="left")
+    abundance_metadata_matrix = merged.reset_index(drop=True)
+
+    taxa_feature_columns = list(abundance_features.columns)
+    abundance_metadata_matrix[taxa_feature_columns] = abundance_metadata_matrix[taxa_feature_columns].fillna(0)
+
+    return abundance_metadata_matrix, metadata_columns

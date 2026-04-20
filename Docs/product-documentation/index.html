@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ask-SLM Product Documentation</title>
+  <style>
+    :root {
+      --bg: #f7f6f1;
+      --bg-alt: #ece8dc;
+      --card: #fffdf6;
+      --ink: #1f2a20;
+      --muted: #55615b;
+      --accent: #3f7a61;
+      --accent2: #0f4d8a;
+      --line: #d8d2c2;
+      --shadow: 0 12px 28px rgba(39, 46, 42, 0.12);
+      --radius-lg: 18px;
+      --radius-md: 12px;
+      --radius-sm: 10px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(1200px 700px at 92% -10%, #c8dbc9 0%, transparent 70%),
+        radial-gradient(900px 500px at -5% 20%, #cde1ef 0%, transparent 65%),
+        linear-gradient(180deg, var(--bg) 0%, var(--bg-alt) 100%);
+      min-height: 100vh;
+    }
+
+    .shell {
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 28px 20px 48px;
+    }
+
+    .hero {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: linear-gradient(130deg, #fefdf7 0%, #f6f8f2 100%);
+      padding: 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 20px;
+    }
+
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: clamp(1.45rem, 3.6vw, 2.1rem);
+      letter-spacing: 0.2px;
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+      max-width: 860px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(12, 1fr);
+    }
+
+    .card {
+      grid-column: span 6;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      box-shadow: 0 6px 18px rgba(39, 46, 42, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .card h2 {
+      margin: 0;
+      font-size: 1.06rem;
+      line-height: 1.35;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .btn {
+      border: 1px solid #b6c6bb;
+      border-radius: var(--radius-sm);
+      background: #ffffff;
+      color: #264236;
+      text-decoration: none;
+      font-size: 0.88rem;
+      padding: 9px 12px;
+      line-height: 1;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .btn.primary {
+      border-color: var(--accent);
+      background: #edf6f0;
+      color: #21523f;
+    }
+
+    .btn.secondary {
+      border-color: var(--accent2);
+      background: #edf4fb;
+      color: #184a73;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 5px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    @media (max-width: 900px) {
+      .card { grid-column: span 12; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <h1>Ask-SLM Product Documentation</h1>
+      <p>
+        Entry point for interactive documentation web pages. Use this page to access
+        both the UML documentation UI and the Sequence Diagram UI.
+      </p>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>CLI Focus</h2>
+        <div class="meta">
+          Command-only documentation path for operating Ask-SLM without notebook workflows.
+        </div>
+        <div class="actions">
+          <a class="btn primary" href="focus/cli-guide.html">Open CLI Guide</a>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Matrix Artifact Flow</h2>
+        <div class="meta">
+          Exact creation and save locations for abundance matrix and abundance-metadata matrix artifacts.
+        </div>
+        <div class="actions">
+          <a class="btn secondary" href="focus/matrix-artifacts.html">Open Matrix Artifact Guide</a>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Sequence Diagrams</h2>
+        <div class="meta">
+          Manager-focused runtime flow diagrams rendered via WebSequenceDiagrams viewer pages.
+        </div>
+        <div class="actions">
+          <a class="btn primary" href="sequence-diagrams/index.html">Open Sequence Diagram UI</a>
+          <a class="btn" href="sequence-diagrams/README.md" target="_blank" rel="noopener">Sequence README</a>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>UML Diagrams</h2>
+        <div class="meta">
+          Component and core-class PlantUML documentation with dedicated viewer pages.
+        </div>
+        <div class="actions">
+          <a class="btn secondary" href="uml/index.html">Open UML UI</a>
+          <a class="btn" href="uml/README.md" target="_blank" rel="noopener">UML README</a>
+        </div>
+      </article>
+
+      <article class="card" style="grid-column: span 12;">
+        <h2>Documentation Outline</h2>
+        <div class="meta">
+          Starter structure for engineering documentation scope and ownership.
+        </div>
+        <div class="actions">
+          <a class="btn" href="engineering-doc-starter-outline.md" target="_blank" rel="noopener">Open Engineering Outline</a>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

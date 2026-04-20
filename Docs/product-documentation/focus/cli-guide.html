@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ask-SLM CLI Guide</title>
+  <style>
+    :root {
+      --bg: #f7f6f1;
+      --ink: #1f2a20;
+      --muted: #55615b;
+      --line: #d8d2c2;
+      --card: #fffdf6;
+      --accent: #3f7a61;
+      --accent2: #0f4d8a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    .shell {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 24px 18px 42px;
+    }
+    .hero, .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    h1 { margin: 0 0 8px; font-size: 1.7rem; }
+    h2 { margin: 0 0 10px; font-size: 1.05rem; }
+    p, li { line-height: 1.5; }
+    .muted { color: var(--muted); }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .btn {
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      text-decoration: none;
+      padding: 8px 11px;
+      font-size: 0.9rem;
+      color: var(--ink);
+      background: #fff;
+    }
+    .btn.primary { border-color: var(--accent); background: #edf6f0; color: #21523f; }
+    .btn.secondary { border-color: var(--accent2); background: #edf4fb; color: #184a73; }
+    pre {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      overflow: auto;
+      font-family: "SF Mono", Menlo, monospace;
+      font-size: 0.84rem;
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <h1>Ask-SLM CLI Guide</h1>
+      <p class="muted">Focused documentation path for CLI operation only.</p>
+      <div class="actions">
+        <a class="btn" href="../index.html">Product Docs Home</a>
+        <a class="btn secondary" href="../sequence-diagrams/index.html">Sequence UI</a>
+        <a class="btn secondary" href="../uml/index.html">UML UI</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Runtime Path Model</h2>
+      <ul>
+        <li>CLI resolves paths in runtime and defaults to workspace-native directories under Workspaces/&lt;view&gt;.</li>
+        <li>You can override paths with --inputs-dir, --config-dir, and --output-dir.</li>
+        <li>Lineage cache defaults to &lt;output-dir&gt;/_cache/taxonomy_lineage_db.json.</li>
+      </ul>
+      <p class="muted">Implementation: cli.py path functions and command handlers.</p>
+    </section>
+
+    <section class="card">
+      <h2>Main Commands</h2>
+      <pre>python askslm.py metadata-overview --view ABX
+python askslm.py abundance-matrix --view ABX
+python askslm.py build-taxonomy-lineage --view ABX
+python askslm.py alpha-diversity --view ABX --rank genus
+python askslm.py taxonomic-abundance --view ABX --rank genus --taxon Prevotella
+python askslm.py single-taxon-abundance --view ABX --rank superkingdom --taxon Viruses --source-keys sample_name host_subject_id_sam</pre>
+    </section>
+
+    <section class="card">
+      <h2>Important Guardrail</h2>
+      <ul>
+        <li>alpha-diversity requires the lineage DB file.</li>
+        <li>If missing, CLI exits with a remediation message telling you to run build-taxonomy-lineage first.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
