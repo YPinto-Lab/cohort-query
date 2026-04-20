@@ -91,7 +91,7 @@
             <td>Abundance Matrix</td>
             <td><span class="code">compute_taxonomy_matrices</span> in Engines/DatasetAssemblyEngine/dataset_assembly_engine.py (called by <span class="code">run_taxonomy_stage</span>)</td>
             <td><span class="code">Workspaces/&lt;view&gt;/results/Ask_SLM_Taxon_Abundance_Matrix.csv</span></td>
-            <td>Groups taxonomy rows by acc and taxon_key, sums total_count, pivots to sample x taxon_key.</td>
+            <td>Resolves deprecated NCBI tax IDs via a required <span class="code">merged.dmp</span> input, then groups rows by acc and taxon_key, sums total_count, and pivots to sample x taxon_key.</td>
           </tr>
           <tr>
             <td>Abundance-Metadata Matrix</td>
@@ -101,7 +101,8 @@
           </tr>
         </tbody>
       </table>
-      <p class="muted">Related artifacts: Ask_SLM_Taxon_Lookup.csv, Ask_SLM_Metadata_Columns.json, merge/taxonomy stamps in results/_cache. The manager keeps stamp/cache and file I/O orchestration; the engine now owns pure matrix transformations.</p>
+      <p class="muted">Related artifacts: Ask_SLM_Taxon_Lookup.csv, Ask_SLM_Metadata_Columns.json, Ask_SLM_Taxonomy_Resolution_Summary.json, Ask_SLM_Taxonomy_Resolution_Changes.csv, merge/taxonomy stamps in results/_cache. <span class="code">run_taxonomy_stage</span> requires an explicit <span class="code">merged.dmp</span> path (for example <span class="code">Accessors/TaxonomyAccessor/merged.dmp</span>) and does not use fallback discovery.</p>
+      <p class="muted">Detailed behavior and stage order: see <span class="code">Docs/product-documentation/focus/taxonomy-resolution-flow.md</span>.</p>
     </section>
 
     <section class="card">
