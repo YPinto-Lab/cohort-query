@@ -1,6 +1,5 @@
 """
-This module defines the SRAProcessor, a component responsible for transforming
-raw, validated SRA metadata into an enriched, analysis-ready DataFrame.
+Unified mapping engine for template discovery and runtime metadata mapping.
 
 It implements the 'Guided Configuration' architecture. When processing data for a
 project for the first time, it scans the data to find all available metadata keys
@@ -19,7 +18,7 @@ from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
-class MetadataMappingEngine:
+class MappingEngine:
     """
     Processes SRA metadata DataFrames based on a guided, configurable mapping.
     """
@@ -336,5 +335,3 @@ class MetadataMappingEngine:
         return processed_df
 
 
-# Canonical iDesign name for this engine.
-MetadataMappingEngine = metadata_mapping_engine

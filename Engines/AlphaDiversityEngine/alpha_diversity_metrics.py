@@ -16,7 +16,7 @@ from Engines.AlphaDiversityEngine.alpha_diversity_engine import (
 )
 
 
-def compute_alpha_diversity(
+def compute_alpha_diversity_metrics(
     taxonomy_df: pd.DataFrame,
     metadata_df: pd.DataFrame,
     rank: str,
@@ -111,3 +111,8 @@ def compute_alpha_diversity(
         diversity_df = diversity_df.merge(group_lookup, on='acc', how='left')
 
     return diversity_df
+
+
+def compute_alpha_diversity(*args, **kwargs) -> pd.DataFrame:
+    """Backward-compatible alias for compute_alpha_diversity_metrics."""
+    return compute_alpha_diversity_metrics(*args, **kwargs)

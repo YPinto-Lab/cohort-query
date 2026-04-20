@@ -8,7 +8,7 @@ import pandas as pd
 from typing import Optional, Tuple
 
 
-def compute_taxonomic_abundance(
+def compute_single_taxon_abundance(
     taxonomy_df: pd.DataFrame,
     metadata_df: pd.DataFrame,
     rank: str,
@@ -76,3 +76,8 @@ def compute_taxonomic_abundance(
     summary_df = pd.DataFrame(summary_rows)
 
     return abundance_df, summary_df
+
+
+def compute_taxonomic_abundance(*args, **kwargs) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Backward-compatible alias for compute_single_taxon_abundance."""
+    return compute_single_taxon_abundance(*args, **kwargs)

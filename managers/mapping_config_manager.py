@@ -1,5 +1,5 @@
 """
-MappingConfigManager - Target-First Approach
+MappingConfigManager - Target-First Mapping UI
 
 This module provides an interactive UI for configuring metadata field mappings
 using a "target field first" approach: define target fields once, then configure
@@ -30,7 +30,7 @@ _BASE_METADATA_FILTER_COLS = sorted(
 )
 
 
-class MappingConfigEngine:
+class MappingConfigManager:
     """
     Manager for interactive mapping configuration in Jupyter notebooks.
     
@@ -38,6 +38,8 @@ class MappingConfigEngine:
     1. Add target fields (e.g., 'sex', 'environment_material')
     2. For each target field, configure per-project mapping
     3. Save generates individual JSON configs per project
+
+    Pure mapping execution and template generation are handled by Engines.MappingEngine.
     """
     
     def __init__(self, config_dir: Path = Path('mapping_configs'), logger=None):
@@ -1425,5 +1427,3 @@ class MappingConfigEngine:
         display(main_ui)
 
 
-# Canonical iDesign name for this engine.
-MappingConfigEngine = MappingConfigEngine

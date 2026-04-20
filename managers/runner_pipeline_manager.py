@@ -11,11 +11,11 @@ from Accessors.OntologyAccessor import EnvoOntologyAccessor
 from Accessors.SraAccessor import SRAWorkspaceInputAccessor
 from Accessors.TaxonomyAccessor import TaxonomyAccessor
 from Engines.EnvoResolutionEngine import resolve_envo_columns
-from Engines.MatrixArtifactsComputationEngine import (
-    build_analysis_wide_dataset,
-    build_taxonomy_stage_artifacts,
+from Engines.DatasetAssemblyEngine import (
+    compute_analysis_wide_dataset,
+    compute_taxonomy_matrices,
 )
-from Engines.MetadataMappingEngine.metadata_mapping_engine import MetadataMappingEngine
+from Engines.MappingEngine.mapping_engine import MappingEngine
 from Common.Logger import Logger
 from Common.RunnerContext import RunnerContext
 
@@ -81,8 +81,8 @@ def prepare_workspace_inputs(context: RunnerContext, logger: Logger) -> Tuple[pd
     return SRAWorkspaceInputAccessor.prepare_workspace_inputs(context=context, logger=logger)
 
 
-def refresh_mapping_templates(metadata_df: pd.DataFrame, context: RunnerContext, logger: Logger) -> Tuple[MetadataMappingEngine, List[str], pd.DataFrame]:
-    processor = MetadataMappingEngine(config_dir=context.config_dir)
+def refresh_mapping_templates(metadata_df: pd.DataFrame, context: RunnerContext, logger: Logger) -> Tuple[MappingEngine, List[str], pd.DataFrame]:
+    processor = MappingEngine(config_dir=context.config_dir)
     project_ids = sorted(metadata_df["bioproject"].dropna().unique())
 
     rows = []
@@ -104,7 +104,7 @@ def refresh_mapping_templates(metadata_df: pd.DataFrame, context: RunnerContext,
 
 def run_enrichment_stage(
     metadata_df: pd.DataFrame,
-    processor: MetadataMappingEngine,
+    processor: MappingEngine,
     project_ids: List[str],
     context: RunnerContext,
     logger: Logger,
@@ -247,7 +247,7 @@ def run_taxonomy_stage(taxonomy_df: pd.DataFrame, context: RunnerContext, logger
         except Exception:
             pass
 
-    abundance_matrix, taxon_lookup_df = build_taxonomy_stage_artifacts(
+    abundance_matrix, taxon_lookup_df = compute_taxonomy_matrices(
         taxonomy_df=taxonomy_df,
         taxon_key_sep=taxon_key_sep,
     )
@@ -297,7 +297,7 @@ def run_merge_stage(
         except Exception:
             pass
 
-    abundance_metadata_matrix, metadata_columns = build_analysis_wide_dataset(
+    abundance_metadata_matrix, metadata_columns = compute_analysis_wide_dataset(
         enriched_metadata_df=enriched_metadata_df,
         abundance_matrix=abundance_matrix,
     )

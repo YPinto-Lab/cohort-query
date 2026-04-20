@@ -4,7 +4,7 @@ participant Notebook as runner.ipynb
 participant Pipeline as runner_pipeline_manager
 participant Workspace as Workspaces/<view>
 participant Cache as results/_cache
-participant Mapping as MetadataMappingEngine
+participant Mapping as MappingEngine
 participant Ontology as EnvoResolutionEngine
 
 Notebook->Pipeline: initialize_runner_context(workspace)

@@ -11,14 +11,14 @@ component "runner.ipynb\n(Notebook Trigger)" as Notebook
 component "askslm.py -> cli.py\n(CLI Trigger)" as CLI
 component "managers/runner_pipeline_manager.py\n(Orchestration)" as Pipeline
 component "SRAWorkspaceInputAccessor" as WorkspaceInputAccessor
-component "MetadataMappingEngine" as MappingEngine
+component "MappingEngine" as MappingEngine
 component "EnvoResolutionEngine" as EnvoEngine
 component "TaxonomyAccessor\n(lineage DB)" as LineageAccessor
 
-component "AlphaDiversityComputationEngine" as AlphaCompute
-component "TaxonomicAbundanceComputationEngine" as AbundanceCompute
+component "AlphaDiversityEngine::alpha_diversity_metrics" as AlphaCompute
+component "TaxonomicAbundanceEngine::taxonomic_abundance_metrics" as AbundanceCompute
 
-component "MappingConfigEngine\n(Jupyter UI)" as MappingUI
+component "MappingConfigManager\n(Jupyter UI)" as MappingUI
 component "AlphaDiversityEngine\n(Jupyter UI)" as AlphaUI
 component "TaxonomicAbundanceEngine\n(Jupyter UI)" as AbundanceUI
 

@@ -246,18 +246,18 @@ package "Accessors" {
 }
 
 package "Engine Layer" {
-  component "Engines/MetadataMappingEngine\\n(MetadataMappingEngine)" as Processor
+  component "Engines/MappingEngine\\n(MappingEngine)" as Processor
 }
 
 package "Notebook Interactive Engines" {
-  component "MappingConfigEngine" as MappingEngine
+  component "MappingConfigManager" as MappingEngine
   component "AlphaDiversityEngine" as AlphaEngine
   component "TaxonomicAbundanceEngine" as AbundanceEngine
 }
 
 package "Analysis (Pure Functions)" {
-  component "Engines/AlphaDiversityComputationEngine" as AlphaAnalysis
-  component "Engines/TaxonomicAbundanceComputationEngine" as AbundAnalysis
+  component "Engines/AlphaDiversityEngine/alpha_diversity_metrics.py" as AlphaAnalysis
+  component "Engines/TaxonomicAbundanceEngine/taxonomic_abundance_metrics.py" as AbundAnalysis
 }
 
 package "View Workspace" {
@@ -333,7 +333,7 @@ class RunLogger {
   +log(message: str, echo: bool = None): None
 }
 
-class MetadataMappingEngine {
+class MappingEngine {
   +config_dir: Path
   +refresh_template(metadata_df, project_id, view_name): None
   +process(metadata_df, project_id, view_name): DataFrame
@@ -345,7 +345,7 @@ class TaxonomyAccessor {
   +aggregate_counts_at_rank(...): DataFrame
 }
 
-class MappingConfigEngine {
+class MappingConfigManager {
   +config_dir: Path
   +run(): None
 }
@@ -377,10 +377,10 @@ class RunnerPipeline {
 
 RunnerPipeline ..> RunnerContext : creates
 RunnerPipeline ..> RunLogger : creates
-RunnerPipeline ..> MetadataMappingEngine : uses
+RunnerPipeline ..> MappingEngine : uses
 RunnerPipeline ..> TaxonomyAccessor : uses
 
-MappingConfigEngine ..> RunLogger : injected logger
+MappingConfigManager ..> RunLogger : injected logger
 AlphaDiversityEngine ..> TaxonomyAccessor : injected shared accessor
 AlphaDiversityEngine ..> RunLogger : injected logger
 TaxonomicAbundanceEngine ..> RunLogger : injected logger

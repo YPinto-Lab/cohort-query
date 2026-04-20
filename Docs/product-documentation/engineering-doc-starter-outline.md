@@ -51,7 +51,7 @@ Recommended diagrams:
 
 ## 6. Analysis Execution Paths
 
-- Notebook interactive engines (`MappingConfigEngine`, `AlphaDiversityEngine`, `TaxonomicAbundanceEngine`)
+- Notebook interactive engines (`MappingConfigManager`, `AlphaDiversityEngine`, `TaxonomicAbundanceEngine`)
 - CLI non-interactive command flows (`metadata-overview`, `abundance-matrix`, `build-taxonomy-lineage`, `alpha-diversity`, `taxonomic-abundance`, `single-taxon-abundance`)
 - Expected outputs for each mode
 

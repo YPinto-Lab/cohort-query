@@ -254,7 +254,7 @@ def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
 
     from Accessors.SraAccessor.sra_metadata_accessor import SRAMetadataAccessor
     from Accessors.SraAccessor.sra_taxonomy_accessor import SRATaxonomyAccessor
-    from Engines.MetadataMappingEngine.metadata_mapping_engine import MetadataMappingEngine
+    from Engines.MappingEngine.mapping_engine import MappingEngine
 
     view_path = _resolve_view_input_dir(view, inputs_dir)
 
@@ -267,7 +267,7 @@ def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
     print(f"Loaded: {len(metadata_df)} samples, {len(taxonomy_df)} taxon observations")
 
     # Apply mapping configs per project
-    processor = MetadataMappingEngine(config_dir=config_dir)
+    processor = MappingEngine(config_dir=config_dir)
     parts = []
     for project_id in metadata_df['bioproject'].unique():
         config_path = config_dir / f"{project_id}.json"
@@ -310,7 +310,7 @@ def _ensure_output_dir(
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 def cmd_alpha_diversity(args):
-    from Engines.AlphaDiversityComputationEngine.alpha_diversity_computation_engine import compute_alpha_diversity
+    from Engines.AlphaDiversityEngine.alpha_diversity_metrics import compute_alpha_diversity_metrics
 
     taxonomy_df, metadata_df = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
@@ -334,7 +334,7 @@ def cmd_alpha_diversity(args):
         sys.exit(1)
 
     print(f"Computing alpha diversity at rank '{args.rank}' ...")
-    diversity_df = compute_alpha_diversity(
+    diversity_df = compute_alpha_diversity_metrics(
         taxonomy_df=taxonomy_df,
         metadata_df=metadata_df,
         rank=args.rank,
@@ -392,7 +392,7 @@ def cmd_alpha_diversity(args):
 
 
 def cmd_taxonomic_abundance(args):
-    from Engines.TaxonomicAbundanceComputationEngine.taxonomic_abundance_computation_engine import compute_taxonomic_abundance
+    from Engines.TaxonomicAbundanceEngine.taxonomic_abundance_metrics import compute_single_taxon_abundance
 
     taxonomy_df, metadata_df = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
@@ -405,7 +405,7 @@ def cmd_taxonomic_abundance(args):
     )
 
     print(f"Computing abundance of '{args.taxon}' at rank '{args.rank}' ...")
-    abundance_df, summary_df = compute_taxonomic_abundance(
+    abundance_df, summary_df = compute_single_taxon_abundance(
         taxonomy_df=taxonomy_df,
         metadata_df=metadata_df,
         rank=args.rank,
@@ -460,7 +460,7 @@ def cmd_taxonomic_abundance(args):
 
 
 def cmd_single_taxon_abundance(args):
-    from Engines.TaxonomicAbundanceComputationEngine.taxonomic_abundance_computation_engine import compute_taxonomic_abundance
+    from Engines.TaxonomicAbundanceEngine.taxonomic_abundance_metrics import compute_single_taxon_abundance
 
     taxonomy_df, metadata_df = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
@@ -476,7 +476,7 @@ def cmd_single_taxon_abundance(args):
         f"Computing single taxon abundance for taxon='{args.taxon}', "
         f"rank='{args.rank}', source_keys={args.source_keys} ..."
     )
-    abundance_df, summary_df = compute_taxonomic_abundance(
+    abundance_df, summary_df = compute_single_taxon_abundance(
         taxonomy_df=taxonomy_df,
         metadata_df=metadata_df,
         rank=args.rank,
@@ -577,11 +577,11 @@ def cmd_metadata_overview(args):
 
     # Load raw metadata to run discovered-key scanning per project (runner-style insight).
     from Accessors.SraAccessor.sra_metadata_accessor import SRAMetadataAccessor
-    from Engines.MetadataMappingEngine.metadata_mapping_engine import MetadataMappingEngine
+    from Engines.MappingEngine.mapping_engine import MappingEngine
 
     resolved_view_input_dir = _resolve_view_input_dir(args.view, inputs_dir)
     raw_metadata_df = SRAMetadataAccessor.get(resolved_view_input_dir / "metadata.csv")
-    processor = MetadataMappingEngine(config_dir=config_dir)
+    processor = MappingEngine(config_dir=config_dir)
 
     discovered_rows = []
     for project_id in sorted(raw_metadata_df["bioproject"].dropna().unique()):

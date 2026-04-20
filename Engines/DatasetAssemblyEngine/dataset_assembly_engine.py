@@ -12,7 +12,7 @@ from typing import List, Tuple
 import pandas as pd
 
 
-def build_taxonomy_stage_artifacts(
+def compute_taxonomy_matrices(
     taxonomy_df: pd.DataFrame,
     taxon_key_sep: str = "||",
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -54,7 +54,7 @@ def build_taxonomy_stage_artifacts(
     return abundance_matrix, taxon_lookup_df
 
 
-def build_analysis_wide_dataset(
+def compute_analysis_wide_dataset(
     enriched_metadata_df: pd.DataFrame,
     abundance_matrix: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, List[str]]:

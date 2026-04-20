@@ -28,7 +28,7 @@ class SRAWorkspaceInputAccessor {
   +_aggregate_taxonomy(parts, logger): DataFrame
 }
 
-class MetadataMappingEngine {
+class MappingEngine {
   +config_dir: Path
   +refresh_template(metadata_df, project_id, view_name): None
   +map(metadata_df, project_id, view_name): DataFrame
@@ -50,7 +50,7 @@ class EnvoOntologyAccessor {
   +fetch_term(envo_id): Dict
 }
 
-class MappingConfigEngine {
+class MappingConfigManager {
   +config_dir: Path
   +_load_projects(): bool
   +_build_project_metadata_value_summaries(): None
@@ -114,19 +114,19 @@ class StageStamp {
 RunnerPipeline ..> RunnerContext : creates
 RunnerPipeline ..> RunLogger : creates
 RunnerPipeline ..> SRAWorkspaceInputAccessor : uses
-RunnerPipeline ..> MetadataMappingEngine : uses
+RunnerPipeline ..> MappingEngine : uses
 RunnerPipeline ..> EnvoResolutionEngine : uses
 RunnerPipeline ..> EnvoOntologyAccessor : uses
 RunnerPipeline ..> TaxonomyAccessor : uses
 RunnerPipeline ..> StageStamp : reads/writes
 
-MappingConfigEngine ..> RunLogger : injected logger
+MappingConfigManager ..> RunLogger : injected logger
 AlphaDiversityEngine ..> TaxonomyAccessor : injected shared accessor
 AlphaDiversityEngine ..> RunLogger : injected logger
 TaxonomicAbundanceEngine ..> RunLogger : injected logger
 
 CliCommands ..> CliRuntime : uses path resolution
-CliCommands ..> MetadataMappingEngine : uses for enrichment
+CliCommands ..> MappingEngine : uses for enrichment
 CliCommands ..> TaxonomyAccessor : uses lineage DB build/load
 CliCommands ..> LineageStamp : reads/writes
 
