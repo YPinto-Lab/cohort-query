@@ -10,7 +10,7 @@ from typing import Optional
 from pathlib import Path
 
 from Accessors.TaxonomyAccessor import TaxonomyAccessor
-from Engines.AlphaDiversityEngine.alpha_diversity_engine import (
+from Engines.DownstreamAnalysis.AlphaDiversity.alpha_diversity_engine import (
     AlphaDiversityEngine,
     STANDARD_RANKS,
 )

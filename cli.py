@@ -310,7 +310,7 @@ def _ensure_output_dir(
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 def cmd_alpha_diversity(args):
-    from Engines.AlphaDiversityEngine.alpha_diversity_metrics import compute_alpha_diversity_metrics
+    from Engines.DownstreamAnalysis.AlphaDiversity.alpha_diversity_metrics import compute_alpha_diversity_metrics
 
     taxonomy_df, metadata_df = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
@@ -392,7 +392,7 @@ def cmd_alpha_diversity(args):
 
 
 def cmd_taxonomic_abundance(args):
-    from Engines.TaxonomicAbundanceEngine.taxonomic_abundance_metrics import compute_single_taxon_abundance
+    from Engines.DownstreamAnalysis.TaxonomicAbundance.taxonomic_abundance_metrics import compute_single_taxon_abundance
 
     taxonomy_df, metadata_df = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
@@ -460,7 +460,7 @@ def cmd_taxonomic_abundance(args):
 
 
 def cmd_single_taxon_abundance(args):
-    from Engines.TaxonomicAbundanceEngine.taxonomic_abundance_metrics import compute_single_taxon_abundance
+    from Engines.DownstreamAnalysis.TaxonomicAbundance.taxonomic_abundance_metrics import compute_single_taxon_abundance
 
     taxonomy_df, metadata_df = _load_and_enrich(
         args.view, Path(args.inputs_dir), Path(args.config_dir)
