@@ -2,7 +2,7 @@
 
 This page answers:
 - Are tax IDs updated in runner outputs?
-- Are tax IDs updated in Workspaces/<view>/results/abundance_matrix/abundance_matrix.csv?
+- Are tax IDs updated in Workspaces/<workspace>/results/abundance_matrix/abundance_matrix.csv?
 - What is the exact stage order?
 - Where to find detailed run summaries?
 
@@ -50,7 +50,7 @@ This page answers:
 The runner taxonomy path resolves merged IDs before matrix assembly.
 
 The CLI `abundance-matrix` command currently pivots directly from taxonomy rows by `name`:
-- File produced: `Workspaces/<view>/results/abundance_matrix/abundance_matrix.csv`
+- File produced: `Workspaces/<workspace>/results/abundance_matrix/abundance_matrix.csv`
 - It is a name-based matrix and does not apply merged.dmp resolution in the current implementation.
 
 ## Where to Inspect Implementation

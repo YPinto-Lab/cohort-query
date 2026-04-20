@@ -2,7 +2,7 @@ title Mapping Configuration Decision Flow
 
 participant Notebook
 participant Pipeline as run_enrichment_stage
-participant ConfigDir as Workspaces/<view>/mapping_configs
+participant ConfigDir as Workspaces/<workspace>/mapping_configs
 participant Mapping as MappingEngine
 participant Output as enriched metadata
 

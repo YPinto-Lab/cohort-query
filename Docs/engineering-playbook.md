@@ -23,8 +23,8 @@ Use this block before each change:
 Example:
 
 - Problem: `metadata-overview` fails for workspace-native path usage.
-- Expected behavior: `--view ABX` works without explicit path flags.
-- Backward compatibility: legacy `Inputs/<view>` usage still works.
+- Expected behavior: `--workspace ABX` works without explicit path flags.
+- Backward compatibility: legacy `Inputs/<workspace>` usage still works.
 - Validation commands: see section 4.
 - Artifacts: CSV files under `Workspaces/ABX/results/metadata_overview/`.
 
@@ -80,14 +80,14 @@ Run only the relevant subset for your change.
 ### CLI path resolution and workspace defaults
 
 ```bash
-python askslm.py metadata-overview --view ABX
-python askslm.py metadata-overview --view ABX --inputs-dir Workspaces/ABX/inputs --config-dir Workspaces/ABX/mapping_configs --output-dir Workspaces/ABX/results
+python askslm.py metadata-overview --workspace ABX
+python askslm.py metadata-overview --workspace ABX --inputs-dir Workspaces/ABX/inputs --config-dir Workspaces/ABX/mapping_configs --output-dir Workspaces/ABX/results
 ```
 
 ### Metadata overview artifacts
 
 ```bash
-python askslm.py metadata-overview --view ABX
+python askslm.py metadata-overview --workspace ABX
 ls -1 Workspaces/ABX/results/metadata_overview/
 ```
 
@@ -101,15 +101,15 @@ Expected files:
 ### Taxon abundance flows
 
 ```bash
-python askslm.py taxonomic-abundance --view ABX --rank genus --taxon Prevotella
-python askslm.py single-taxon-abundance --view ABX --taxon Viruses --source-keys day_run host_subject_id_sam
+python askslm.py taxonomic-abundance --workspace ABX --rank genus --taxon Prevotella
+python askslm.py single-taxon-abundance --workspace ABX --taxon Viruses --source-keys day_run host_subject_id_sam
 ```
 
 ### Matrix and diversity
 
 ```bash
-python askslm.py abundance-matrix --view ABX
-python askslm.py alpha-diversity --view ABX --rank genus
+python askslm.py abundance-matrix --workspace ABX
+python askslm.py alpha-diversity --workspace ABX --rank genus
 ```
 
 ### Quick Python diagnostics
@@ -161,7 +161,7 @@ Avoid mixing notebook output deltas with engine/CLI logic unless explicitly requ
 
 ## 8) Suggested Next Test Additions
 
-1. E2E test: workspace-native `--view` defaults for all core commands.
+1. E2E test: workspace-native `--workspace` defaults for all core commands.
 2. Unit test: `_resolve_view_input_dir` path resolution behavior.
 3. Unit test: top-values adaptive truncation and count formatting.
 4. E2E test: metadata fields included in discovered reports.

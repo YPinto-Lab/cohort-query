@@ -193,7 +193,7 @@
 
 participant Notebook as runner.ipynb
 participant Pipeline as runner_pipeline_manager
-participant Workspace as Workspaces/<view>
+participant Workspace as Workspaces/<workspace>
 participant Cache as results/_cache
 participant Mapping as MappingEngine
 participant Ontology as EnvoResolutionEngine
@@ -236,7 +236,7 @@ Pipeline->Workspace: write analysis-wide dataset + metadata columns + compatibil
 
 participant Notebook
 participant Pipeline as run_enrichment_stage
-participant ConfigDir as Workspaces/<view>/mapping_configs
+participant ConfigDir as Workspaces/<workspace>/mapping_configs
 participant Mapping as MappingEngine
 participant Output as enriched metadata
 
@@ -276,9 +276,9 @@ participant Loader as _load_and_enrich
 participant Cache as results/_cache
 participant Taxonomy as taxonomy.csv
 
-Engineer->Entry: python askslm.py <command> --view <view> [optional paths]
+Engineer->Entry: python askslm.py <command> --workspace <workspace> [optional paths]
 Entry->Runtime: resolve inputs/config/output directories
-Runtime->Command: use Workspaces/<view>/inputs,mapping_configs,results (or explicit overrides)
+Runtime->Command: use Workspaces/<workspace>/inputs,mapping_configs,results (or explicit overrides)
 
 alt command == build-taxonomy-lineage
   Command->Taxonomy: load taxonomy.csv
@@ -310,7 +310,7 @@ participant MergeStage as run_merge_stage
 participant Lineage as build_or_load_tax_accessor
 participant Alpha as AlphaDiversityEngine
 participant Abundance as TaxonomicAbundanceEngine
-participant Results as Workspaces/<view>/results
+participant Results as Workspaces/<workspace>/results
 participant Cache as results/_cache
 
 Notebook->TaxStage: run_taxonomy_stage(taxonomy_df, taxon_key_sep)

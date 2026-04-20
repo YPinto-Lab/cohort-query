@@ -22,11 +22,11 @@ component "MappingConfigManager\n(Jupyter UI)" as MappingUI
 component "AlphaDiversityEngine\n(Jupyter UI)" as AlphaUI
 component "TaxonomicAbundanceEngine\n(Jupyter UI)" as AbundanceUI
 
-database "Workspaces/<view>/inputs/metadata.csv" as WsMeta
-database "Workspaces/<view>/inputs/taxonomy.csv" as WsTax
-database "Workspaces/<view>/mapping_configs/*.json" as WsConfigs
-database "Workspaces/<view>/results/*" as WsResults
-database "Workspaces/<view>/results/_cache/*" as WsCache
+database "Workspaces/<workspace>/inputs/metadata.csv" as WsMeta
+database "Workspaces/<workspace>/inputs/taxonomy.csv" as WsTax
+database "Workspaces/<workspace>/mapping_configs/*.json" as WsConfigs
+database "Workspaces/<workspace>/results/*" as WsResults
+database "Workspaces/<workspace>/results/_cache/*" as WsCache
 
 User --> Notebook
 User --> CLI

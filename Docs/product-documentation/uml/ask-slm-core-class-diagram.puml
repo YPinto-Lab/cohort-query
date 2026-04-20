@@ -85,7 +85,7 @@ class RunnerPipeline {
 
 class CliRuntime {
   +_resolve_runtime_paths(args): None
-  +_resolve_view_input_dir(view, inputs_dir): Path
+  +_resolve_workspace_input_dir(workspace, inputs_dir): Path
   +_resolve_lineage_paths(args): (Path, Path)
 }
 

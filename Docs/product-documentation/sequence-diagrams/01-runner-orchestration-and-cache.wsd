@@ -2,7 +2,7 @@ title Runner Orchestration and Stage Cache Decisions
 
 participant Notebook as runner.ipynb
 participant Pipeline as runner_pipeline_manager
-participant Workspace as Workspaces/<view>
+participant Workspace as Workspaces/<workspace>
 participant Cache as results/_cache
 participant Mapping as MappingEngine
 participant Ontology as EnvoResolutionEngine

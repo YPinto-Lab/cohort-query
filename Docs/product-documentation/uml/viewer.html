@@ -235,8 +235,8 @@ package "Workflow Services" {
 }
 
 package "Input Layouts" {
-  database "Workspaces/<view>/inputs/metadata.csv" as WsMeta
-  database "Workspaces/<view>/inputs/taxonomy.csv" as WsTax
+  database "Workspaces/<workspace>/inputs/metadata.csv" as WsMeta
+  database "Workspaces/<workspace>/inputs/taxonomy.csv" as WsTax
 }
 
 package "Accessors" {
@@ -261,10 +261,10 @@ package "Analysis (Pure Functions)" {
 }
 
 package "View Workspace" {
-  folder "Workspaces/<view>/inputs" as WsInputs
-  folder "Workspaces/<view>/mapping_configs" as WsConfigs
-  folder "Workspaces/<view>/results" as WsResults
-  folder "Workspaces/<view>/Logs" as WsLogs
+  folder "Workspaces/<workspace>/inputs" as WsInputs
+  folder "Workspaces/<workspace>/mapping_configs" as WsConfigs
+  folder "Workspaces/<workspace>/results" as WsResults
+  folder "Workspaces/<workspace>/Logs" as WsLogs
 }
 
 User --> Runner

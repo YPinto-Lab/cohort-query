@@ -5,16 +5,17 @@ Provides non-interactive access to analyses for use on remote servers or
 in scripted pipelines.
 
 Default layout (workspace-native):
-    Workspaces/<view>/inputs/metadata.csv
-    Workspaces/<view>/inputs/taxonomy.csv
-    Workspaces/<view>/mapping_configs/*.json
-    Workspaces/<view>/results/
+    Workspaces/<workspace>/inputs/metadata.csv
+    Workspaces/<workspace>/inputs/taxonomy.csv
+    Workspaces/<workspace>/mapping_configs/*.json
+    Workspaces/<workspace>/results/
 
 Usage examples:
-    python askslm.py alpha-diversity     --view PhagesInBlood --rank species --group Group
-    python askslm.py taxonomic-abundance --view PhagesInBlood --rank genus --taxon Prevotella --group Group
-    python askslm.py single-taxon-abundance --view PhagesInBlood --taxon Viruses --source-keys day_run host_subject_id_sam
-    python askslm.py abundance-matrix    --view PhagesInBlood
+    python askslm.py init                --workspace ABX --location Workspaces
+    python askslm.py alpha-diversity     --workspace PhagesInBlood --rank species --group Group
+    python askslm.py taxonomic-abundance --workspace PhagesInBlood --rank genus --taxon Prevotella --group Group
+    python askslm.py single-taxon-abundance --workspace PhagesInBlood --taxon Viruses --source-keys day_run host_subject_id_sam
+    python askslm.py abundance-matrix    --workspace PhagesInBlood
 """
 import argparse
 import sys
@@ -165,8 +166,8 @@ def _resolve_case_insensitive_path(path: Path) -> Path:
     return path
 
 
-def _resolve_view_input_dir(view: str, inputs_dir: Path) -> Path:
-    """Resolve where metadata.csv/taxonomy.csv live for a given view.
+def _resolve_workspace_input_dir(workspace: str, inputs_dir: Path) -> Path:
+    """Resolve where metadata.csv/taxonomy.csv live for a given workspace.
 
     Expects a directory that directly contains metadata.csv and taxonomy.csv.
     """
@@ -184,14 +185,42 @@ def _resolve_view_input_dir(view: str, inputs_dir: Path) -> Path:
     sys.exit(1)
 
 
+def _resolve_workspace_name_arg(args) -> str:
+    """Return canonical workspace name from CLI args.
+
+    --workspace is the canonical option.
+    --view is accepted as a deprecated alias for backward compatibility.
+    """
+    workspace = str(getattr(args, "workspace", "") or "").strip()
+    view_alias = str(getattr(args, "view", "") or "").strip()
+
+    if workspace and view_alias and workspace != view_alias:
+        print(
+            "Error: --workspace and --view were both provided with different values. "
+            "Please pass only --workspace, or pass matching values.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if workspace:
+        return workspace
+
+    if view_alias:
+        print("Warning: --view is deprecated; use --workspace instead.", file=sys.stderr)
+        return view_alias
+
+    print("Error: missing required argument --workspace (or deprecated --view).", file=sys.stderr)
+    sys.exit(1)
+
+
 def _resolve_runtime_paths(args) -> None:
     """Fill args paths from workspace defaults when omitted.
 
-    Defaults to Workspaces/<view>/* unless explicit overrides are provided.
+    Defaults to Workspaces/<workspace>/* unless explicit overrides are provided.
     """
-    view = args.view
+    workspace = _resolve_workspace_name_arg(args)
     workspace_root = _resolve_case_insensitive_path(Path(args.workspace_root))
-    workspace_dir = _resolve_case_insensitive_path(workspace_root / view)
+    workspace_dir = _resolve_case_insensitive_path(workspace_root / workspace)
 
     default_inputs = workspace_dir / "inputs"
     default_configs = workspace_dir / "mapping_configs"
@@ -222,6 +251,7 @@ def _resolve_runtime_paths(args) -> None:
     args.config_dir = str(config_dir)
     args.output_dir = str(output_dir)
     args.workspace_layout = workspace_layout
+    args.workspace = workspace
 
 
 def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -246,8 +276,8 @@ def _resolve_lineage_paths(args) -> tuple[Path, Path]:
     return lineage_db_path, stamp_path
 
 
-def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
-    """Load both DataFrames for a view and apply mapping configs."""
+def _load_and_enrich(workspace: str, inputs_dir: Path, config_dir: Path):
+    """Load both DataFrames for a workspace and apply mapping configs."""
     import sys, os
     if os.getcwd() not in sys.path:
         sys.path.insert(0, os.getcwd())
@@ -256,13 +286,13 @@ def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
     from Accessors.SraAccessor.sra_taxonomy_accessor import SRATaxonomyAccessor
     from Engines.MappingEngine.mapping_engine import MappingEngine
 
-    view_path = _resolve_view_input_dir(view, inputs_dir)
+    workspace_path = _resolve_workspace_input_dir(workspace, inputs_dir)
 
-    print(f"Loading metadata from {view_path / 'metadata.csv'} ...")
-    metadata_df = SRAMetadataAccessor.get(view_path / "metadata.csv")
+    print(f"Loading metadata from {workspace_path / 'metadata.csv'} ...")
+    metadata_df = SRAMetadataAccessor.get(workspace_path / "metadata.csv")
 
-    print(f"Loading taxonomy from {view_path / 'taxonomy.csv'} ...")
-    taxonomy_df = SRATaxonomyAccessor.get(view_path / "taxonomy.csv")
+    print(f"Loading taxonomy from {workspace_path / 'taxonomy.csv'} ...")
+    taxonomy_df = SRATaxonomyAccessor.get(workspace_path / "taxonomy.csv")
 
     print(f"Loaded: {len(metadata_df)} samples, {len(taxonomy_df)} taxon observations")
 
@@ -282,12 +312,12 @@ def _load_and_enrich(view: str, inputs_dir: Path, config_dir: Path):
     return taxonomy_df, enriched_metadata_df
 
 
-def _load_taxonomy_only(view: str, inputs_dir: Path) -> tuple[pd.DataFrame, Path]:
+def _load_taxonomy_only(workspace: str, inputs_dir: Path) -> tuple[pd.DataFrame, Path]:
     """Load taxonomy dataframe and return its source CSV path."""
     from Accessors.SraAccessor.sra_taxonomy_accessor import SRATaxonomyAccessor
 
-    view_path = _resolve_view_input_dir(view, inputs_dir)
-    taxonomy_csv_path = view_path / "taxonomy.csv"
+    workspace_path = _resolve_workspace_input_dir(workspace, inputs_dir)
+    taxonomy_csv_path = workspace_path / "taxonomy.csv"
     print(f"Loading taxonomy from {taxonomy_csv_path} ...")
     taxonomy_df = SRATaxonomyAccessor.get(taxonomy_csv_path)
     print(f"Loaded: {len(taxonomy_df)} taxon observations")
@@ -296,7 +326,6 @@ def _load_taxonomy_only(view: str, inputs_dir: Path) -> tuple[pd.DataFrame, Path
 
 def _ensure_output_dir(
     output_dir: Path,
-    view: str,
     analyzer: str | None = None,
     workspace_layout: bool = False,
 ) -> Path:
@@ -313,11 +342,10 @@ def cmd_alpha_diversity(args):
     from Engines.DownstreamAnalysis.AlphaDiversity.alpha_diversity_metrics import compute_alpha_diversity_metrics
 
     taxonomy_df, metadata_df = _load_and_enrich(
-        args.view, Path(args.inputs_dir), Path(args.config_dir)
+        args.workspace, Path(args.inputs_dir), Path(args.config_dir)
     )
     out_dir = _ensure_output_dir(
         Path(args.output_dir),
-        args.view,
         "alpha_diversity",
         workspace_layout=bool(getattr(args, "workspace_layout", False)),
     )
@@ -328,7 +356,7 @@ def cmd_alpha_diversity(args):
             "Error: lineage DB is required for alpha-diversity and was not found at:\n"
             f"  {lineage_db_path}\n\n"
             "Build it first with:\n"
-            f"  python askslm.py build-taxonomy-lineage --view {args.view}",
+            f"  python askslm.py build-taxonomy-lineage --workspace {args.workspace}",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -395,11 +423,10 @@ def cmd_taxonomic_abundance(args):
     from Engines.DownstreamAnalysis.TaxonomicAbundance.taxonomic_abundance_metrics import compute_single_taxon_abundance
 
     taxonomy_df, metadata_df = _load_and_enrich(
-        args.view, Path(args.inputs_dir), Path(args.config_dir)
+        args.workspace, Path(args.inputs_dir), Path(args.config_dir)
     )
     out_dir = _ensure_output_dir(
         Path(args.output_dir),
-        args.view,
         "taxonomic_abundance",
         workspace_layout=bool(getattr(args, "workspace_layout", False)),
     )
@@ -463,11 +490,10 @@ def cmd_single_taxon_abundance(args):
     from Engines.DownstreamAnalysis.TaxonomicAbundance.taxonomic_abundance_metrics import compute_single_taxon_abundance
 
     taxonomy_df, metadata_df = _load_and_enrich(
-        args.view, Path(args.inputs_dir), Path(args.config_dir)
+        args.workspace, Path(args.inputs_dir), Path(args.config_dir)
     )
     out_dir = _ensure_output_dir(
         Path(args.output_dir),
-        args.view,
         "single_taxon_abundance",
         workspace_layout=bool(getattr(args, "workspace_layout", False)),
     )
@@ -537,11 +563,10 @@ def cmd_single_taxon_abundance(args):
 
 def cmd_abundance_matrix(args):
     taxonomy_df, _ = _load_and_enrich(
-        args.view, Path(args.inputs_dir), Path(args.config_dir)
+        args.workspace, Path(args.inputs_dir), Path(args.config_dir)
     )
     out_dir = _ensure_output_dir(
         Path(args.output_dir),
-        args.view,
         "abundance_matrix",
         workspace_layout=bool(getattr(args, "workspace_layout", False)),
     )
@@ -566,11 +591,10 @@ def cmd_metadata_overview(args):
     config_dir = Path(args.config_dir)
 
     _, metadata_df = _load_and_enrich(
-        args.view, Path(args.inputs_dir), Path(args.config_dir)
+        args.workspace, Path(args.inputs_dir), Path(args.config_dir)
     )
     out_dir = _ensure_output_dir(
         Path(args.output_dir),
-        args.view,
         "metadata_overview",
         workspace_layout=bool(getattr(args, "workspace_layout", False)),
     )
@@ -579,8 +603,8 @@ def cmd_metadata_overview(args):
     from Accessors.SraAccessor.sra_metadata_accessor import SRAMetadataAccessor
     from Engines.MappingEngine.mapping_engine import MappingEngine
 
-    resolved_view_input_dir = _resolve_view_input_dir(args.view, inputs_dir)
-    raw_metadata_df = SRAMetadataAccessor.get(resolved_view_input_dir / "metadata.csv")
+    resolved_workspace_input_dir = _resolve_workspace_input_dir(args.workspace, inputs_dir)
+    raw_metadata_df = SRAMetadataAccessor.get(resolved_workspace_input_dir / "metadata.csv")
     processor = MappingEngine(config_dir=config_dir)
 
     discovered_rows = []
@@ -703,7 +727,7 @@ def cmd_metadata_overview(args):
 def cmd_build_taxonomy_lineage(args):
     from Accessors.TaxonomyAccessor import TaxonomyAccessor
 
-    taxonomy_df, taxonomy_csv_path = _load_taxonomy_only(args.view, Path(args.inputs_dir))
+    taxonomy_df, taxonomy_csv_path = _load_taxonomy_only(args.workspace, Path(args.inputs_dir))
     lineage_db_path, stamp_path = _resolve_lineage_paths(args)
 
     required_cols = {"acc", "tax_id", "rank", "name", "ileft", "iright"}
@@ -719,7 +743,7 @@ def cmd_build_taxonomy_lineage(args):
     taxonomy_hash = _sha256_file(taxonomy_csv_path)
     current_stamp = {
         "schema_version": "lineage_v1",
-        "view_name": args.view,
+        "workspace_name": args.workspace,
         "taxonomy_csv": str(taxonomy_csv_path),
         "taxonomy_sha256": taxonomy_hash,
         "taxonomy_rows": int(len(taxonomy_df)),
@@ -747,6 +771,37 @@ def cmd_build_taxonomy_lineage(args):
     print(f"✅ Saved lineage stamp: {stamp_path}")
 
 
+def cmd_init_workspace(args):
+    """Create a workspace skeleton for splitting large metadata/taxonomy inputs."""
+    workspace_name = str(args.workspace).strip()
+    if not workspace_name:
+        print("Error: --workspace cannot be empty", file=sys.stderr)
+        sys.exit(1)
+
+    location = Path(args.location)
+    workspace_dir = location / workspace_name
+    created_paths = []
+
+    for path in [
+        workspace_dir,
+        workspace_dir / "inputs",
+        workspace_dir / "metadata_parts",
+        workspace_dir / "taxonomy_parts",
+    ]:
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=True)
+            created_paths.append(path)
+
+    print("Workspace initialization complete")
+    print(f"  Workspace: {workspace_dir}")
+    if created_paths:
+        print("  Created:")
+        for path in created_paths:
+            print(f"    - {path}")
+    else:
+        print("  No new folders were needed; all required paths already exist.")
+
+
 # ── Argument parser ───────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -757,8 +812,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Shared arguments
     shared = argparse.ArgumentParser(add_help=False)
-    shared.add_argument("--view", required=True,
-                        help="Workspace/view name (e.g. ABX or PhagesInBlood)")
+    shared.add_argument("--workspace", required=False,
+                        help="Workspace name (e.g. ABX or PhagesInBlood)")
+    shared.add_argument("--view", required=False,
+                        help="Deprecated alias for --workspace")
     shared.add_argument("--workspace-root", default="Workspaces",
                         help="Root folder containing workspace directories (default: Workspaces)")
     shared.add_argument("--inputs-dir", default=None,
@@ -832,6 +889,23 @@ def build_parser() -> argparse.ArgumentParser:
                                help="Build or refresh taxonomy lineage DB in cache")
     p_lineage.set_defaults(func=cmd_build_taxonomy_lineage)
 
+    # init
+    p_init = sub.add_parser(
+        "init",
+        help="Create a workspace skeleton with inputs, metadata_parts, and taxonomy_parts folders",
+    )
+    p_init.add_argument(
+        "--workspace",
+        required=True,
+        help="Workspace name to create (e.g. ABX)",
+    )
+    p_init.add_argument(
+        "--location",
+        required=True,
+        help="Directory where the workspace folder should be created",
+    )
+    p_init.set_defaults(func=cmd_init_workspace)
+
     return parser
 
 
@@ -839,5 +913,6 @@ if __name__ == "__main__":
     # Backward-compatible wrapper: prefer using askslm.py as primary entrypoint.
     parser = build_parser()
     args = parser.parse_args()
-    _resolve_runtime_paths(args)
+    if args.command != "init":
+        _resolve_runtime_paths(args)
     args.func(args)

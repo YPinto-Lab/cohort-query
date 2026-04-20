@@ -75,7 +75,7 @@
     <section class="card">
       <h2>Runtime Path Model</h2>
       <ul>
-        <li>CLI resolves paths in runtime and defaults to workspace-native directories under Workspaces/&lt;view&gt;.</li>
+        <li>CLI resolves paths in runtime and defaults to workspace-native directories under Workspaces/&lt;workspace&gt;.</li>
         <li>You can override paths with --inputs-dir, --config-dir, and --output-dir.</li>
         <li>Lineage cache defaults to &lt;output-dir&gt;/_cache/taxonomy_lineage_db.json.</li>
       </ul>
@@ -84,12 +84,12 @@
 
     <section class="card">
       <h2>Main Commands</h2>
-      <pre>python askslm.py metadata-overview --view ABX
-python askslm.py abundance-matrix --view ABX
-python askslm.py build-taxonomy-lineage --view ABX
-python askslm.py alpha-diversity --view ABX --rank genus
-python askslm.py taxonomic-abundance --view ABX --rank genus --taxon Prevotella
-python askslm.py single-taxon-abundance --view ABX --rank superkingdom --taxon Viruses --source-keys sample_name host_subject_id_sam</pre>
+      <pre>python askslm.py metadata-overview --workspace ABX
+python askslm.py abundance-matrix --workspace ABX
+python askslm.py build-taxonomy-lineage --workspace ABX
+python askslm.py alpha-diversity --workspace ABX --rank genus
+python askslm.py taxonomic-abundance --workspace ABX --rank genus --taxon Prevotella
+python askslm.py single-taxon-abundance --workspace ABX --rank superkingdom --taxon Viruses --source-keys sample_name host_subject_id_sam</pre>
     </section>
 
     <section class="card">

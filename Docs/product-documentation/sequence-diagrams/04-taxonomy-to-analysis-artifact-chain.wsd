@@ -7,7 +7,7 @@ participant MergeStage as run_merge_stage
 participant Lineage as build_or_load_tax_accessor
 participant Alpha as AlphaDiversityEngine
 participant Abundance as TaxonomicAbundanceEngine
-participant Results as Workspaces/<view>/results
+participant Results as Workspaces/<workspace>/results
 participant Cache as results/_cache
 
 Notebook->TaxStage: run_taxonomy_stage(taxonomy_df, taxon_key_sep)

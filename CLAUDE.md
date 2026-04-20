@@ -16,10 +16,10 @@ The main entry point is `runner.ipynb` — open and run it in Jupyter.
 
 For command-line usage:
 ```bash
-python askslm.py alpha-diversity --view PhagesInBlood --rank species --group Group
-python askslm.py taxonomic-abundance --view PhagesInBlood --rank genus --taxon Prevotella --group Group
-python askslm.py abundance-matrix --view PhagesInBlood
-# Outputs go to Workspaces/<view>/results/
+python askslm.py alpha-diversity --workspace PhagesInBlood --rank species --group Group
+python askslm.py taxonomic-abundance --workspace PhagesInBlood --rank genus --taxon Prevotella --group Group
+python askslm.py abundance-matrix --workspace PhagesInBlood
+# Outputs go to Workspaces/<workspace>/results/
 ```
 
 ## iDesign Architecture Cheat Sheet (How To Think Before Coding)
@@ -153,7 +153,7 @@ If yes to any item, update relevant docs immediately (for example: `CLAUDE.md`, 
 
 ## Input Folder Structure
 
-Each "view" is a named research collection — a folder under `Inputs/` containing two CSV files:
+Each workspace is a named research collection — a folder under `Inputs/` containing two CSV files:
 
 ```
 Inputs/
@@ -162,7 +162,7 @@ Inputs/
     └── taxonomy.csv     # many rows per acc, one per taxon (from sra.tax_analysis)
 ```
 
-Use `queries/blood_wgs_queries.sql` as a template for the Athena queries. Replace `{project_ids}` with the actual bioproject IDs, run both queries, and export to CSVs in the view folder.
+Use `queries/blood_wgs_queries.sql` as a template for the Athena queries. Replace `{project_ids}` with the actual bioproject IDs, run both queries, and export to CSVs in the workspace folder.
 
 ## Mapping Config Format
 

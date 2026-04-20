@@ -8,9 +8,9 @@ participant Loader as _load_and_enrich
 participant Cache as results/_cache
 participant Taxonomy as taxonomy.csv
 
-Engineer->Entry: python askslm.py <command> --view <view> [optional paths]
+Engineer->Entry: python askslm.py <command> --workspace <workspace> [optional paths]
 Entry->Runtime: resolve inputs/config/output directories
-Runtime->Command: use Workspaces/<view>/inputs,mapping_configs,results (or explicit overrides)
+Runtime->Command: use Workspaces/<workspace>/inputs,mapping_configs,results (or explicit overrides)
 
 alt command == build-taxonomy-lineage
   Command->Taxonomy: load taxonomy.csv

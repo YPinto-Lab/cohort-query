@@ -12,8 +12,8 @@ Use this as a structure for onboarding and design communication.
 
 - `metadata.csv`: one row per sample (`acc`)
 - `taxonomy.csv`: many rows per sample (taxon observations)
-- Workspace-native layout (primary): `Workspaces/<view>/inputs/`, `mapping_configs/`, `results/`, `Logs/`
-- Path resolution precedence: explicit CLI overrides -> workspace defaults under `Workspaces/<view>/`
+- Workspace-native layout (primary): `Workspaces/<workspace>/inputs/`, `mapping_configs/`, `results/`, `Logs/`
+- Path resolution precedence: explicit CLI overrides -> workspace defaults under `Workspaces/<workspace>/`
 
 Recommended diagrams:
 - `sequence-diagrams/01-runner-orchestration-and-cache.wsd`
@@ -69,14 +69,14 @@ Recommended diagrams:
 	- `merge_stage_stamp.json` depends on enrichment + taxonomy stamps
 	- `taxonomy_lineage_db_stamp.json` in runner depends on taxonomy stage stamp; in CLI lineage build it depends on taxonomy file hash
 - Output/cache paths:
-	- `Workspaces/<view>/results/<analysis>/`
-	- `Workspaces/<view>/results/_cache/`
+	- `Workspaces/<workspace>/results/<analysis>/`
+	- `Workspaces/<workspace>/results/_cache/`
 - Known failure modes and recovery playbook
 
 ## 8. Testing Strategy
 
 - Unit tests by workflow function
-- Integration tests by view
+- Integration tests by workspace
 - End-to-end CLI regression tests
 
 ## 9. Future Evolution
