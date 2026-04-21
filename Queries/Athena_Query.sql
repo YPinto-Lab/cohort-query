@@ -1,22 +1,10 @@
--- ============================================================
--- SRA Blood WGS Data Extraction Queries
--- ============================================================
--- Usage:
---   1. Replace {project_ids} with a comma-separated list of
---      quoted bioproject IDs, e.g.:
---        'PRJEB89352', 'PRJEB64933', 'PRJEB50557', 'PRJNA774626'
---   2. Run each query in AWS Athena.
---   3. Export the results and save them in the view folder:
---        Inputs/<ViewName>/metadata.csv
---        Inputs/<ViewName>/taxonomy.csv
--- ============================================================
+DROP TABLE sra.abx_PRJNA974858_metadata;
+DROP TABLE sra.abx_PRJNA974858_taxonomy;
 
 
 -- ── Query A: Metadata ───────────────────────────────────────
--- One row per accession (acc). No taxonomy columns.
--- Export result → Inputs/<ViewName>/metadata.csv
 
-CREATE TABLE sra.blood_wgs_metadata
+CREATE TABLE sra.abx_PRJNA974858_metadata
 WITH (
   format = 'PARQUET',
   external_location = 's3://yarin-athena-results/projects/blood_wgs_metadata/',
@@ -61,16 +49,12 @@ SELECT
     M.run_file_version,
     M.bioproject
 FROM sra.metadata AS M
-WHERE M.bioproject IN ({project_ids});
+WHERE M.bioproject IN ('PRJNA974858');
 
 
 -- ── Query B: Taxonomy ───────────────────────────────────────
--- Many rows per accession (one row per taxon detected in that run).
--- bioproject is included only to enable partitioning; it is not
--- a property of the taxonomy observation itself.
--- Export result → Inputs/<ViewName>/taxonomy.csv
 
-CREATE TABLE sra.blood_wgs_taxonomy
+CREATE TABLE sra.abx_PRJNA974858_taxonomy
 WITH (
   format = 'PARQUET',
   external_location = 's3://yarin-athena-results/projects/blood_wgs_taxonomy/',
@@ -90,4 +74,8 @@ SELECT
 FROM sra.tax_analysis AS TAX
 JOIN sra.metadata AS M
     ON TAX.acc = M.acc
-WHERE M.bioproject IN ({project_ids});
+WHERE M.bioproject IN ('PRJNA974858');
+
+
+select * from sra.abx_PRJNA974858_metadata
+select * from sra.abx_PRJNA974858_taxonomy
