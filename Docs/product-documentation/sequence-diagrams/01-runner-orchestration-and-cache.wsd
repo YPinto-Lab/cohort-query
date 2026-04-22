@@ -2,6 +2,7 @@ title Runner Orchestration and Stage Cache Decisions
 
 participant Notebook as runner.ipynb
 participant Pipeline as runner_pipeline_manager
+participant Runtime as DatasetAssemblyRuntimeEngine
 participant Workspace as Workspaces/<workspace>
 participant Cache as results/_cache
 participant Mapping as MappingEngine
@@ -27,10 +28,10 @@ Notebook->Pipeline: enrich_envo_columns(...)
 Pipeline->Ontology: resolve ENVO terms when present
 Pipeline->Workspace: write ENVO_Term_Dictionary.csv when terms found
 
-Notebook->Pipeline: run_taxonomy_stage(...)
-Pipeline->Cache: compare taxonomy_stage_stamp.json
-Cache->Pipeline: hit or miss
-Pipeline->Workspace: write abundance matrix + taxon lookup on miss
+Notebook->Runtime: run_taxonomy_stage(...)
+Runtime->Cache: compare taxonomy_stage_stamp.json
+Cache->Runtime: hit or miss
+Runtime->Workspace: write abundance matrix + taxon lookup on miss
 
 Notebook->Pipeline: run_merge_stage(...)
 Pipeline->Cache: compare merge_stage_stamp.json

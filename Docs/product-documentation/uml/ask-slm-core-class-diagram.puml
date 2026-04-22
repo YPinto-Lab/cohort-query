@@ -78,7 +78,6 @@ class RunnerPipeline {
   +refresh_mapping_templates(metadata_df, context, logger)
   +run_enrichment_stage(...): (DataFrame, List[str], List[str], Dict[str, Any])
   +enrich_envo_columns(...): (DataFrame, DataFrame)
-  +run_taxonomy_stage(...): (DataFrame, DataFrame, Dict[str, Any])
   +run_merge_stage(...): (DataFrame, List[str], Dict[str, Any])
   +build_or_load_tax_accessor(...): TaxonomyAccessor
 }

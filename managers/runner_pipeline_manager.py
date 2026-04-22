@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -13,7 +13,6 @@ from Accessors.TaxonomyAccessor import TaxonomyAccessor
 from Engines.EnvoResolutionEngine import resolve_envo_columns
 from Engines.DatasetAssemblyEngine import (
     DatasetAssemblyRuntimeEngine,
-    compute_analysis_wide_dataset,
 )
 from Engines.MappingEngine.mapping_engine import MappingEngine
 from Common.Logger import Logger
@@ -161,7 +160,7 @@ def run_taxonomy_stage(
     logger: Logger,
     assembly_db_dir: Path,
     merged_dump_path: Path,
-    taxon_key_sep: str = "||",
+    taxon_key_sep: str,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     engine = DatasetAssemblyRuntimeEngine(
         workspace_input_dir=context.workspace_input_dir,
