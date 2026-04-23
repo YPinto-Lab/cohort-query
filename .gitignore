@@ -45,3 +45,11 @@ commit_message.txt
 tests/e2e/artifacts/
 
 Workspaces/
+
+# Accessor outputs (generated)
+Accessors/**/output/
+
+# Common large data artifacts (generated)
+*.parquet
+*.feather
+*.pkl

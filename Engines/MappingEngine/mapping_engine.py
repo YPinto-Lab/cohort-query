@@ -139,6 +139,33 @@ class MappingEngine:
         self._generate_mapping_template(df, template_path, view_name=view_name)
         return template_path
 
+    def refresh_templates(self, metadata_df: pd.DataFrame, view_name: Optional[str] = None) -> tuple[list[str], pd.DataFrame]:
+        """Refresh mapping templates for all projects found in the metadata table.
+
+        Returns:
+            Tuple of sorted project IDs and a status dataframe with config/template paths.
+        """
+        if "bioproject" not in metadata_df.columns:
+            raise ValueError("metadata_df must include a 'bioproject' column")
+
+        project_ids = sorted(metadata_df["bioproject"].dropna().astype(str).unique())
+        rows = []
+
+        for project_id in project_ids:
+            project_df = metadata_df[metadata_df["bioproject"].astype(str) == project_id].copy()
+            template_path = self.refresh_template(project_df, project_id, view_name=view_name)
+            config_path = self.config_dir / f"{project_id}.json"
+            rows.append(
+                {
+                    "project_id": project_id,
+                    "config_exists": config_path.exists(),
+                    "config_path": str(config_path),
+                    "template_path": str(template_path),
+                }
+            )
+
+        return project_ids, pd.DataFrame(rows)
+
     def _generate_mapping_template(self, df: pd.DataFrame, template_path: Path, view_name: Optional[str] = None):
         """Generates a .json.template file with source-separated sample values."""
         project_id = df['bioproject'].iloc[0] if not df.empty else "unknown_project"
