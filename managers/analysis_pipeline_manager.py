@@ -23,6 +23,8 @@ from Common.contracts.pipeline_contracts import (
     WorkspaceInputsResult,
 )
 from Engines.DatasetAssemblyEngine import DatasetAssemblyRuntimeEngine
+from Engines.DownstreamAnalysis.AlphaDiversity.alpha_diversity_engine import AlphaDiversityEngine
+from Engines.DownstreamAnalysis.TaxonomicAbundance import TaxonomicAbundanceEngine
 from Engines.EnvoResolutionEngine import resolve_envo_columns
 from Engines.MappingEngine.mapping_engine import MappingEngine
 
@@ -251,3 +253,38 @@ class AnalysisPipelineManager:
             taxon_lookup_df=taxon_lookup_df,
             lineage_db_path=Path(lineage_db_path),
         )
+
+    def run_alpha_diversity(
+        self,
+        analysis_wide_df: pd.DataFrame,
+        taxon_lookup_df: pd.DataFrame,
+        metadata_cols: List[str],
+        tax_accessor: TaxonomyAccessor,
+        logger: Logger,
+    ) -> AlphaDiversityEngine:
+        engine = AlphaDiversityEngine(
+            analysis_wide_df=analysis_wide_df,
+            taxon_lookup_df=taxon_lookup_df,
+            metadata_cols=metadata_cols,
+            tax_accessor=tax_accessor,
+            logger=logger.log if hasattr(logger, "log") else logger,
+        )
+        engine.run()
+        return engine
+
+    def run_taxonomic_abundance(
+        self,
+        abundance_metadata_matrix: pd.DataFrame,
+        taxon_lookup_df: pd.DataFrame,
+        metadata_cols: List[str],
+        logger: Logger,
+    ) -> TaxonomicAbundanceEngine:
+        engine = TaxonomicAbundanceEngine(
+            abundance_metadata_matrix=abundance_metadata_matrix,
+            taxon_lookup_df=taxon_lookup_df,
+            metadata_cols=metadata_cols,
+            logger=logger.log if hasattr(logger, "log") else logger,
+        )
+        engine.run()
+        return engine
+

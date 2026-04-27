@@ -75,7 +75,7 @@ python askslm.py abundance-matrix --workspace PhagesInBlood
 
 ### 6) Ask-SLM Specific Mapping
 - **Client:** `runner.ipynb` cells, `askslm.py` CLI entry.
-- **Manager:** orchestration flow modules (for example `managers/runner_pipeline_manager.py`).
+- **Manager:** orchestration flow modules (for example `managers/analysis_pipeline_manager.py`).
 - **Engine:** business/UI computation modules under `Engines/` (alpha diversity, taxonomic abundance, mapping config, metadata mapping).
 - **Accessor:** classes under `Accessors/` and external I/O boundaries.
 
@@ -83,6 +83,17 @@ python askslm.py abundance-matrix --workspace PhagesInBlood
 - `Engines/` is the canonical home for engine code.
 - `managers/` is retained for orchestration and backward compatibility wrappers.
 - New code should import from `Engines/*` and orchestration managers directly.
+
+## Pipeline Contracts (Assembly-Focused)
+
+- `PipelineRequest` is assembly-stage focused. It contains workspace and assembly options only.
+- Downstream analyses (alpha diversity, taxonomic abundance) are invoked through explicit manager methods, not request toggles.
+- `PipelineResult` keeps concrete data fields for DataFrames the client may inspect:
+  - `metadata_table`, `taxonomy_table`, `enriched_metadata`, `abundance_matrix`, `taxon_lookup_df`,
+    `abundance_metadata_matrix`, `envo_report_df`.
+- `artifacts` holds persisted output paths (`PipelineArtifacts`).
+- `metrics` holds counts and stage summaries (`PipelineMetrics`).
+- `stage_status` records per-stage status strings.
 
 ## Documentation Maintenance Rule (Mandatory)
 

@@ -29,6 +29,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 
 from Common.contracts.sra_schema import SRAMetadataSchema
+from managers.analysis_pipeline_manager import AnalysisPipelineManager
 
 
 _BASE_METADATA_COLS = set(SRAMetadataSchema.__fields__.keys())
@@ -276,52 +277,75 @@ def _resolve_lineage_paths(args) -> tuple[Path, Path]:
     return lineage_db_path, stamp_path
 
 
-def _load_and_enrich(workspace: str, inputs_dir: Path, config_dir: Path):
-    """Load both DataFrames for a workspace and apply mapping configs."""
-    import sys, os
-    if os.getcwd() not in sys.path:
-        sys.path.insert(0, os.getcwd())
+def _initialize_manager_context(
+    workspace: str,
+    workspace_root: Path,
+    inputs_dir: Path,
+    config_dir: Path,
+    output_dir: Path,
+) -> tuple[AnalysisPipelineManager, "RunnerContext", "Logger"]:
+    manager = AnalysisPipelineManager()
+    init_result = manager.initialize_workspace(workspace=workspace, workspace_root=workspace_root)
+    context = init_result.context
+    logger = init_result.logger
 
-    from Accessors.SraAccessor.sra_metadata_accessor import SRAMetadataAccessor
-    from Accessors.SraAccessor.sra_taxonomy_accessor import SRATaxonomyAccessor
-    from Engines.MappingEngine.mapping_engine import MappingEngine
+    resolved_inputs_dir = _resolve_workspace_input_dir(workspace, inputs_dir)
+    context.workspace_input_dir = resolved_inputs_dir
 
-    workspace_path = _resolve_workspace_input_dir(workspace, inputs_dir)
+    if config_dir:
+        context.config_dir = config_dir
+        context.config_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Loading metadata from {workspace_path / 'metadata.csv'} ...")
-    metadata_df = SRAMetadataAccessor.get(workspace_path / "metadata.csv")
+    if output_dir:
+        context.results_dir = output_dir
+        context.results_dir.mkdir(parents=True, exist_ok=True)
+        context.cache_dir = output_dir / "_cache"
+        context.cache_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Loading taxonomy from {workspace_path / 'taxonomy.csv'} ...")
-    taxonomy_df = SRATaxonomyAccessor.get(workspace_path / "taxonomy.csv")
-
-    print(f"Loaded: {len(metadata_df)} samples, {len(taxonomy_df)} taxon observations")
-
-    # Apply mapping configs per project
-    processor = MappingEngine(config_dir=config_dir)
-    parts = []
-    for project_id in metadata_df['bioproject'].unique():
-        config_path = config_dir / f"{project_id}.json"
-        if not config_path.exists():
-            print(f"  [skip] No config for {project_id} — using raw metadata")
-            parts.append(metadata_df[metadata_df['bioproject'] == project_id].copy())
-            continue
-        project_df = metadata_df[metadata_df['bioproject'] == project_id].copy()
-        parts.append(processor.map(project_df, project_id))
-
-    enriched_metadata_df = pd.concat(parts, ignore_index=True)
-    return taxonomy_df, enriched_metadata_df
+    return manager, context, logger
 
 
-def _load_taxonomy_only(workspace: str, inputs_dir: Path) -> tuple[pd.DataFrame, Path]:
-    """Load taxonomy dataframe and return its source CSV path."""
-    from Accessors.SraAccessor.sra_taxonomy_accessor import SRATaxonomyAccessor
+def _load_and_enrich(args) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Load workspace inputs and run the enrichment stage via AnalysisPipelineManager."""
+    manager, context, logger = _initialize_manager_context(
+        workspace=args.workspace,
+        workspace_root=Path(args.workspace_root),
+        inputs_dir=Path(args.inputs_dir),
+        config_dir=Path(args.config_dir),
+        output_dir=Path(args.output_dir),
+    )
 
-    workspace_path = _resolve_workspace_input_dir(workspace, inputs_dir)
-    taxonomy_csv_path = workspace_path / "taxonomy.csv"
-    print(f"Loading taxonomy from {taxonomy_csv_path} ...")
-    taxonomy_df = SRATaxonomyAccessor.get(taxonomy_csv_path)
-    print(f"Loaded: {len(taxonomy_df)} taxon observations")
-    return taxonomy_df, taxonomy_csv_path
+    inputs_result = manager.prepare_workspace_inputs(context=context, logger=logger)
+    mapping_result = manager.refresh_mapping_templates(
+        metadata_df=inputs_result.metadata_table,
+        context=context,
+        logger=logger,
+    )
+    enrichment_result = manager.run_enrichment_stage(
+        metadata_df=inputs_result.metadata_table,
+        processor=mapping_result.processor,
+        project_ids=mapping_result.project_ids,
+        context=context,
+        logger=logger,
+        assembly_db_dir=context.cache_dir,
+        strict_missing_configs=False,
+    )
+
+    return inputs_result.taxonomy_table, enrichment_result.enriched_metadata
+
+
+def _load_taxonomy_only(args) -> tuple[pd.DataFrame, Path]:
+    """Load taxonomy dataframe and return its source CSV path via the manager."""
+    manager, context, logger = _initialize_manager_context(
+        workspace=args.workspace,
+        workspace_root=Path(args.workspace_root),
+        inputs_dir=Path(args.inputs_dir),
+        config_dir=Path(args.config_dir),
+        output_dir=Path(args.output_dir),
+    )
+
+    inputs_result = manager.prepare_workspace_inputs(context=context, logger=logger)
+    return inputs_result.taxonomy_table, inputs_result.taxonomy_source
 
 
 def _ensure_output_dir(
@@ -341,9 +365,7 @@ def _ensure_output_dir(
 def cmd_alpha_diversity(args):
     from Engines.DownstreamAnalysis.AlphaDiversity.alpha_diversity_metrics import compute_alpha_diversity_metrics
 
-    taxonomy_df, metadata_df = _load_and_enrich(
-        args.workspace, Path(args.inputs_dir), Path(args.config_dir)
-    )
+    taxonomy_df, metadata_df = _load_and_enrich(args)
     out_dir = _ensure_output_dir(
         Path(args.output_dir),
         "alpha_diversity",
@@ -422,9 +444,7 @@ def cmd_alpha_diversity(args):
 def cmd_taxonomic_abundance(args):
     from Engines.DownstreamAnalysis.TaxonomicAbundance.taxonomic_abundance_metrics import compute_single_taxon_abundance
 
-    taxonomy_df, metadata_df = _load_and_enrich(
-        args.workspace, Path(args.inputs_dir), Path(args.config_dir)
-    )
+    taxonomy_df, metadata_df = _load_and_enrich(args)
     out_dir = _ensure_output_dir(
         Path(args.output_dir),
         "taxonomic_abundance",
@@ -489,9 +509,7 @@ def cmd_taxonomic_abundance(args):
 def cmd_single_taxon_abundance(args):
     from Engines.DownstreamAnalysis.TaxonomicAbundance.taxonomic_abundance_metrics import compute_single_taxon_abundance
 
-    taxonomy_df, metadata_df = _load_and_enrich(
-        args.workspace, Path(args.inputs_dir), Path(args.config_dir)
-    )
+    taxonomy_df, metadata_df = _load_and_enrich(args)
     out_dir = _ensure_output_dir(
         Path(args.output_dir),
         "single_taxon_abundance",
@@ -562,9 +580,7 @@ def cmd_single_taxon_abundance(args):
 
 
 def cmd_abundance_matrix(args):
-    taxonomy_df, _ = _load_and_enrich(
-        args.workspace, Path(args.inputs_dir), Path(args.config_dir)
-    )
+    taxonomy_df, _ = _load_and_enrich(args)
     out_dir = _ensure_output_dir(
         Path(args.output_dir),
         "abundance_matrix",
@@ -590,9 +606,7 @@ def cmd_metadata_overview(args):
     inputs_dir = Path(args.inputs_dir)
     config_dir = Path(args.config_dir)
 
-    _, metadata_df = _load_and_enrich(
-        args.workspace, Path(args.inputs_dir), Path(args.config_dir)
-    )
+    _, metadata_df = _load_and_enrich(args)
     out_dir = _ensure_output_dir(
         Path(args.output_dir),
         "metadata_overview",
@@ -727,7 +741,7 @@ def cmd_metadata_overview(args):
 def cmd_build_taxonomy_lineage(args):
     from Accessors.TaxonomyAccessor import TaxonomyAccessor
 
-    taxonomy_df, taxonomy_csv_path = _load_taxonomy_only(args.workspace, Path(args.inputs_dir))
+    taxonomy_df, taxonomy_csv_path = _load_taxonomy_only(args)
     lineage_db_path, stamp_path = _resolve_lineage_paths(args)
 
     required_cols = {"acc", "tax_id", "rank", "name", "ileft", "iright"}

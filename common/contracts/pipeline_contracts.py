@@ -116,6 +116,9 @@ class PipelineMetrics:
     mapped_columns_count: int = 0
     projects_missing_mapping_config_count: int = 0
     envo_terms_resolved_count: int = 0
+    mapped_columns: list[str] = field(default_factory=list)
+    missing_mapping_projects: list[str] = field(default_factory=list)
+    metadata_columns: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -128,9 +131,6 @@ class PipelineResult:
     taxon_lookup_df: Optional[pd.DataFrame] = None
     abundance_metadata_matrix: Optional[pd.DataFrame] = None
     envo_report_df: Optional[pd.DataFrame] = None
-    mapped_cols: list[str] = field(default_factory=list)
-    missing_mapping_projects: list[str] = field(default_factory=list)
-    metadata_columns: list[str] = field(default_factory=list)
     artifacts: PipelineArtifacts = field(default_factory=PipelineArtifacts)
     metrics: PipelineMetrics = field(default_factory=PipelineMetrics)
     stage_status: dict[str, str] = field(default_factory=dict)
