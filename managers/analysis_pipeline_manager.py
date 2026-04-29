@@ -24,7 +24,7 @@ from Common.contracts.pipeline_contracts import (
 )
 from Engines.DatasetAssemblyEngine import DatasetAssemblyRuntimeEngine
 from Engines.DownstreamAnalysis.AlphaDiversity.alpha_diversity_engine import AlphaDiversityEngine
-from Engines.DownstreamAnalysis.TaxonomicAbundance import TaxonomicAbundanceEngine
+from Engines.DownstreamAnalysis.TaxonomicAbundance import TaxonomicAbundanceEngine, TaxonomicAbundanceInputs
 from Engines.EnvoResolutionEngine import resolve_envo_columns
 from Engines.MappingEngine.mapping_engine import MappingEngine
 
@@ -279,10 +279,13 @@ class AnalysisPipelineManager:
         metadata_cols: List[str],
         logger: Logger,
     ) -> TaxonomicAbundanceEngine:
-        engine = TaxonomicAbundanceEngine(
+        inputs = TaxonomicAbundanceInputs(
             abundance_metadata_matrix=abundance_metadata_matrix,
             taxon_lookup_df=taxon_lookup_df,
             metadata_cols=metadata_cols,
+        )
+        engine = TaxonomicAbundanceEngine(
+            inputs=inputs,
             logger=logger.log if hasattr(logger, "log") else logger,
         )
         engine.run()
