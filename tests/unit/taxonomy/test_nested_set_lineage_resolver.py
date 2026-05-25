@@ -21,7 +21,19 @@ def test_genus_node_maps_to_bacteria_superkingdom():
     assert escherichia["genus"] == "Escherichia"
 
 
-def test_each_tax_id_appears_once():
-    lineage_df = NestedSetLineageResolver().resolve(_tree())
+def test_dedupes_tax_id_shared_across_accessions():
+    two_accessions = pd.DataFrame({
+        "acc": ["S1", "S1", "S2", "S2"],
+        "tax_id": [2, 561, 2, 561],
+        "rank": ["superkingdom", "genus", "superkingdom", "genus"],
+        "name": ["Bacteria", "Escherichia", "Bacteria", "Escherichia"],
+        "ileft": [1, 2, 1, 2],
+        "iright": [4, 3, 4, 3],
+    })
+
+    lineage_df = NestedSetLineageResolver().resolve(two_accessions)
 
     assert lineage_df["tax_id"].is_unique
+    assert len(lineage_df) == 2
+    escherichia = lineage_df[lineage_df["tax_id"] == 561].iloc[0]
+    assert escherichia["superkingdom"] == "Bacteria"
