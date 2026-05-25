@@ -42,7 +42,8 @@ class AbundanceMatrixBuilder:
     def _unclassified(self, taxonomy_df: pd.DataFrame, rank_rows: pd.DataFrame, rank: str) -> pd.DataFrame:
         sample_total = taxonomy_df.groupby("acc")["self_count"].sum()
         resolved_total = rank_rows.groupby("acc")["total_count"].sum()
-        value = sample_total.subtract(resolved_total, fill_value=0)
+        # clip guards inconsistent source counts where a rank total exceeds the self_count sum
+        value = sample_total.subtract(resolved_total, fill_value=0).clip(lower=0).astype(int)
         frame = value.reset_index(name="value")
         frame["taxon_key"] = f"Unclassified_{rank}"
         return frame[["acc", "taxon_key", "value"]]
