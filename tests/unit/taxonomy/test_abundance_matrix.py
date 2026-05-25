@@ -32,3 +32,19 @@ def test_taxa_join_carries_superkingdom():
 
     bacteria = taxa[taxa["taxon_key"] == "superkingdom||Bacteria||2"].iloc[0]
     assert bacteria["superkingdom"] == "Bacteria"
+
+
+def test_relative_all_zero_row_is_zero_and_float():
+    counts = pd.DataFrame(
+        {"superkingdom||Bacteria||2": [0, 5]},
+        index=pd.Index(["SRR_empty", "SRR_ok"], name="acc"),
+    )
+    lookup = pd.DataFrame({"taxon_key": ["superkingdom||Bacteria||2"], "tax_id": [2],
+                           "rank": ["superkingdom"], "name": ["Bacteria"]})
+    lineage = pd.DataFrame({"tax_id": [2], "superkingdom": ["Bacteria"]})
+    matrix = AbundanceMatrix(counts=counts, lookup=lookup, lineage_df=lineage)
+
+    relative = matrix.relative
+
+    assert relative.loc["SRR_empty"].sum() == 0.0
+    assert all(dtype == float for dtype in relative.dtypes)
