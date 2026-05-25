@@ -1,63 +1,59 @@
-# Taxonomy Resolution Flow (Runner + CLI)
+# Taxonomy Resolution Flow (Artifact-First)
 
 This page answers:
-- Are tax IDs updated in runner outputs?
-- Are tax IDs updated in Workspaces/<workspace>/results/abundance_matrix/abundance_matrix.csv?
-- What is the exact stage order?
-- Where to find detailed run summaries?
 
-## Short Answers
+- Where Taxonomy Resolution sits in the pipeline
+- Where artifacts are written in `abundance_matrices/`
+- Why final matrix files are written only in Final Assembly
 
-1. Runner taxonomy output (`Ask_SLM_Taxon_Abundance_Matrix.csv`) uses resolved tax IDs.
-2. CLI `abundance-matrix` output (`abundance_matrix/abundance_matrix.csv`) does not run merged.dmp tax ID resolution.
-3. Stage order is enrichment -> taxonomy resolution + matrix build -> merge -> lineage DB.
-4. Detailed taxonomy-resolution artifacts are written into results:
-   - `Ask_SLM_Taxonomy_Resolution_Summary.json`
-   - `Ask_SLM_Taxonomy_Resolution_Changes.csv`
+## Stage Order
 
-`Ask_SLM_Taxonomy_Resolution_Changes.csv` schema:
-- `old_tax_id`
-- `resolved_tax_id`
-- `samples` (unique samples/acc values affected by this mapping pair)
-- `total_count_sum` (sum of total_count across affected rows)
+1. Enrichment
+2. Taxonomy Resolution
+3. Aggregation
+4. Final Assembly
+5. Accessor
 
-## Stage Order and What Happens
+## Key Rule
 
-1. Enrichment stage:
-   - Inputs: metadata.csv + mapping configs.
-   - Output: enriched metadata cache artifacts and enrichment stamp.
+If any stage before Final Assembly fails, Final Assembly does not run.
 
-2. Taxonomy stage:
-   - Inputs: taxonomy.csv + explicit merged.dmp path.
-   - Resolve historical tax IDs using merged.dmp.
-   - Aggregate duplicate (acc, resolved_tax_id) rows by summing total_count.
-   - Build and save:
-     - `Ask_SLM_Taxon_Abundance_Matrix.csv`
-     - `Ask_SLM_Taxon_Lookup.csv`
-   - Save detailed resolution report artifacts:
-     - `Ask_SLM_Taxonomy_Resolution_Summary.json`
-     - `Ask_SLM_Taxonomy_Resolution_Changes.csv`
+This prevents partial or misleading `abundance_matrix.csv` and `abundance_maaslin.tsv` outputs.
 
-3. Merge stage:
-   - Left-join enriched metadata with abundance matrix.
-   - Save `Ask_SLM_Analysis_Wide_Dataset.csv` and metadata columns JSON.
+## Output Layout
 
-4. Lineage accessor stage:
-   - Build/load lineage DB from taxonomy lookup.
+```text
+results/abundance_matrices/
+├── manifests/pipeline_manifest.json
+├── stage_01_enrichment/
+├── stage_02_taxonomy_resolution/
+├── stage_03_aggregation/
+├── stage_04_final_assembly/
+└── stage_05_accessor/
+```
 
-## Why Runner and CLI Differ
+## Taxonomy Resolution Stage Outputs
 
-The runner taxonomy path resolves merged IDs before matrix assembly.
+In `stage_02_taxonomy_resolution/`:
 
-The CLI `abundance-matrix` command currently pivots directly from taxonomy rows by `name`:
-- File produced: `Workspaces/<workspace>/results/abundance_matrix/abundance_matrix.csv`
-- It is a name-based matrix and does not apply merged.dmp resolution in the current implementation.
+- `resolved_taxonomy.csv`
+- `taxonomy_resolution_changes.csv`
+- `taxonomy_resolution_summary.json`
 
-## Where to Inspect Implementation
+This stage resolves deprecated tax IDs and records exactly what changed.
+It does not write canonical matrix outputs.
 
-- Runner taxonomy stage orchestration and artifact writing:
-  - `Engines/DatasetAssemblyEngine/runtime_assembly_engine.py`
-- Tax ID resolution logic and summary calculations:
-  - `Engines/DatasetAssemblyEngine/DeprecatedTaxonomyResolutionEngine.py`
-- CLI abundance-matrix command behavior:
-  - `cli.py` (function `cmd_abundance_matrix`)
+## Final Assembly Outputs
+
+In `stage_04_final_assembly/`:
+
+- `abundance_matrix.csv` (wide canonical output)
+- `abundance_maaslin.tsv` (MaAsLin canonical output)
+- `analysis_wide_dataset.csv`
+- `merge_summary.json`
+
+## Resume Behavior
+
+On startup, engine computes input-folder hash and validates required artifacts.
+If hash matches and all required outputs are valid, engine stops with no work.
+If hash differs or files are missing, engine resumes from first invalid stage.

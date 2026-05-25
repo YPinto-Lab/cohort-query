@@ -7,7 +7,7 @@ import unittest
 import pandas as pd
 
 from Accessors.TaxonomyAccessor import TaxonomyDumpAccessor
-from Engines.DatasetAssemblyEngine import DeprecatedTaxonomyResolutionEngine
+from Engines.DatasetAssemblyEngine import TaxonomyResolver
 
 
 class TestDeprecatedTaxonomyResolution(unittest.TestCase):
@@ -32,7 +32,7 @@ class TestDeprecatedTaxonomyResolution(unittest.TestCase):
         )
 
         # 100 and 999 are historical IDs merged into 200.
-        resolver = DeprecatedTaxonomyResolutionEngine({100: 200, 999: 200})
+        resolver = TaxonomyResolver({100: 200, 999: 200})
         resolved_df = resolver.resolve(taxonomy_df)
 
         s1_rows = resolved_df[resolved_df["acc"] == "S1"].set_index("tax_id")
@@ -43,7 +43,7 @@ class TestDeprecatedTaxonomyResolution(unittest.TestCase):
         self.assertEqual(float(s2_rows.loc["200", "total_count"]), 2.0)
 
     def test_resolve_and_aggregate_raises_for_missing_required_columns(self) -> None:
-        resolver = DeprecatedTaxonomyResolutionEngine({})
+        resolver = TaxonomyResolver({})
         bad_df = pd.DataFrame({"acc": ["S1"], "tax_id": [1]})
 
         with self.assertRaises(ValueError) as ctx:

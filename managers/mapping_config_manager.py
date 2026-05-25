@@ -1424,6 +1424,15 @@ class MappingConfigManager:
             save_all_output
         ])
         
-        display(main_ui)
+        try:
+            display(main_ui)
+        except Exception as exc:
+            message = (
+                "MappingConfigManager UI could not be displayed; "
+                "continuing without interactive widgets."
+            )
+            print(f"⚠️ {message}")
+            self._stage_log(f"MappingConfigManager: {message} ({exc})")
+            return
 
 

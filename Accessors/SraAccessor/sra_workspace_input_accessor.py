@@ -108,14 +108,13 @@ class SRAWorkspaceInputAccessor:
                 missing.append("taxonomy")
 
             guidance = (
-                "Create one of these under Workspaces/<workspace>/inputs: metadata.csv / taxonomy.csv, "
-                "metadata_*.csv / taxonomy_*.csv, metadata/*.csv / taxonomy/*.csv, "
-                "or metadata_parts/*.csv / taxonomy_parts/*.csv"
+                f"Drop your CSV files into Workspaces/{context.view_name}/inputs/metadata_parts/ "
+                f"and taxonomy_parts/, then run: python askslm.py prepare-inputs --workspace {context.view_name}"
             )
             logger.log(f"ERROR: missing input CSVs for {', '.join(missing)}")
             logger.log(guidance)
             raise FileNotFoundError(
-                f"Missing input CSVs for {', '.join(missing)} in {input_dir}. {guidance}. "
+                f"Error: could not locate inputs for {', '.join(missing)}.\n{guidance}\n"
                 f"See log file: {context.run_log_path}"
             )
 

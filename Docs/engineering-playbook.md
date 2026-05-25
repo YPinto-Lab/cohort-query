@@ -7,7 +7,7 @@ This playbook is optimized for fast, high-quality delivery in this repository.
 1. Define acceptance criteria before coding.
 2. Implement in the smallest safe slice.
 3. Run targeted validation commands.
-4. Commit in focused batches.
+4. Commit in focused batches.I 
 5. Run final sanity checks before push.
 
 ## 2) Acceptance Criteria Template
@@ -26,7 +26,7 @@ Example:
 - Expected behavior: `--workspace ABX` works without explicit path flags.
 - Backward compatibility: legacy `Inputs/<workspace>` usage still works.
 - Validation commands: see section 4.
-- Artifacts: CSV files under `Workspaces/ABX/results/metadata_overview/`.
+- Artifacts: CSV files under `Workspaces/ABX/results/metadata-overview/`.
 
 ## 3) Commit Message Template
 
@@ -88,7 +88,7 @@ python askslm.py metadata-overview --workspace ABX --inputs-dir Workspaces/ABX/i
 
 ```bash
 python askslm.py metadata-overview --workspace ABX
-ls -1 Workspaces/ABX/results/metadata_overview/
+ ls -1 Workspaces/ABX/results/metadata-overview/
 ```
 
 Expected files:
@@ -97,6 +97,7 @@ Expected files:
 - `metadata_overview_projects.csv`
 - `metadata_overview_discovered_keys_by_project.csv`
 - `metadata_overview_discovered_keys_unique.csv`
+- `metadata_matrix.csv`
 
 ### Taxon abundance flows
 

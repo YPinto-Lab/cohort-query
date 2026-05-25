@@ -6,7 +6,7 @@ This folder intentionally contains only high-value operational flows that are us
 
 1. `01-runner-orchestration-and-cache.wsd`
    - Main notebook-driven pipeline stages.
-   - Cache-hit vs cache-miss decisions by stage stamp.
+   - Legacy cache/stamp visualization kept for historical context.
 
 2. `02-mapping-config-decision-flow.wsd`
    - Per-project mapping config handling.
@@ -17,7 +17,15 @@ This folder intentionally contains only high-value operational flows that are us
    - `build-taxonomy-lineage` and alpha-diversity lineage prerequisite.
 
 4. `04-taxonomy-to-analysis-artifact-chain.wsd`
-   - Taxonomy stage -> merge stage -> shared lineage accessor dependencies.
+   - Taxonomy Resolution -> Aggregation -> Final Assembly -> Accessor dependency chain.
+
+## Current Naming Notes
+
+Current docs use artifact-first naming:
+
+- Taxonomy stage is now **Taxonomy Resolution**
+- Canonical outputs (`abundance_matrix.csv`, `abundance_maaslin.tsv`) are written in Final Assembly
+- `results/abundance_matrices/` may be organized with stage subfolders
 
 ## Why This Reduced Set
 

@@ -2,8 +2,8 @@ from .dataset_assembly_engine import (
     compute_analysis_wide_dataset,
     compute_taxonomy_matrices,
 )
-from .DeprecatedTaxonomyResolutionEngine import (
-    DeprecatedTaxonomyResolutionEngine,
+from .TaxonomyResolver import (
+    TaxonomyResolver,
 )
 from .runtime_assembly_engine import (
     DatasetAssemblyRuntimeEngine,
@@ -12,6 +12,6 @@ from .runtime_assembly_engine import (
 __all__ = [
     "compute_taxonomy_matrices",
     "compute_analysis_wide_dataset",
-    "DeprecatedTaxonomyResolutionEngine",
+    "TaxonomyResolver",
     "DatasetAssemblyRuntimeEngine",
 ]

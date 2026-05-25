@@ -1,67 +1,120 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 import pandas as pd
 
-from ..dataset_assembly_engine import compute_analysis_wide_dataset
+from ..dataset_assembly_engine import compute_analysis_wide_dataset, compute_maaslin_export
 from ..runtime_assembly_models import MergeStageRequest
 from .base import RuntimeAssemblyStageBase
 
 
-class MergeStageRunner(RuntimeAssemblyStageBase):
+class FinalAssemblyStageRunner(RuntimeAssemblyStageBase):
+    STAGE_NAME = "final_assembly"
+    SCHEMA_VERSION = "final_assembly_summary_v1"
+
     def run(self, request: MergeStageRequest) -> Tuple[pd.DataFrame, List[str]]:
-        paths = self._cache_paths()
-        self._require_stage_stamps(paths)
-        cached = self._load_cache(request, paths)
-        if cached is not None:
-            return cached
-        return self._rebuild(request, paths)
+        stage_dir = self._stage_dir(self.STAGE_NAME)
+        paths = self._paths(stage_dir)
+        fingerprint = self._fingerprint(request)
+        if self._summary_is_current(
+            paths["summary"],
+            self.SCHEMA_VERSION,
+            self.STAGE_NAME,
+            fingerprint,
+            [paths["abundance_matrix"], paths["abundance_maaslin"], paths["analysis_wide"]],
+        ):
+            return self._load(request, paths)
+        return self._rebuild(request, paths, fingerprint)
 
-    def _cache_paths(self):
+    def _paths(self, stage_dir: Path) -> Dict[str, Path]:
         return {
-            "canonical": self.paths.results_dir / "Ask_SLM_Analysis_Wide_Dataset.csv",
-            "columns": self.paths.results_dir / "Ask_SLM_Metadata_Columns.json",
-            "stamp": self.paths.assembly_db_dir / "merge_stage_stamp.json",
-            "compat": self.paths.results_dir / "Ask_SLM_Cache_Stamp.json",
-            "enrichment": self.paths.assembly_db_dir / "enrichment_stage_stamp.json",
-            "taxonomy": self.paths.assembly_db_dir / "taxonomy_stage_stamp.json",
+            "abundance_matrix": stage_dir / "abundance_matrix.csv",
+            "abundance_maaslin": stage_dir / "abundance_maaslin.tsv",
+            "analysis_wide": stage_dir / "analysis_wide_dataset.csv",
+            "summary": stage_dir / "merge_summary.json",
         }
 
-    def _require_stage_stamps(self, paths: Dict[str, Path]):
-        if paths["enrichment"].exists() and paths["taxonomy"].exists():
-            return
-        raise RuntimeError("Missing stage stamps for merge. Run enrichment and taxonomy stages successfully before merge.")
-
-    def _current_stamp(self, request: MergeStageRequest, paths: Dict[str, Path]):
-        return {
-            "schema_version": "merge_v2",
+    def _fingerprint(self, request: MergeStageRequest) -> str:
+        payload = {
             "view_name": request.view_name,
-            "enrichment_stamp": self._read_json(paths["enrichment"]),
-            "taxonomy_stamp": self._read_json(paths["taxonomy"]),
+            "enriched_metadata": self._dataframe_fingerprint(request.enriched_metadata_df),
+            "abundance_matrix": self._dataframe_fingerprint(request.abundance_matrix),
+            "taxon_lookup": self._dataframe_fingerprint(request.taxon_lookup_df) if request.taxon_lookup_df is not None else "missing",
+        }
+        return self._json_fingerprint(payload)
+
+    def _json_fingerprint(self, payload: Dict[str, object]) -> str:
+        import hashlib
+        import json
+
+        digest = hashlib.sha256()
+        digest.update(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8"))
+        return digest.hexdigest()
+
+    def _load(self, request: MergeStageRequest, paths: Dict[str, Path]) -> Tuple[pd.DataFrame, List[str]]:
+        abundance_metadata_matrix = pd.read_csv(paths["analysis_wide"])
+        metadata_columns = list(request.enriched_metadata_df.columns)
+        return abundance_metadata_matrix, metadata_columns
+
+    def _rebuild(self, request: MergeStageRequest, paths: Dict[str, Path], fingerprint: str) -> Tuple[pd.DataFrame, List[str]]:
+        taxon_lookup_df = request.taxon_lookup_df if request.taxon_lookup_df is not None else self._lookup_from_abundance(request.abundance_matrix)
+        abundance_metadata_matrix, metadata_columns = compute_analysis_wide_dataset(
+            enriched_metadata_df=request.enriched_metadata_df,
+            abundance_matrix=request.abundance_matrix,
+        )
+        maaslin_df = compute_maaslin_export(request.abundance_matrix, taxon_lookup_df)
+        wide_matrix = request.abundance_matrix.copy()
+        wide_matrix.index.name = wide_matrix.index.name or "acc"
+        self._write_csv(paths["abundance_matrix"], wide_matrix.reset_index(), index=False)
+        self._write_csv(paths["abundance_maaslin"], maaslin_df, index=False, sep="\t")
+        self._write_csv(paths["analysis_wide"], abundance_metadata_matrix, index=False)
+        self._write_json(paths["summary"], self._summary_payload(request, fingerprint, abundance_metadata_matrix, paths))
+        self._log_stage(f"Final assembly rebuilt: {paths['abundance_matrix']}")
+        return abundance_metadata_matrix, metadata_columns
+
+    def _lookup_from_abundance(self, abundance_matrix: pd.DataFrame) -> pd.DataFrame:
+        rows = []
+        for taxon_key in abundance_matrix.columns:
+            parts = str(taxon_key).split("||")
+            rows.append(
+                {
+                    "taxon_key": taxon_key,
+                    "rank": parts[0] if len(parts) > 0 else None,
+                    "name": parts[1] if len(parts) > 1 else None,
+                    "tax_id": parts[2] if len(parts) > 2 else None,
+                }
+            )
+        return pd.DataFrame(rows)
+
+    def _summary_payload(
+        self,
+        request: MergeStageRequest,
+        fingerprint: str,
+        abundance_metadata_matrix: pd.DataFrame,
+        paths: Dict[str, Path],
+    ) -> Dict[str, object]:
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return {
+            "schema_version": self.SCHEMA_VERSION,
+            "stage_name": self.STAGE_NAME,
+            "status": "ok",
+            "input_fingerprint": fingerprint,
+            "metadata_rows": int(len(request.enriched_metadata_df)),
+            "matrix_sample_rows": int(len(request.abundance_matrix)),
+            "matrix_taxa_columns": int(len(request.abundance_matrix.columns)),
+            "analysis_wide_rows": int(len(abundance_metadata_matrix)),
+            "output_files": {
+                "abundance_matrix_csv": str(paths["abundance_matrix"].relative_to(self.paths.results_dir)),
+                "abundance_maaslin_tsv": str(paths["abundance_maaslin"].relative_to(self.paths.results_dir)),
+                "analysis_wide_dataset_csv": str(paths["analysis_wide"].relative_to(self.paths.results_dir)),
+            },
+            "started_at": now,
+            "finished_at": now,
         }
 
-    def _load_cache(self, request: MergeStageRequest, paths: Dict[str, Path]):
-        if not self._has_cache(paths):
-            return None
-        if not self._cache_matches(paths["stamp"], self._current_stamp(request, paths)):
-            return None
-        abundance_metadata_matrix = pd.read_csv(paths["canonical"])
-        metadata_columns = self._read_json(paths["columns"])
-        self._write_json(paths["compat"], {"schema_version": "combined_v2", **self._current_stamp(request, paths)})
-        self._log(f"Merge cache hit: loaded from {self.paths.results_dir}", echo=True)
-        return abundance_metadata_matrix, metadata_columns
 
-    def _has_cache(self, paths: Dict[str, Path]) -> bool:
-        return all(paths[k].exists() for k in ["canonical", "columns", "stamp"])
-
-    def _rebuild(self, request: MergeStageRequest, paths: Dict[str, Path]):
-        abundance_metadata_matrix, metadata_columns = compute_analysis_wide_dataset(enriched_metadata_df=request.enriched_metadata_df, abundance_matrix=request.abundance_matrix)
-        abundance_metadata_matrix.to_csv(paths["canonical"], index=False)
-        self._write_json(paths["columns"], metadata_columns)
-        self._write_json(paths["stamp"], self._current_stamp(request, paths))
-        self._write_json(paths["compat"], {"schema_version": "combined_v2", **self._current_stamp(request, paths)})
-        self._log(f"Merge cache miss: rebuilt merged dataset in {self.paths.results_dir}", echo=True)
-        return abundance_metadata_matrix, metadata_columns
+MergeStageRunner = FinalAssemblyStageRunner
 

@@ -91,6 +91,19 @@ class TaxonomyStageResult:
 
 
 @dataclass
+class TaxonomyResolutionStageResult:
+    resolved_taxonomy_df: pd.DataFrame
+    resolution_summary: dict[str, object]
+    resolution_changes_df: pd.DataFrame
+
+
+@dataclass
+class AggregationStageResult:
+    abundance_matrix: pd.DataFrame
+    taxon_lookup_df: pd.DataFrame
+
+
+@dataclass
 class MergeStageResult:
     abundance_metadata_matrix: pd.DataFrame
     metadata_columns: list[str]
@@ -99,9 +112,19 @@ class MergeStageResult:
 @dataclass
 class PipelineArtifacts:
     abundance_matrix_csv: Optional[Path] = None
+    abundance_maaslin_tsv: Optional[Path] = None
     analysis_wide_dataset_csv: Optional[Path] = None
     taxon_lookup_csv: Optional[Path] = None
     metadata_columns_json: Optional[Path] = None
+    resolved_taxonomy_csv: Optional[Path] = None
+    taxonomy_resolution_changes_csv: Optional[Path] = None
+    enrichment_summary_json: Optional[Path] = None
+    taxonomy_resolution_summary_json: Optional[Path] = None
+    aggregation_summary_json: Optional[Path] = None
+    merge_summary_json: Optional[Path] = None
+    accessor_summary_json: Optional[Path] = None
+    counts_parquet: Optional[Path] = None
+    pipeline_manifest_json: Optional[Path] = None
     taxonomy_stage_stamp_json: Optional[Path] = None
     merge_stage_stamp_json: Optional[Path] = None
     combined_stamp_json: Optional[Path] = None

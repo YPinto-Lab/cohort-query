@@ -13,7 +13,7 @@ from typing import Any, Dict, Iterable, Mapping, Tuple
 import pandas as pd
 
 
-class DeprecatedTaxonomyResolutionEngine:
+class TaxonomyResolver:
     """Resolve deprecated tax IDs and re-aggregate counts by sample/taxon.
 
     This engine is pure computation: it receives a DataFrame and a pre-loaded

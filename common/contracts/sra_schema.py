@@ -53,7 +53,9 @@ class SRAMetadataSchema(pa.DataFrameModel):
     bioproject: Series[str] = pa.Field(nullable=True)
 
     class Config:
-        strict = "filter"
+        # Preserve extra workspace-specific metadata columns (for example day_run)
+        # so downstream source-key extraction can access them.
+        strict = False
         coerce = True
 
 

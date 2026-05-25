@@ -27,7 +27,4 @@ class SRAMetadataAccessor:
         """
         df = pd.read_csv(path)
 
-        # insertsize may arrive as float/empty strings; normalize to str for schema
-        df['insertsize'] = pd.to_numeric(df['insertsize'], errors='coerce').fillna(0).astype(int).astype(str)
-
         return SRAMetadataSchema.validate(df)

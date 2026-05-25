@@ -1,8 +1,7 @@
-"""
-Pure matrix artifact computation functions.
+"""Pure matrix artifact computation functions.
 
-These functions contain only DataFrame transformations and do not perform file I/O.
-They are used by runner stage orchestration methods that own cache/stamp decisions.
+These helpers contain only DataFrame transformations and do not perform file I/O.
+They are used by runner orchestration methods that own artifact writes.
 """
 
 from __future__ import annotations
@@ -39,6 +38,7 @@ def compute_taxonomy_matrices(
     )
 
     abundance_matrix = taxonomy_for_wide.pivot(index="acc", columns="taxon_key", values="total_count").fillna(0)
+    abundance_matrix = abundance_matrix.astype(int)
 
     lookup_base = taxonomy_df[["tax_id", "rank", "name"] + lineage_columns].copy()
     lookup_base["taxon_key"] = (
@@ -75,3 +75,18 @@ def compute_analysis_wide_dataset(
     abundance_metadata_matrix[taxa_feature_columns] = abundance_metadata_matrix[taxa_feature_columns].fillna(0)
 
     return abundance_metadata_matrix, metadata_columns
+
+
+def compute_maaslin_export(
+    abundance_matrix: pd.DataFrame,
+    taxon_lookup_df: pd.DataFrame,
+    sample_col: str = "acc",
+) -> pd.DataFrame:
+    """Build a MaAsLin-ready long table from a wide abundance matrix."""
+    wide_df = abundance_matrix.copy().reset_index().rename(columns={abundance_matrix.index.name or "index": sample_col})
+    long_df = wide_df.melt(id_vars=[sample_col], var_name="taxon_key", value_name="value")
+    lookup_cols = [c for c in ["taxon_key", "rank", "name", "tax_id", "ileft", "iright"] if c in taxon_lookup_df.columns]
+    maaslin_df = long_df.merge(taxon_lookup_df[lookup_cols].drop_duplicates(subset=["taxon_key"]), on="taxon_key", how="left")
+    maaslin_df["metric"] = "counts"
+    return maaslin_df[[c for c in [sample_col, "taxon_key", "rank", "name", "tax_id", "value", "metric", "ileft", "iright"] if c in maaslin_df.columns]]
+

@@ -35,10 +35,18 @@ class TaxonomyStageRequest:
 
 
 @dataclass(frozen=True)
+class AggregationStageRequest:
+    resolved_taxonomy_df: pd.DataFrame
+    view_name: str
+    taxon_key_sep: str
+
+
+@dataclass(frozen=True)
 class MergeStageRequest:
     enriched_metadata_df: pd.DataFrame
     abundance_matrix: pd.DataFrame
     view_name: str
+    taxon_lookup_df: pd.DataFrame | None = None
 
 
 @dataclass(frozen=True)

@@ -6,3 +6,5 @@ plotly
 ipywidgets
 nbformat
 seaborn
+pyarrow
+scikit-bio

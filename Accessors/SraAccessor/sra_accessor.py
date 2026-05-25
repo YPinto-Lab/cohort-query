@@ -34,22 +34,7 @@ class SRAAccessor:
         Returns:
             A pandas DataFrame validated against the SRAMetadataSchema.
         """
-        # Read the data from the CSV file
         df = pd.read_csv(file_path)
-
-        # --- Data Cleaning Step ---
-        # The 'insertsize' column may contain non-numeric values.
-        # We'll convert it to a numeric type, coercing errors to NaN (Not a Number).
-        # Then, we fill any NaN values with 0 and cast the column to an integer type.
-        # This makes the data cleaning robust before validation.
-        df['insertsize'] = pd.to_numeric(df['insertsize'], errors='coerce').fillna(0).astype(int)
-
-        # No column renaming is necessary if the CSV columns match the schema.
-        # If they were different, we would rename them here.
-        # For example:
-        # df = df.rename(columns={"old_name": "new_name"})
-
-        # Validate the DataFrame against the schema
         validated_df = SRAMetadataSchema.validate(df)
 
         return validated_df
