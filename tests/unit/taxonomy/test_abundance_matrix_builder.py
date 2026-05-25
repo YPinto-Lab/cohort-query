@@ -17,8 +17,11 @@ def _long():
 def test_build_returns_samples_by_taxa_counts():
     matrix = AbundanceMatrixBuilder().build(_long())
 
-    assert matrix.counts.shape[0] == 2
+    assert matrix.counts.shape == (2, 2)
     assert matrix.counts.index.name == "acc"
+    assert matrix.counts.loc["SRR1", "superkingdom||Bacteria||2"] == 100
+    assert matrix.counts.loc["SRR2", "superkingdom||Bacteria||2"] == 80
+    assert matrix.counts.loc["SRR2", "genus||Escherichia||561"] == 0
 
 
 def test_build_attaches_lineage_to_taxa():
