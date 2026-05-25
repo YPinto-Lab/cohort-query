@@ -30,3 +30,14 @@ def test_maaslin_writer_is_tab_separated(tmp_path):
     path = MatrixWriterFactory().create("maaslin").write(_matrix(), tmp_path / "m.tsv")
 
     assert "\t" in path.read_text()
+
+
+def test_biom_writer_roundtrip(tmp_path):
+    import json
+
+    path = MatrixWriterFactory().create("biom").write(_matrix(), tmp_path / "t.biom")
+
+    table = json.loads(path.read_text())
+    assert table["shape"] == [1, 2]
+    assert [row["id"] for row in table["rows"]] == ["superkingdom||Bacteria||2"]
+    assert {col["id"] for col in table["columns"]} == {"SRR1", "SRR2"}
