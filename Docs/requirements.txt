@@ -8,3 +8,4 @@ nbformat
 seaborn
 pyarrow
 scikit-bio
+biom-format
