@@ -1,0 +1,7 @@
+acc,tax_id,rank,name,total_count,self_count,ilevel,ileft,iright,bioproject
+SRR1,2,superkingdom,Bacteria,100,0,1,1,8,PRJ1
+SRR1,1224,phylum,Proteobacteria,60,0,2,2,5,PRJ1
+SRR1,561,genus,Escherichia,60,60,3,3,4,PRJ1
+SRR1,10239,superkingdom,Viruses,40,40,1,9,10,PRJ1
+SRR2,2,superkingdom,Bacteria,80,0,1,1,4,PRJ1
+SRR2,561,genus,Escherichia,80,80,3,2,3,PRJ1
