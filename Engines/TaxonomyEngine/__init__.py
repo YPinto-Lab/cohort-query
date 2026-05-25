@@ -17,11 +17,11 @@ from .taxonomy_resolver import TaxonomyResolver
 DEFAULT_MERGED_DMP = Path("Accessors/TaxonomyAccessor/merged.dmp")
 
 
-def load(source: Path) -> pd.DataFrame:
+def load(source: str | Path) -> pd.DataFrame:
     return TaxonomyFileAccessor().read(Path(source))
 
 
-def resolve(taxonomy_df: pd.DataFrame, merged_dmp: Path = DEFAULT_MERGED_DMP) -> ResolvedTaxonomy:
+def resolve(taxonomy_df: pd.DataFrame, merged_dmp: str | Path = DEFAULT_MERGED_DMP) -> ResolvedTaxonomy:
     mapping = MergedDumpAccessor().load(Path(merged_dmp))
     resolver = TaxonomyResolver(mapping)
     summary_dict, changes_df = resolver.summarize_resolution(taxonomy_df)
