@@ -16,7 +16,7 @@ class AbundanceMatrix:
 
     @cached_property
     def relative(self) -> pd.DataFrame:
-        row_totals = self.counts.sum(axis=1).replace(0, pd.NA)
+        row_totals = self.counts.sum(axis=1).replace(0, float("nan"))
         return self.counts.div(row_totals, axis=0).fillna(0.0)
 
     @cached_property
