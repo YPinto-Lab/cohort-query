@@ -181,17 +181,35 @@ Remap deprecated NCBI tax_ids to their current ids using `merged.dmp`.
 ### 4.5 `taxonomy.build_abundance_matrix`
 
 ```python
-def build_abundance_matrix(taxonomy_df: pd.DataFrame, rank: str | None = None) -> AbundanceMatrix
+def build_abundance_matrix(taxonomy_df: pd.DataFrame, rank: str = "genus") -> AbundanceMatrix
 ```
 
-Pivot the (resolved) long table into a samples × taxa matrix. Optional `rank` collapses
-counts to a taxonomic rank (e.g. `"genus"`).
+Collapse the (resolved) long table into a **single-rank**, non-overlapping samples × taxa
+matrix. See the count-semantics decision in §4.5.1 — this is load-bearing for correctness.
 
+- **Features** are the nodes **at** `rank`; the value of a feature is that node's
+  `total_count` (its clade count). Counts are **not** summed across the subtree (that would
+  double-count, because `total_count` is cumulative). Reads not resolved down to `rank`
+  (the `self_count` of coarser ancestor nodes) are pooled into one `Unclassified_<rank>`
+  feature per sample, so per-sample totals — and therefore relative abundances — stay exact.
 - **Returns:** `AbundanceMatrix` (see §5.4) — carries `.counts`, lazy `.relative`, and a
   lazy lineage-bearing `.taxa` lookup.
 - **Backed by:** `AbundanceMatrixBuilder` (+ `NestedSetLineageResolver` for `.taxa`).
 - **Output formats** via `AbundanceMatrix.write(path, fmt=...)`: `"counts"`, `"relative"`,
-  `"maaslin"`, `"biom"`. Each format is a `MatrixFormatWriter` strategy (no if/elif ladder).
+  `"maaslin"` (wide samples × taxa TSV), `"biom"`. Each format is a `MatrixFormatWriter`
+  strategy (no if/elif ladder).
+
+#### 4.5.1 Count semantics (decision — see `Docs/superpowers/decisions/2026-05-25-abundance-count-semantics.md`)
+
+Each taxonomy row carries two counts in a per-accession nested set:
+
+- `self_count` — reads assigned **directly** to that node (resolved to exactly that level).
+- `total_count` — reads for that node **and its whole subtree** (the cumulative clade count).
+
+Because `total_count` is cumulative, a parent's value already contains its children's. The
+matrix is therefore built at **one rank** using each rank-node's own `total_count`
+(sibling clades at a fixed rank do not overlap), never by summing `total_count` across the
+tree. Reads that stopped above `rank` are preserved in an `Unclassified_<rank>` bucket.
 
 ### 4.6 `taxonomy.get_profile_subset`
 
@@ -246,11 +264,15 @@ summary: ResolutionSummary# counts (rows_updated, unique_ids_updated, …)
 ### 5.4 `AbundanceMatrix` (value object)
 
 ```python
-counts: pd.DataFrame             # samples × taxa, int
-relative: pd.DataFrame           # lazy, row-normalized proportions
+counts: pd.DataFrame             # samples × taxa at a SINGLE rank, int (incl. Unclassified_<rank>)
+relative: pd.DataFrame           # lazy, row-normalized proportions (rows sum to 1)
 taxa: pd.DataFrame               # lazy lineage lookup: taxon_key → ancestor ranks
 def write(self, path: Path, fmt: str = "counts") -> Path
 ```
+
+`counts` is single-rank and non-overlapping (each column = a rank-node's `total_count`),
+plus one `Unclassified_<rank>` column holding reads not resolved to `rank` (§4.5.1). Because
+columns don't overlap, `relative` rows are honest compositions that sum to 1.
 
 ### 5.5 `ProfileSubset` (value object)
 
