@@ -26,3 +26,11 @@ def test_missing_or_invalid_blobs_yield_empty():
     parsed = SourceKeyParser().parse(row)
 
     assert parsed == {}
+
+
+def test_parses_multiple_brace_terminated_attribute_pairs():
+    row = pd.Series({"jattr": float("nan"), "attributes": "k=sex, v=male}k=tissue, v=gut}"})
+
+    parsed = SourceKeyParser().parse(row)
+
+    assert parsed == {"sex": "male", "tissue": "gut"}
