@@ -26,7 +26,7 @@ def test_taxa_filter_keeps_only_bacteria_columns():
 
     subset = ProfileSubsetBuilder().build(_matrix(), _metadata(), criteria)
 
-    assert all("Bacteria" in col for col in subset.profile_df.columns)
+    assert list(subset.profile_df.columns) == ["superkingdom||Bacteria||2"]
 
 
 def test_sample_filter_keeps_only_treatment_rows():
@@ -34,4 +34,16 @@ def test_sample_filter_keeps_only_treatment_rows():
 
     subset = ProfileSubsetBuilder().build(_matrix(), _metadata(), criteria)
 
+    assert list(subset.profile_df.index) == ["SRR1"]
+
+
+def test_combined_taxa_and_sample_filter():
+    criteria = SubsetCriteria(
+        taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",)),
+        samples=SampleSelector(column="Group", values=("treatment",)),
+    )
+
+    subset = ProfileSubsetBuilder().build(_matrix(), _metadata(), criteria)
+
+    assert list(subset.profile_df.columns) == ["superkingdom||Bacteria||2"]
     assert list(subset.profile_df.index) == ["SRR1"]
