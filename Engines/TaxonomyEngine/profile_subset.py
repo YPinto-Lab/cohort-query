@@ -17,7 +17,8 @@ class ProfileSubset:
     def metadata_df(self) -> pd.DataFrame:
         order = list(self.profile_df.index)
         indexed = self._full_metadata_df.set_index("acc")
-        return indexed.reindex(order).dropna(how="all").reset_index()
+        present = [acc for acc in order if acc in indexed.index]
+        return indexed.reindex(present).reset_index()
 
     def write(self, out_dir: Path) -> list[Path]:
         out_dir = Path(out_dir)
