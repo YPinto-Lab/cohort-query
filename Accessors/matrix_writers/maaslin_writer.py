@@ -4,9 +4,8 @@ from pathlib import Path
 
 
 class MaaslinWriter:
+    """Writes the samples x taxa matrix as a MaAsLin2-ready TSV (samples as rows)."""
+
     def write(self, matrix, path: Path) -> Path:
-        long_df = matrix.counts.reset_index().melt(
-            id_vars=[matrix.counts.index.name or "index"], var_name="taxon_key", value_name="value"
-        )
-        long_df.to_csv(path, sep="\t", index=False)
+        matrix.counts.to_csv(path, sep="\t")
         return path
