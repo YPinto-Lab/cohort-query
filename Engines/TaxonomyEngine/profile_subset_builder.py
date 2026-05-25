@@ -23,7 +23,7 @@ class ProfileSubsetBuilder:
 
     def _clade_keys(self, matrix: AbundanceMatrix, selector: TaxaSelector) -> set[str]:
         taxa = matrix.taxa
-        hits = taxa[taxa[selector.rank].isin(selector.names)]
+        hits = taxa[(taxa["rank"] == selector.rank) & taxa["name"].isin(selector.names)]
         return set(hits["taxon_key"])
 
     def _filter_samples(self, profile_df: pd.DataFrame, metadata_df: pd.DataFrame, selector: SampleSelector | None) -> pd.DataFrame:

@@ -1,0 +1,20 @@
+from pathlib import Path
+import Engines.TaxonomyEngine as taxonomy
+from Common.contracts.selectors import SubsetCriteria, TaxaSelector
+
+TAX = Path("Tests/fixtures/taxonomy_tiny.csv")
+DMP = Path("Tests/fixtures/merged_tiny.dmp")
+
+
+def test_load_then_build_then_subset():
+    taxonomy_df = taxonomy.load(TAX)
+    resolved = taxonomy.resolve(taxonomy_df, merged_dmp=DMP)
+    matrix = taxonomy.build_abundance_matrix(resolved.df)
+
+    subset = taxonomy.get_profile_subset(
+        matrix,
+        taxonomy_df[["acc"]].drop_duplicates().assign(Group="treatment"),
+        SubsetCriteria(taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",))),
+    )
+
+    assert all("Bacteria" in c for c in subset.profile_df.columns)

@@ -21,7 +21,11 @@ class AbundanceMatrix:
 
     @cached_property
     def taxa(self) -> pd.DataFrame:
-        return self._lookup.merge(self._lineage_df, on="tax_id", how="left")
+        lookup = self._lookup.copy()
+        lineage = self._lineage_df.copy()
+        lookup["tax_id"] = pd.to_numeric(lookup["tax_id"], errors="coerce")
+        lineage["tax_id"] = pd.to_numeric(lineage["tax_id"], errors="coerce")
+        return lookup.merge(lineage, on="tax_id", how="left")
 
     def write(self, path: Path, fmt: str = "counts") -> Path:
         from Accessors.matrix_writers.matrix_writer_factory import MatrixWriterFactory
