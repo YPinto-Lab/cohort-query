@@ -4,6 +4,8 @@ import pandas as pd
 
 _TOP_N = 5
 _COLUMNS = ["bioproject", "key_name", "populated_samples", "unique_values", "top_values"]
+_UNIQUE_COLUMNS = ["key_name", "projects", "populated_samples", "unique_values"]
+_MISSING_MARKERS = ["nan", "none"]
 
 
 class DiscoveredKeysBuilder:
@@ -15,15 +17,9 @@ class DiscoveredKeysBuilder:
                 for key in discovered_keys]
         return pd.DataFrame(rows, columns=_COLUMNS)
 
-    def unique(self, by_project_df: pd.DataFrame) -> pd.DataFrame:
-        if by_project_df.empty:
-            return pd.DataFrame(columns=["key_name", "projects", "populated_samples", "unique_values"])
-        grouped = by_project_df.groupby("key_name", as_index=False).agg(
-            projects=("bioproject", "nunique"),
-            populated_samples=("populated_samples", "sum"),
-            unique_values=("unique_values", "max"),
-        )
-        return grouped.sort_values("key_name").reset_index(drop=True)
+    def unique(self, metadata_df: pd.DataFrame, discovered_keys: list[str]) -> pd.DataFrame:
+        rows = [self._unique_row(key, metadata_df) for key in discovered_keys]
+        return pd.DataFrame(rows, columns=_UNIQUE_COLUMNS)
 
     def _projects(self, metadata_df: pd.DataFrame) -> list:
         if "bioproject" not in metadata_df.columns:
@@ -37,9 +33,24 @@ class DiscoveredKeysBuilder:
                 "unique_values": int(populated.nunique()),
                 "top_values": self._top(populated)}
 
-    def _populated(self, series: pd.Series) -> pd.Series:
+    def _unique_row(self, key: str, metadata_df: pd.DataFrame) -> dict:
+        kept = metadata_df[self._populated_mask(metadata_df[key])]
+        return {"key_name": key,
+                "projects": self._nunique(kept, "bioproject"),
+                "populated_samples": int(len(kept)),
+                "unique_values": self._nunique(kept, key)}
+
+    def _populated_mask(self, series: pd.Series) -> pd.Series:
         text = series.astype(str).str.strip()
-        return text[(text != "") & (text.str.lower() != "nan")]
+        return series.notna() & (text != "") & (~text.str.lower().isin(_MISSING_MARKERS))
+
+    def _populated(self, series: pd.Series) -> pd.Series:
+        return series[self._populated_mask(series)].astype(str).str.strip()
+
+    def _nunique(self, frame: pd.DataFrame, column: str) -> int:
+        if column not in frame.columns:
+            return 0
+        return int(frame[column].nunique())
 
     def _top(self, populated: pd.Series) -> str:
         counts = populated.value_counts().head(_TOP_N)
