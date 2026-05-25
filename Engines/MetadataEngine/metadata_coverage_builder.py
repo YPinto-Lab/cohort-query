@@ -18,5 +18,5 @@ class MetadataCoverageBuilder:
 
     def _fraction(self, series: pd.Series) -> float:
         text = series.astype(str).str.strip()
-        populated = (text != "") & (text.str.lower() != "nan")
+        populated = series.notna() & (text != "") & (~text.str.lower().isin(["nan", "none"]))
         return round(float(populated.mean()), 3)
