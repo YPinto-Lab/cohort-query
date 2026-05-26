@@ -6,7 +6,7 @@ import pandas as pd
 
 from Accessors.TaxonomyAccessor.taxonomy_file_accessor import TaxonomyFileAccessor
 from Accessors.MergedDumpAccessor.merged_dump_accessor import MergedDumpAccessor
-from Common.contracts.selectors import SubsetCriteria
+from Common.contracts.selectors import FilterCriteria
 from Common.contracts.taxonomy_results import ResolutionSummary, ResolvedTaxonomy
 from .abundance_matrix import AbundanceMatrix
 from .abundance_matrix_builder import AbundanceMatrixBuilder
@@ -36,7 +36,7 @@ def build_abundance_matrix(taxonomy_df: pd.DataFrame, rank: str = "genus") -> Ab
     return AbundanceMatrixBuilder().build(taxonomy_df, rank)
 
 
-def get_profile_subset(matrix: AbundanceMatrix, metadata_df: pd.DataFrame, criteria: SubsetCriteria) -> ProfileSubset:
+def get_profile_subset(matrix: AbundanceMatrix, metadata_df: pd.DataFrame, criteria: FilterCriteria) -> ProfileSubset:
     return ProfileSubsetBuilder().build(matrix, metadata_df, criteria)
 
 
