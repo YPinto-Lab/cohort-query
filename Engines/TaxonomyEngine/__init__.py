@@ -14,7 +14,7 @@ from .profile_subset import ProfileSubset
 from .profile_subset_builder import ProfileSubsetBuilder
 from .taxonomy_resolver import TaxonomyResolver
 
-DEFAULT_MERGED_DMP = Path("Accessors/TaxonomyAccessor/merged.dmp")
+DEFAULT_MERGED_DMP = Path(__file__).parent.parent.parent / "Accessors" / "TaxonomyAccessor" / "merged.dmp"
 
 
 def load(source: str | Path) -> pd.DataFrame:
