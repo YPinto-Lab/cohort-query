@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from Common.contracts.selectors import SampleSelector, SubsetCriteria, TaxaSelector
+from Common.contracts.selectors import SampleSelector, FilterCriteria, TaxaSelector
 from .abundance_matrix import AbundanceMatrix
 from .profile_subset import ProfileSubset
 
@@ -10,7 +10,7 @@ from .profile_subset import ProfileSubset
 class ProfileSubsetBuilder:
     """Slices an AbundanceMatrix by clade and/or sample into a ProfileSubset."""
 
-    def build(self, matrix: AbundanceMatrix, metadata_df: pd.DataFrame, criteria: SubsetCriteria) -> ProfileSubset:
+    def build(self, matrix: AbundanceMatrix, metadata_df: pd.DataFrame, criteria: FilterCriteria) -> ProfileSubset:
         by_taxa = self._filter_taxa(matrix, criteria.taxa)
         selectors = [s for s in (criteria.samples, *criteria.sample_filters) if s is not None]
         profile_df = self._apply_sample_filters(by_taxa, metadata_df, selectors)

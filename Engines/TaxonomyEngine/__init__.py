@@ -10,9 +10,11 @@ from Common.contracts.selectors import FilterCriteria
 from Common.contracts.taxonomy_results import ResolutionSummary, ResolvedTaxonomy
 from .abundance_matrix import AbundanceMatrix
 from .abundance_matrix_builder import AbundanceMatrixBuilder
+from .cohort import Cohort
 from .profile_subset import ProfileSubset
 from .profile_subset_builder import ProfileSubsetBuilder
 from .taxonomy_resolver import TaxonomyResolver
+from Engines.MetadataEngine.metadata import Metadata
 
 DEFAULT_MERGED_DMP = Path(__file__).parent.parent.parent / "Accessors" / "TaxonomyAccessor" / "merged.dmp"
 
@@ -34,6 +36,10 @@ def resolve(taxonomy_df: pd.DataFrame, merged_dmp: str | Path = DEFAULT_MERGED_D
 
 def build_abundance_matrix(taxonomy_df: pd.DataFrame, rank: str = "genus") -> AbundanceMatrix:
     return AbundanceMatrixBuilder().build(taxonomy_df, rank)
+
+
+def build_cohort(matrix: AbundanceMatrix, metadata: Metadata) -> Cohort:
+    return Cohort(matrix=matrix, metadata=metadata)
 
 
 def get_profile_subset(matrix: AbundanceMatrix, metadata_df: pd.DataFrame, criteria: FilterCriteria) -> ProfileSubset:

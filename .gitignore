@@ -45,6 +45,7 @@ commit_message.txt
 tests/e2e/artifacts/
 
 Workspaces/
+Notebooks/out
 
 # Accessor outputs (generated)
 Accessors/**/output/
