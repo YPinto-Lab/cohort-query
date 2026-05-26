@@ -53,3 +53,8 @@ Accessors/**/output/
 *.parquet
 *.feather
 *.pkl
+
+# Notebook binary archives
+Notebooks/*.tar.gz
+Notebooks/*.tar.bz2
+Notebooks/*.zip
