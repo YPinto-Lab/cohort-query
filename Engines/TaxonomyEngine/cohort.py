@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import pandas as pd
 
@@ -24,6 +25,13 @@ class Cohort:
         new_metadata = self._filter_metadata(self.metadata, sample_selectors)
         new_matrix = self._reindex_matrix_rows(new_matrix, list(new_metadata.df["acc"]))
         return Cohort(matrix=new_matrix, metadata=new_metadata)
+
+    def write(self, out_dir: Path, fmt: str = "counts") -> list[Path]:
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        matrix_path = self.matrix.write(out_dir / "abundance_matrix.csv", fmt)
+        metadata_path = self.metadata.write(out_dir / "metadata.csv")
+        return [matrix_path, metadata_path]
 
     @staticmethod
     def _filter_taxa(matrix: AbundanceMatrix, selector: TaxaSelector | None) -> AbundanceMatrix:

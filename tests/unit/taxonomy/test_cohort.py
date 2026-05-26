@@ -117,3 +117,25 @@ def test_filter_preserves_taxa_lookup_through_matrix():
     filtered = cohort.filter(FilterCriteria(taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",))))
 
     assert "superkingdom||Bacteria||2" in set(filtered.matrix.taxa["taxon_key"])
+
+
+def test_write_produces_abundance_matrix_csv_and_metadata_csv(tmp_path):
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+
+    paths = cohort.write(tmp_path)
+
+    matrix_path = tmp_path / "abundance_matrix.csv"
+    metadata_path = tmp_path / "metadata.csv"
+    assert matrix_path.exists()
+    assert metadata_path.exists()
+    assert set(paths) == {matrix_path, metadata_path}
+
+
+def test_write_metadata_csv_has_no_pandas_index_column(tmp_path):
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+
+    cohort.write(tmp_path)
+
+    written = pd.read_csv(tmp_path / "metadata.csv")
+    assert "Unnamed: 0" not in written.columns
+    assert list(written.columns)[0] == "acc"
