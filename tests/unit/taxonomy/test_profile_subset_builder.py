@@ -1,7 +1,7 @@
 import pandas as pd
 from Engines.TaxonomyEngine.abundance_matrix_builder import AbundanceMatrixBuilder
 from Engines.TaxonomyEngine.profile_subset_builder import ProfileSubsetBuilder
-from Common.contracts.selectors import SubsetCriteria, TaxaSelector, SampleSelector
+from Common.contracts.selectors import FilterCriteria, TaxaSelector, SampleSelector
 
 
 def _matrix():
@@ -27,7 +27,7 @@ def _metadata():
 
 
 def test_taxa_filter_keeps_only_bacteria_columns():
-    criteria = SubsetCriteria(taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",)))
+    criteria = FilterCriteria(taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",)))
 
     subset = ProfileSubsetBuilder().build(_matrix(), _metadata(), criteria)
 
@@ -35,7 +35,7 @@ def test_taxa_filter_keeps_only_bacteria_columns():
 
 
 def test_sample_filter_keeps_only_treatment_rows():
-    criteria = SubsetCriteria(samples=SampleSelector(column="Group", values=("treatment",)))
+    criteria = FilterCriteria(samples=SampleSelector(column="Group", values=("treatment",)))
 
     subset = ProfileSubsetBuilder().build(_matrix(), _metadata(), criteria)
 
@@ -43,7 +43,7 @@ def test_sample_filter_keeps_only_treatment_rows():
 
 
 def test_combined_taxa_and_sample_filter():
-    criteria = SubsetCriteria(
+    criteria = FilterCriteria(
         taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",)),
         samples=SampleSelector(column="Group", values=("treatment",)),
     )
@@ -55,7 +55,7 @@ def test_combined_taxa_and_sample_filter():
 
 
 def test_sample_filters_applies_and_logic_across_two_columns():
-    criteria = SubsetCriteria(
+    criteria = FilterCriteria(
         sample_filters=(
             SampleSelector(column="Group", values=("treatment",)),
             SampleSelector(column="assay_type", values=("WGS",)),
@@ -68,7 +68,7 @@ def test_sample_filters_applies_and_logic_across_two_columns():
 
 
 def test_sample_filters_combined_with_samples_applies_all():
-    criteria = SubsetCriteria(
+    criteria = FilterCriteria(
         samples=SampleSelector(column="Group", values=("treatment",)),
         sample_filters=(SampleSelector(column="assay_type", values=("WGS",)),),
     )
@@ -79,7 +79,7 @@ def test_sample_filters_combined_with_samples_applies_all():
 
 
 def test_empty_sample_filters_returns_full_profile():
-    criteria = SubsetCriteria(sample_filters=())
+    criteria = FilterCriteria(sample_filters=())
 
     subset = ProfileSubsetBuilder().build(_matrix(), _metadata(), criteria)
 

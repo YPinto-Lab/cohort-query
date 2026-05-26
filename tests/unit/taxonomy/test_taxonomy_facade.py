@@ -1,6 +1,6 @@
 from pathlib import Path
 import Engines.TaxonomyEngine as taxonomy
-from Common.contracts.selectors import SubsetCriteria, TaxaSelector
+from Common.contracts.selectors import FilterCriteria, TaxaSelector
 
 _FIXTURES = Path(__file__).parent.parent.parent / "fixtures"
 TAX = _FIXTURES / "taxonomy_tiny.csv"
@@ -15,7 +15,7 @@ def test_load_then_build_then_subset():
     subset = taxonomy.get_profile_subset(
         matrix,
         taxonomy_df[["acc"]].drop_duplicates().assign(Group="treatment"),
-        SubsetCriteria(taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",))),
+        FilterCriteria(taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",))),
     )
 
     # genus-level matrix; Escherichia kept via lineage (superkingdom=Bacteria), Viruses excluded

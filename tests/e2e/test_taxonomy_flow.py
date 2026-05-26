@@ -1,7 +1,7 @@
 from pathlib import Path
 import pandas as pd
 from askslm import taxonomy
-from askslm.contracts import SubsetCriteria, TaxaSelector, SampleSelector
+from askslm.contracts import FilterCriteria, TaxaSelector, SampleSelector
 
 _FIXTURES = Path(__file__).parent.parent / "fixtures"
 TAX = _FIXTURES / "taxonomy_tiny.csv"
@@ -16,7 +16,7 @@ def test_full_flow_subset_and_formats(tmp_path):
 
     subset = taxonomy.get_profile_subset(
         matrix, metadata,
-        SubsetCriteria(
+        FilterCriteria(
             taxa=TaxaSelector("superkingdom", ("Bacteria",)),
             samples=SampleSelector("Group", ("treatment",)),
         ),
