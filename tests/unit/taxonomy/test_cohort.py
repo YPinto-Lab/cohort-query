@@ -44,3 +44,76 @@ def test_construction_preserves_matrix_sample_order_in_metadata():
     cohort = Cohort(matrix=matrix, metadata=shuffled_md)
 
     assert list(cohort.metadata.df["acc"]) == list(matrix.counts.index)
+
+
+from Common.contracts.selectors import FilterCriteria, SampleSelector, TaxaSelector
+
+
+def test_filter_by_taxa_keeps_only_matching_clade_columns():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+
+    filtered = cohort.filter(FilterCriteria(taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",))))
+
+    assert list(filtered.matrix.counts.columns) == ["superkingdom||Bacteria||2"]
+
+
+def test_filter_by_samples_keeps_only_matching_rows_in_both_halves():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+
+    filtered = cohort.filter(FilterCriteria(samples=SampleSelector(column="Group", values=("treatment",))))
+
+    assert list(filtered.matrix.counts.index) == ["SRR1", "SRR3"]
+    assert list(filtered.metadata.df["acc"]) == ["SRR1", "SRR3"]
+
+
+def test_filter_combined_taxa_and_samples():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+
+    filtered = cohort.filter(FilterCriteria(
+        taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",)),
+        samples=SampleSelector(column="Group", values=("treatment",)),
+    ))
+
+    assert list(filtered.matrix.counts.columns) == ["superkingdom||Bacteria||2"]
+    assert list(filtered.matrix.counts.index) == ["SRR1", "SRR3"]
+    assert list(filtered.metadata.df["acc"]) == ["SRR1", "SRR3"]
+
+
+def test_filter_sample_filters_applies_and_logic_across_columns():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+
+    filtered = cohort.filter(FilterCriteria(sample_filters=(
+        SampleSelector(column="Group", values=("treatment",)),
+        SampleSelector(column="assay_type", values=("WGS",)),
+    )))
+
+    assert list(filtered.matrix.counts.index) == ["SRR1"]
+    assert list(filtered.metadata.df["acc"]) == ["SRR1"]
+
+
+def test_filter_samples_and_sample_filters_combine():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+
+    filtered = cohort.filter(FilterCriteria(
+        samples=SampleSelector(column="Group", values=("treatment",)),
+        sample_filters=(SampleSelector(column="assay_type", values=("WGS",)),),
+    ))
+
+    assert list(filtered.matrix.counts.index) == ["SRR1"]
+
+
+def test_filter_with_empty_criteria_is_identity_on_rows_and_cols():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+
+    filtered = cohort.filter(FilterCriteria())
+
+    assert list(filtered.matrix.counts.index) == list(cohort.matrix.counts.index)
+    assert list(filtered.matrix.counts.columns) == list(cohort.matrix.counts.columns)
+
+
+def test_filter_preserves_taxa_lookup_through_matrix():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+
+    filtered = cohort.filter(FilterCriteria(taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",))))
+
+    assert "superkingdom||Bacteria||2" in set(filtered.matrix.taxa["taxon_key"])
