@@ -21,3 +21,20 @@ def test_selectors_are_immutable():
 
     with pytest.raises(Exception):
         selector.column = "other"
+
+
+def test_subset_criteria_sample_filters_defaults_to_empty_tuple():
+    criteria = SubsetCriteria()
+
+    assert criteria.sample_filters == ()
+
+
+def test_subset_criteria_accepts_multiple_sample_filters():
+    filters = (
+        SampleSelector(column="assay_type", values=("WGS",)),
+        SampleSelector(column="Group", values=("treatment",)),
+    )
+
+    criteria = SubsetCriteria(sample_filters=filters)
+
+    assert criteria.sample_filters == filters

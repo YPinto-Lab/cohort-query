@@ -19,3 +19,4 @@ class SampleSelector:
 class SubsetCriteria:
     taxa: TaxaSelector | None = None
     samples: SampleSelector | None = None
+    sample_filters: tuple[SampleSelector, ...] = ()

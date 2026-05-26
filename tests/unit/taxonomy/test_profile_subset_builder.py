@@ -6,20 +6,24 @@ from Common.contracts.selectors import SubsetCriteria, TaxaSelector, SampleSelec
 
 def _matrix():
     long_df = pd.DataFrame({
-        "acc": ["SRR1", "SRR1", "SRR2"],
-        "tax_id": [2, 10239, 2],
-        "rank": ["superkingdom", "superkingdom", "superkingdom"],
-        "name": ["Bacteria", "Viruses", "Bacteria"],
-        "total_count": [100, 40, 80],
-        "self_count": [100, 40, 80],
-        "ileft": [1, 3, 1],
-        "iright": [2, 4, 2],
+        "acc": ["SRR1", "SRR1", "SRR2", "SRR3"],
+        "tax_id": [2, 10239, 2, 2],
+        "rank": ["superkingdom", "superkingdom", "superkingdom", "superkingdom"],
+        "name": ["Bacteria", "Viruses", "Bacteria", "Bacteria"],
+        "total_count": [100, 40, 80, 60],
+        "self_count": [100, 40, 80, 60],
+        "ileft": [1, 3, 1, 1],
+        "iright": [2, 4, 2, 2],
     })
     return AbundanceMatrixBuilder().build(long_df, rank="superkingdom")
 
 
 def _metadata():
-    return pd.DataFrame({"acc": ["SRR1", "SRR2"], "Group": ["treatment", "control"]})
+    return pd.DataFrame({
+        "acc": ["SRR1", "SRR2", "SRR3"],
+        "Group": ["treatment", "control", "treatment"],
+        "assay_type": ["WGS", "WGS", "AMPLICON"],
+    })
 
 
 def test_taxa_filter_keeps_only_bacteria_columns():
@@ -35,7 +39,7 @@ def test_sample_filter_keeps_only_treatment_rows():
 
     subset = ProfileSubsetBuilder().build(_matrix(), _metadata(), criteria)
 
-    assert list(subset.profile_df.index) == ["SRR1"]
+    assert set(subset.profile_df.index) == {"SRR1", "SRR3"}
 
 
 def test_combined_taxa_and_sample_filter():
@@ -47,4 +51,36 @@ def test_combined_taxa_and_sample_filter():
     subset = ProfileSubsetBuilder().build(_matrix(), _metadata(), criteria)
 
     assert list(subset.profile_df.columns) == ["superkingdom||Bacteria||2"]
+    assert set(subset.profile_df.index) == {"SRR1", "SRR3"}
+
+
+def test_sample_filters_applies_and_logic_across_two_columns():
+    criteria = SubsetCriteria(
+        sample_filters=(
+            SampleSelector(column="Group", values=("treatment",)),
+            SampleSelector(column="assay_type", values=("WGS",)),
+        ),
+    )
+
+    subset = ProfileSubsetBuilder().build(_matrix(), _metadata(), criteria)
+
     assert list(subset.profile_df.index) == ["SRR1"]
+
+
+def test_sample_filters_combined_with_samples_applies_all():
+    criteria = SubsetCriteria(
+        samples=SampleSelector(column="Group", values=("treatment",)),
+        sample_filters=(SampleSelector(column="assay_type", values=("WGS",)),),
+    )
+
+    subset = ProfileSubsetBuilder().build(_matrix(), _metadata(), criteria)
+
+    assert list(subset.profile_df.index) == ["SRR1"]
+
+
+def test_empty_sample_filters_returns_full_profile():
+    criteria = SubsetCriteria(sample_filters=())
+
+    subset = ProfileSubsetBuilder().build(_matrix(), _metadata(), criteria)
+
+    assert set(subset.profile_df.index) == {"SRR1", "SRR2", "SRR3"}
