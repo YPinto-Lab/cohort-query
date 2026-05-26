@@ -27,7 +27,8 @@ class Metadata:
         return Metadata(df=reordered)
 
     def filter(self, selector: SampleSelector) -> Metadata:
-        kept = self.df[self.df[selector.column].isin(selector.values)].reset_index(drop=True)
+        mask = self.df[selector.column].isin(selector.values)
+        kept = self.df[~mask if selector.exclude else mask].reset_index(drop=True)
         return Metadata(df=kept)
 
     def write(self, path: Path) -> Path:

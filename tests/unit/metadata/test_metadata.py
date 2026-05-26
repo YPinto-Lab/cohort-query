@@ -51,6 +51,14 @@ def test_filter_keeps_matching_rows():
     assert list(filtered.df["acc"]) == ["SRR1", "SRR3"]
 
 
+def test_filter_exclude_removes_matching_rows():
+    md = Metadata(df=_df())
+
+    filtered = md.filter(SampleSelector(column="Group", values=("control",), exclude=True))
+
+    assert list(filtered.df["acc"]) == ["SRR1", "SRR3"]
+
+
 def test_write_produces_csv_without_index(tmp_path):
     md = Metadata(df=_df())
 

@@ -38,3 +38,15 @@ def test_filter_criteria_accepts_multiple_sample_filters():
     criteria = FilterCriteria(sample_filters=filters)
 
     assert criteria.sample_filters == filters
+
+
+def test_sample_selector_exclude_defaults_to_false():
+    selector = SampleSelector(column="Group", values=("control",))
+
+    assert selector.exclude is False
+
+
+def test_sample_selector_exclude_true_is_accepted():
+    selector = SampleSelector(column="Group", values=("control",), exclude=True)
+
+    assert selector.exclude is True

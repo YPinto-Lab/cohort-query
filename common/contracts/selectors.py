@@ -13,6 +13,7 @@ class TaxaSelector:
 class SampleSelector:
     column: str
     values: tuple[str, ...]
+    exclude: bool = False
 
 
 @dataclass(frozen=True)
