@@ -13,13 +13,12 @@ Dependencies flow downward only. Never import upward.
 
 | Layer | Folder | Role |
 |---|---|---|
-| Client | `Clients/` | Entry points — `cli.py`, `API.py`, `Notebooks/` |
-| Manager | `Managers/` | Orchestration — coordinates steps, owns use-case flow |
+| Client | `Clients/` | Public Python API (`askslm.metadata`, `askslm.taxonomy`). A user-facing CLI/UI is deferred to a separate layer. |
 | Engine | `Engines/` | Business logic — pure computation, no I/O |
 | Accessor | `Accessors/` | External resources — files, APIs, databases |
 | Utilities | `Common/` | Cross-cutting — Logger, RunnerContext, contracts |
 
-**Calling rules:** Client → Manager → Engine → Accessor. Never call upward.
+**Calling rules:** Client → Engine → Accessor. Never call upward.
 
 `Scripts/` and `Queries/` are developer tooling outside the layer model.
 
