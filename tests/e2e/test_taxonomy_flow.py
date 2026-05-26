@@ -2,6 +2,7 @@ from pathlib import Path
 import pandas as pd
 from askslm import taxonomy
 from askslm.contracts import FilterCriteria, TaxaSelector, SampleSelector
+from Engines.MetadataEngine.metadata import Metadata
 
 _FIXTURES = Path(__file__).parent.parent / "fixtures"
 TAX = _FIXTURES / "taxonomy_tiny.csv"
@@ -12,18 +13,17 @@ def test_full_flow_subset_and_formats(tmp_path):
     taxonomy_df = taxonomy.load(TAX)
     resolved = taxonomy.resolve(taxonomy_df, merged_dmp=DMP)
     matrix = taxonomy.build_abundance_matrix(resolved.df)
-    metadata = pd.DataFrame({"acc": ["SRR1", "SRR2"], "Group": ["treatment", "control"]})
+    metadata = Metadata(df=pd.DataFrame({"acc": ["SRR1", "SRR2"], "Group": ["treatment", "control"]}))
 
-    subset = taxonomy.get_profile_subset(
-        matrix, metadata,
+    cohort = taxonomy.build_cohort(matrix, metadata).filter(
         FilterCriteria(
             taxa=TaxaSelector("superkingdom", ("Bacteria",)),
             samples=SampleSelector("Group", ("treatment",)),
-        ),
+        )
     )
 
-    assert list(subset.profile_df.index) == ["SRR1"]
-    assert list(subset.metadata_df["acc"]) == ["SRR1"]
-    assert list(subset.profile_df.columns) == ["genus||Escherichia||561"]
+    assert list(cohort.matrix.counts.index) == ["SRR1"]
+    assert list(cohort.metadata.df["acc"]) == ["SRR1"]
+    assert list(cohort.matrix.counts.columns) == ["genus||Escherichia||561"]
     for fmt, name in [("counts", "c.csv"), ("relative", "r.csv"), ("maaslin", "m.tsv"), ("biom", "t.biom")]:
         assert matrix.write(tmp_path / name, fmt=fmt).exists()
