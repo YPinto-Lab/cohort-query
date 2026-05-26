@@ -3,8 +3,9 @@ import pandas as pd
 from askslm import taxonomy
 from askslm.contracts import SubsetCriteria, TaxaSelector, SampleSelector
 
-TAX = Path("Tests/fixtures/taxonomy_tiny.csv")
-DMP = Path("Tests/fixtures/merged_tiny.dmp")
+_FIXTURES = Path(__file__).parent.parent / "fixtures"
+TAX = _FIXTURES / "taxonomy_tiny.csv"
+DMP = _FIXTURES / "merged_tiny.dmp"
 
 
 def test_full_flow_subset_and_formats(tmp_path):

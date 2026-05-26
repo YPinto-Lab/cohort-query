@@ -1,7 +1,7 @@
 from pathlib import Path
 from Accessors.TaxonomyAccessor.taxonomy_file_accessor import TaxonomyFileAccessor
 
-FIXTURE = Path("Tests/fixtures/taxonomy_tiny.csv")
+FIXTURE = Path(__file__).parent.parent.parent / "fixtures" / "taxonomy_tiny.csv"
 
 
 def test_read_returns_validated_long_table():

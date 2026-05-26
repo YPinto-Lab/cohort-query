@@ -2,8 +2,9 @@ from pathlib import Path
 import Engines.TaxonomyEngine as taxonomy
 from Common.contracts.selectors import SubsetCriteria, TaxaSelector
 
-TAX = Path("Tests/fixtures/taxonomy_tiny.csv")
-DMP = Path("Tests/fixtures/merged_tiny.dmp")
+_FIXTURES = Path(__file__).parent.parent.parent / "fixtures"
+TAX = _FIXTURES / "taxonomy_tiny.csv"
+DMP = _FIXTURES / "merged_tiny.dmp"
 
 
 def test_load_then_build_then_subset():
