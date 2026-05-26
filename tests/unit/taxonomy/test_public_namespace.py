@@ -3,7 +3,7 @@ from askslm.contracts import FilterCriteria, TaxaSelector, SampleSelector
 
 
 def test_taxonomy_exposes_core_callables():
-    for name in ("load", "resolve", "build_abundance_matrix", "get_profile_subset"):
+    for name in ("load", "resolve", "build_abundance_matrix", "build_cohort"):
         assert callable(getattr(taxonomy, name))
 
 

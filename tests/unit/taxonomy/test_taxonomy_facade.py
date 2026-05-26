@@ -1,22 +1,40 @@
-from pathlib import Path
+import pandas as pd
 import Engines.TaxonomyEngine as taxonomy
 from Common.contracts.selectors import FilterCriteria, TaxaSelector
-
-_FIXTURES = Path(__file__).parent.parent.parent / "fixtures"
-TAX = _FIXTURES / "taxonomy_tiny.csv"
-DMP = _FIXTURES / "merged_tiny.dmp"
+from Engines.MetadataEngine.metadata import Metadata
+from Engines.TaxonomyEngine.cohort import Cohort
 
 
-def test_load_then_build_then_subset():
-    taxonomy_df = taxonomy.load(TAX)
-    resolved = taxonomy.resolve(taxonomy_df, merged_dmp=DMP)
-    matrix = taxonomy.build_abundance_matrix(resolved.df)
+def _matrix():
+    long_df = pd.DataFrame({
+        "acc": ["SRR1", "SRR1", "SRR2"],
+        "tax_id": [2, 10239, 2],
+        "rank": ["superkingdom", "superkingdom", "superkingdom"],
+        "name": ["Bacteria", "Viruses", "Bacteria"],
+        "total_count": [100, 40, 80],
+        "self_count": [100, 40, 80],
+        "ileft": [1, 3, 1],
+        "iright": [2, 4, 2],
+    })
+    return taxonomy.build_abundance_matrix(long_df, rank="superkingdom")
 
-    subset = taxonomy.get_profile_subset(
-        matrix,
-        taxonomy_df[["acc"]].drop_duplicates().assign(Group="treatment"),
-        FilterCriteria(taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",))),
+
+def test_build_cohort_returns_cohort_pairing_matrix_and_metadata():
+    matrix = _matrix()
+    metadata = Metadata(df=pd.DataFrame({"acc": ["SRR1", "SRR2"], "Group": ["t", "c"]}))
+
+    cohort = taxonomy.build_cohort(matrix, metadata)
+
+    assert isinstance(cohort, Cohort)
+    assert list(cohort.metadata.df["acc"]) == list(cohort.matrix.counts.index)
+
+
+def test_build_cohort_then_filter_narrows_by_taxa():
+    matrix = _matrix()
+    metadata = Metadata(df=pd.DataFrame({"acc": ["SRR1", "SRR2"], "Group": ["t", "c"]}))
+
+    filtered = taxonomy.build_cohort(matrix, metadata).filter(
+        FilterCriteria(taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",)))
     )
 
-    # genus-level matrix; Escherichia kept via lineage (superkingdom=Bacteria), Viruses excluded
-    assert set(subset.profile_df.columns) == {"genus||Escherichia||561"}
+    assert list(filtered.matrix.counts.columns) == ["superkingdom||Bacteria||2"]
