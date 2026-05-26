@@ -16,7 +16,7 @@ class SampleSelector:
 
 
 @dataclass(frozen=True)
-class SubsetCriteria:
+class FilterCriteria:
     taxa: TaxaSelector | None = None
     samples: SampleSelector | None = None
     sample_filters: tuple[SampleSelector, ...] = ()

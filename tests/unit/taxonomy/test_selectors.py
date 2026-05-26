@@ -1,5 +1,5 @@
 import pytest
-from Common.contracts.selectors import TaxaSelector, SampleSelector, SubsetCriteria
+from Common.contracts.selectors import TaxaSelector, SampleSelector, FilterCriteria
 
 
 def test_taxa_selector_is_frozen_and_holds_names():
@@ -9,8 +9,8 @@ def test_taxa_selector_is_frozen_and_holds_names():
     assert selector.names == ("Bacteria",)
 
 
-def test_subset_criteria_defaults_to_none():
-    criteria = SubsetCriteria()
+def test_filter_criteria_defaults_to_none():
+    criteria = FilterCriteria()
 
     assert criteria.taxa is None
     assert criteria.samples is None
@@ -23,18 +23,18 @@ def test_selectors_are_immutable():
         selector.column = "other"
 
 
-def test_subset_criteria_sample_filters_defaults_to_empty_tuple():
-    criteria = SubsetCriteria()
+def test_filter_criteria_sample_filters_defaults_to_empty_tuple():
+    criteria = FilterCriteria()
 
     assert criteria.sample_filters == ()
 
 
-def test_subset_criteria_accepts_multiple_sample_filters():
+def test_filter_criteria_accepts_multiple_sample_filters():
     filters = (
         SampleSelector(column="assay_type", values=("WGS",)),
         SampleSelector(column="Group", values=("treatment",)),
     )
 
-    criteria = SubsetCriteria(sample_filters=filters)
+    criteria = FilterCriteria(sample_filters=filters)
 
     assert criteria.sample_filters == filters
