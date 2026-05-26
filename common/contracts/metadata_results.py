@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class MetadataOverview:
     summary_df: pd.DataFrame
     projects_df: pd.DataFrame

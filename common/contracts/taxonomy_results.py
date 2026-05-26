@@ -12,7 +12,7 @@ class ResolutionSummary:
     unique_old_tax_ids_updated: int
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class ResolvedTaxonomy:
     df: pd.DataFrame
     changes_df: pd.DataFrame
