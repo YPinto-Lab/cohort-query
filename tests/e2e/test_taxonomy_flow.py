@@ -23,5 +23,6 @@ def test_full_flow_subset_and_formats(tmp_path):
 
     assert list(subset.profile_df.index) == ["SRR1"]
     assert list(subset.metadata_df["acc"]) == ["SRR1"]
+    assert list(subset.profile_df.columns) == ["genus||Escherichia||561"]
     for fmt, name in [("counts", "c.csv"), ("relative", "r.csv"), ("maaslin", "m.tsv"), ("biom", "t.biom")]:
         assert matrix.write(tmp_path / name, fmt=fmt).exists()

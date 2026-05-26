@@ -19,3 +19,4 @@ def test_coverage_fractions_per_project():
     assert prj2["tissue"] == 0.0
     prj1 = coverage[coverage["bioproject"] == "PRJ1"].iloc[0]
     assert prj1["tissue"] == 1.0
+    assert prj1["host"] == 1.0

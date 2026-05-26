@@ -11,10 +11,11 @@ def _matrix():
         "rank": ["superkingdom", "superkingdom", "superkingdom"],
         "name": ["Bacteria", "Viruses", "Bacteria"],
         "total_count": [100, 40, 80],
+        "self_count": [100, 40, 80],
         "ileft": [1, 3, 1],
         "iright": [2, 4, 2],
     })
-    return AbundanceMatrixBuilder().build(long_df)
+    return AbundanceMatrixBuilder().build(long_df, rank="superkingdom")
 
 
 def _metadata():

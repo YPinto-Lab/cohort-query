@@ -17,4 +17,5 @@ def test_load_then_build_then_subset():
         SubsetCriteria(taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",))),
     )
 
-    assert all("Bacteria" in c for c in subset.profile_df.columns)
+    # genus-level matrix; Escherichia kept via lineage (superkingdom=Bacteria), Viruses excluded
+    assert set(subset.profile_df.columns) == {"genus||Escherichia||561"}

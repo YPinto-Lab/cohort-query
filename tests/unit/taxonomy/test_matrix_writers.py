@@ -26,10 +26,12 @@ def test_relative_writer_normalizes(tmp_path):
     assert abs(written.loc["SRR1"].sum() - 1.0) < 1e-9
 
 
-def test_maaslin_writer_is_tab_separated(tmp_path):
+def test_maaslin_writer_is_wide_tsv(tmp_path):
     path = MatrixWriterFactory().create("maaslin").write(_matrix(), tmp_path / "m.tsv")
 
-    assert "\t" in path.read_text()
+    written = pd.read_csv(path, sep="\t", index_col=0)
+    assert list(written.index) == ["SRR1", "SRR2"]
+    assert list(written.columns) == ["superkingdom||Bacteria||2"]
 
 
 def test_biom_writer_roundtrip(tmp_path):
