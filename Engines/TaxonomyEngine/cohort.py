@@ -33,6 +33,14 @@ class Cohort:
         metadata_path = self.metadata.write(out_dir / "metadata.csv")
         return [matrix_path, metadata_path]
 
+    @property
+    def n_samples(self) -> int:
+        return self.matrix.counts.shape[0]
+
+    @property
+    def n_taxa(self) -> int:
+        return self.matrix.counts.shape[1]
+
     @staticmethod
     def _filter_taxa(matrix: AbundanceMatrix, selector: TaxaSelector | None) -> AbundanceMatrix:
         if selector is None:

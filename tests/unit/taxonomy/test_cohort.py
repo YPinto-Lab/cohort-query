@@ -139,3 +139,13 @@ def test_write_metadata_csv_has_no_pandas_index_column(tmp_path):
     written = pd.read_csv(tmp_path / "metadata.csv")
     assert "Unnamed: 0" not in written.columns
     assert list(written.columns)[0] == "acc"
+
+
+def test_n_samples_returns_row_count():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+    assert cohort.n_samples == 3
+
+
+def test_n_taxa_returns_column_count():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+    assert cohort.n_taxa == 3
