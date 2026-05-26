@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import pandas as pd
 
+from ._populated import populated_mask
+
 _TOP_N = 5
 _COLUMNS = ["bioproject", "key_name", "populated_samples", "unique_values", "top_values"]
 _UNIQUE_COLUMNS = ["key_name", "projects", "populated_samples", "unique_values"]
-_MISSING_MARKERS = ["nan", "none"]
 
 
 class DiscoveredKeysBuilder:
@@ -34,18 +35,14 @@ class DiscoveredKeysBuilder:
                 "top_values": self._top(populated)}
 
     def _unique_row(self, key: str, metadata_df: pd.DataFrame) -> dict:
-        kept = metadata_df[self._populated_mask(metadata_df[key])]
+        kept = metadata_df[populated_mask(metadata_df[key])]
         return {"key_name": key,
                 "projects": self._nunique(kept, "bioproject"),
                 "populated_samples": int(len(kept)),
                 "unique_values": self._nunique(kept, key)}
 
-    def _populated_mask(self, series: pd.Series) -> pd.Series:
-        text = series.astype(str).str.strip()
-        return series.notna() & (text != "") & (~text.str.lower().isin(_MISSING_MARKERS))
-
     def _populated(self, series: pd.Series) -> pd.Series:
-        return series[self._populated_mask(series)].astype(str).str.strip()
+        return series[populated_mask(series)].astype(str).str.strip()
 
     def _nunique(self, frame: pd.DataFrame, column: str) -> int:
         if column not in frame.columns:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from ._populated import populated_mask
+
 
 class MetadataCoverageBuilder:
     """Builds a bioproject x key matrix of the fraction of samples populated."""
@@ -17,6 +19,4 @@ class MetadataCoverageBuilder:
         return pd.Series({key: self._fraction(frame[key]) for key in keys})
 
     def _fraction(self, series: pd.Series) -> float:
-        text = series.astype(str).str.strip()
-        populated = series.notna() & (text != "") & (~text.str.lower().isin(["nan", "none"]))
-        return round(float(populated.mean()), 3)
+        return round(float(populated_mask(series).mean()), 3)
