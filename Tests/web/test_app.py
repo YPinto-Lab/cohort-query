@@ -71,3 +71,23 @@ def test_replay_renders_transcript(tmp_path, monkeypatch):
     r = client.get(f"/w/ABX/sessions/{sid}")
     assert r.status_code == 200
     assert "hi" in r.text and "hello!" in r.text
+
+
+def test_workspace_path_traversal_is_rejected(tmp_path, monkeypatch):
+    from Web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    _ws(tmp_path)
+    client = TestClient(app_mod.app)
+    # Encoded ".." segment escapes WORKSPACES_ROOT — must 404.
+    r = client.get("/w/%2E%2E")
+    assert r.status_code == 404
+
+
+def test_session_id_path_traversal_is_rejected(tmp_path, monkeypatch):
+    from Web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    root = _ws(tmp_path)
+    (root / "results" / "agent_log").mkdir(parents=True)
+    client = TestClient(app_mod.app)
+    r = client.get("/w/ABX/sessions/%2E%2E%2Fsecret")
+    assert r.status_code == 404
