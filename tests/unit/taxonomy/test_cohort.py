@@ -162,3 +162,71 @@ def test_unique_raises_for_unknown_column():
     cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
     with pytest.raises(ValueError, match="not_a_col"):
         cohort.unique("not_a_col")
+
+
+def test_enrich_adds_columns_from_df_to_metadata():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+    extra = pd.DataFrame({
+        "Group": ["treatment", "control"],
+        "Score": [1.0, 2.0],
+    })
+
+    enriched = cohort.enrich(extra, left_on="Group", right_on="Group")
+
+    assert "Score" in enriched.metadata.df.columns
+    assert enriched.metadata.df.set_index("acc").loc["SRR1", "Score"] == 1.0
+    assert enriched.metadata.df.set_index("acc").loc["SRR2", "Score"] == 2.0
+
+
+def test_enrich_broadcasts_subject_level_data_to_samples():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+    extra = pd.DataFrame({
+        "SubjectID": ["treatment", "control"],
+        "Cluster": ["A", "B"],
+    })
+
+    enriched = cohort.enrich(extra, left_on="Group", right_on="SubjectID")
+
+    srr1_cluster = enriched.metadata.df.set_index("acc").loc["SRR1", "Cluster"]
+    srr3_cluster = enriched.metadata.df.set_index("acc").loc["SRR3", "Cluster"]
+    assert srr1_cluster == "A"
+    assert srr3_cluster == "A"
+
+
+def test_enrich_unmatched_samples_get_nan():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+    extra = pd.DataFrame({
+        "Group": ["treatment"],
+        "Score": [99.0],
+    })
+
+    enriched = cohort.enrich(extra, left_on="Group", right_on="Group")
+
+    srr2_score = enriched.metadata.df.set_index("acc").loc["SRR2", "Score"]
+    import math
+    assert math.isnan(srr2_score)
+
+
+def test_enrich_preserves_matrix_unchanged():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+    extra = pd.DataFrame({"Group": ["treatment", "control"], "Score": [1.0, 2.0]})
+
+    enriched = cohort.enrich(extra, left_on="Group", right_on="Group")
+
+    assert enriched.matrix is cohort.matrix
+
+
+def test_enrich_raises_if_left_on_not_in_metadata():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+    extra = pd.DataFrame({"Subject": ["x"], "Score": [1.0]})
+
+    with pytest.raises(ValueError, match="missing_col"):
+        cohort.enrich(extra, left_on="missing_col", right_on="Subject")
+
+
+def test_enrich_raises_if_right_on_not_in_df():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+    extra = pd.DataFrame({"Subject": ["x"], "Score": [1.0]})
+
+    with pytest.raises(ValueError, match="missing_col"):
+        cohort.enrich(extra, left_on="Group", right_on="missing_col")

@@ -46,6 +46,21 @@ class Cohort:
             raise ValueError(f"Column '{column}' not found in metadata")
         return sorted(self.metadata.df[column].dropna().unique().tolist())
 
+    def enrich(self, df: pd.DataFrame, *, left_on: str, right_on: str) -> Cohort:
+        if left_on not in self.metadata.df.columns:
+            raise ValueError(f"Column '{left_on}' not found in cohort metadata")
+        if right_on not in df.columns:
+            raise ValueError(f"Column '{right_on}' not found in provided DataFrame")
+        new_df = self.metadata.df.merge(
+            df.drop_duplicates(subset=[right_on]),
+            left_on=left_on,
+            right_on=right_on,
+            how="left",
+        )
+        if right_on != left_on:
+            new_df = new_df.drop(columns=[right_on])
+        return Cohort(matrix=self.matrix, metadata=Metadata(df=new_df))
+
     @staticmethod
     def _filter_taxa(matrix: AbundanceMatrix, selector: TaxaSelector | None) -> AbundanceMatrix:
         if selector is None:
