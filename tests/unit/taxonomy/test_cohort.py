@@ -230,3 +230,41 @@ def test_enrich_raises_if_right_on_not_in_df():
 
     with pytest.raises(ValueError, match="missing_col"):
         cohort.enrich(extra, left_on="Group", right_on="missing_col")
+
+
+def test_split_by_returns_one_cohort_per_unique_value():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+    parts = cohort.split_by("Group")
+    assert set(parts.keys()) == {"treatment", "control"}
+
+
+def test_split_by_samples_are_correct_per_group():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+    parts = cohort.split_by("Group")
+    assert list(parts["treatment"].metadata.df["acc"]) == ["SRR1", "SRR3"]
+    assert list(parts["control"].metadata.df["acc"]) == ["SRR2"]
+
+
+def test_split_by_matrix_rows_match_metadata_per_group():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+    parts = cohort.split_by("Group")
+    for label, sub in parts.items():
+        assert list(sub.matrix.counts.index) == list(sub.metadata.df["acc"])
+
+
+def test_split_by_nan_rows_are_excluded():
+    md = Metadata(df=pd.DataFrame({
+        "acc": ["SRR1", "SRR2", "SRR3"],
+        "Group": ["treatment", None, "treatment"],
+        "assay_type": ["WGS", "WGS", "WGS"],
+    }))
+    cohort = Cohort(matrix=_matrix(), metadata=md)
+    parts = cohort.split_by("Group")
+    assert set(parts.keys()) == {"treatment"}
+    assert list(parts["treatment"].metadata.df["acc"]) == ["SRR1", "SRR3"]
+
+
+def test_split_by_raises_for_unknown_column():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+    with pytest.raises(ValueError, match="no_such_col"):
+        cohort.split_by("no_such_col")
