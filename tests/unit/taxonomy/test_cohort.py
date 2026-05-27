@@ -268,3 +268,16 @@ def test_split_by_raises_for_unknown_column():
     cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
     with pytest.raises(ValueError, match="no_such_col"):
         cohort.split_by("no_such_col")
+
+
+def test_split_by_preserves_native_key_dtype():
+    md = Metadata(df=pd.DataFrame({
+        "acc": ["SRR1", "SRR2", "SRR3"],
+        "cluster_id": [1, 2, 1],
+        "assay_type": ["WGS", "WGS", "WGS"],
+    }))
+    cohort = Cohort(matrix=_matrix(), metadata=md)
+
+    parts = cohort.split_by("cluster_id")
+
+    assert set(parts.keys()) == {1, 2}

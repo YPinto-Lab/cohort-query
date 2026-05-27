@@ -61,22 +61,18 @@ class Cohort:
             new_df = new_df.drop(columns=[right_on])
         return Cohort(matrix=self.matrix, metadata=Metadata(df=new_df))
 
-    def split_by(self, column: str) -> dict[str, "Cohort"]:
+    def split_by(self, column: str) -> dict:
         if column not in self.metadata.df.columns:
             raise ValueError(f"Column '{column}' not found in metadata")
-        result = {}
-        for label, group_df in self.metadata.df.dropna(subset=[column]).groupby(column):
-            group_md = Metadata(df=group_df.reset_index(drop=True))
-            sample_ids = list(group_df["acc"])
-            present = [acc for acc in sample_ids if acc in self.matrix.counts.index]
-            new_counts = self.matrix.counts.reindex(present)
-            new_matrix = AbundanceMatrix(
-                counts=new_counts,
-                lookup=self.matrix._lookup,
-                lineage_df=self.matrix._lineage_df,
-            )
-            result[str(label)] = Cohort(matrix=new_matrix, metadata=group_md)
-        return result
+        return {
+            value: self._cohort_for_group(group_df)
+            for value, group_df in self.metadata.df.dropna(subset=[column]).groupby(column)
+        }
+
+    def _cohort_for_group(self, group_df: pd.DataFrame) -> "Cohort":
+        sub_metadata = Metadata(df=group_df.reset_index(drop=True))
+        sub_matrix = self.matrix.for_samples(group_df["acc"])
+        return Cohort(matrix=sub_matrix, metadata=sub_metadata)
 
     @staticmethod
     def _filter_taxa(matrix: AbundanceMatrix, selector: TaxaSelector | None) -> AbundanceMatrix:
