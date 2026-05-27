@@ -31,11 +31,16 @@ def run(
     yield Event.user(user_message)
 
     for _ in range(MAX_STEPS):
-        response = llm.complete(
-            messages=session.messages,
-            tools=registry.schemas(),
-            system=SYSTEM_PROMPT.format(workspace=session.workspace.name),
-        )
+        try:
+            response = llm.complete(
+                messages=session.messages,
+                tools=registry.schemas(),
+                system=SYSTEM_PROMPT.format(workspace=session.workspace.name),
+            )
+        except Exception as e:
+            session.transcript.error(f"LLM call failed: {e!r}")
+            yield Event.error(f"LLM call failed: {e}")
+            return
         session.messages.append({"role": "assistant", "content": _assistant_content(response)})
         if response.text:
             session.transcript.assistant(response.text)

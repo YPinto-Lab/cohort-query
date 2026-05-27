@@ -48,3 +48,15 @@ def test_loop_step_limit(tmp_path, monkeypatch):
     ])
     events = list(run(sess, fake, default_registry, user_message="loop"))
     assert events[-1].type == "error"
+
+
+def test_loop_emits_error_event_when_llm_raises(tmp_path):
+    sess = _sess(tmp_path)
+
+    class BoomLLM:
+        def complete(self, messages, tools, system):
+            raise RuntimeError("api down")
+
+    events = list(run(sess, BoomLLM(), default_registry, user_message="hi"))
+    assert events[-1].type == "error"
+    assert "api down" in events[-1].payload["message"]

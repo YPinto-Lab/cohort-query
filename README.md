@@ -53,3 +53,11 @@ subset.metadata_df   # aligned metadata, lazy
 ```bash
 python -m pytest Tests -q
 ```
+
+## Agent
+
+Natural-language access to the Ask-SLM API. See:
+- Design: `Docs/superpowers/specs/2026-05-26-agent-orchestrator-design.md`
+- Run locally: `ANTHROPIC_API_KEY=... uvicorn Web.app:app --reload`
+- Mine transcripts: `python -m Agents.cli review`
+- Inspect one session: `python -m Agents.cli show Workspaces/<ws>/results/agent_log/<session>.jsonl`

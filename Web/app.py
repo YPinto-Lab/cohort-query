@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 from typing import Iterator
 
-from fastapi import FastAPI, Form, Request, Response
+from fastapi import FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -17,6 +17,22 @@ from Agents.events import Event
 from Web.sessions_index import list_sessions, load_transcript
 
 WORKSPACES_ROOT = Path(os.environ.get("ASKSLM_WORKSPACES", "./Workspaces"))
+
+
+def _safe_workspace_dir(workspace: str) -> Path:
+    root = WORKSPACES_ROOT.resolve()
+    candidate = (WORKSPACES_ROOT / workspace).resolve()
+    if not candidate.is_relative_to(root) or candidate == root:
+        raise HTTPException(status_code=404, detail="workspace not found")
+    return candidate
+
+
+def _safe_session_path(agent_log_dir: Path, session_id: str) -> Path:
+    log_root = agent_log_dir.resolve()
+    candidate = (agent_log_dir / f"{session_id}.jsonl").resolve()
+    if not candidate.is_relative_to(log_root) or not candidate.is_file():
+        raise HTTPException(status_code=404, detail="session not found")
+    return candidate
 
 BASE = Path(__file__).parent
 app = FastAPI()
@@ -49,17 +65,19 @@ def index(request: Request):
 
 @app.get("/w/{workspace}", response_class=HTMLResponse)
 def chat_page(workspace: str, request: Request, response: Response):
+    _safe_workspace_dir(workspace)
     _cookie_session(request, response)
     return templates.TemplateResponse(request, "chat.html", {"workspace": workspace})
 
 
 @app.post("/w/{workspace}/messages")
 def messages(workspace: str, request: Request, response: Response, message: str = Form(...)):
+    ws_dir = _safe_workspace_dir(workspace)
     sid = _cookie_session(request, response)
     key = (workspace, sid)
     agent = _AGENTS.get(key)
     if agent is None:
-        ws = Workspace.open(WORKSPACES_ROOT / workspace)
+        ws = Workspace.open(ws_dir)
         agent = Agent(workspace=ws, llm=build_llm())
         _AGENTS[key] = agent
 
@@ -75,14 +93,14 @@ def messages(workspace: str, request: Request, response: Response, message: str 
 
 @app.get("/w/{workspace}/sessions", response_class=HTMLResponse)
 def sessions(workspace: str, request: Request):
-    ws = Workspace.open(WORKSPACES_ROOT / workspace)
+    ws = Workspace.open(_safe_workspace_dir(workspace))
     entries = list_sessions(ws.agent_log_dir)
     return templates.TemplateResponse(request, "sessions.html", {"workspace": workspace, "entries": entries})
 
 
 @app.get("/w/{workspace}/sessions/{session_id}", response_class=HTMLResponse)
 def replay(workspace: str, session_id: str, request: Request):
-    ws = Workspace.open(WORKSPACES_ROOT / workspace)
-    path = ws.agent_log_dir / f"{session_id}.jsonl"
+    ws = Workspace.open(_safe_workspace_dir(workspace))
+    path = _safe_session_path(ws.agent_log_dir, session_id)
     records = load_transcript(path)
     return templates.TemplateResponse(request, "replay.html", {"workspace": workspace, "records": records})
