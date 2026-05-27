@@ -41,6 +41,11 @@ class Cohort:
     def n_taxa(self) -> int:
         return self.matrix.counts.shape[1]
 
+    def unique(self, column: str) -> list[str]:
+        if column not in self.metadata.df.columns:
+            raise ValueError(f"Column '{column}' not found in metadata")
+        return sorted(self.metadata.df[column].dropna().unique().tolist())
+
     @staticmethod
     def _filter_taxa(matrix: AbundanceMatrix, selector: TaxaSelector | None) -> AbundanceMatrix:
         if selector is None:
