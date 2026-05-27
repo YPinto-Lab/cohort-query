@@ -69,15 +69,10 @@ class Cohort:
 
     def split_by(self, column: str) -> dict:
         self._require_column(column)
-        return {
-            value: self._cohort_for_group(group_df)
-            for value, group_df in self.metadata.df.dropna(subset=[column]).groupby(column)
-        }
+        return {value: self._only_where(column, value) for value in self.unique(column)}
 
-    def _cohort_for_group(self, group_df: pd.DataFrame) -> "Cohort":
-        sub_metadata = Metadata(df=group_df.reset_index(drop=True))
-        sub_matrix = self.matrix.for_samples(group_df["acc"])
-        return Cohort(matrix=sub_matrix, metadata=sub_metadata)
+    def _only_where(self, column: str, value) -> "Cohort":
+        return self.filter(FilterCriteria(sample_filters=(SampleSelector(column=column, values=(value,)),)))
 
     @staticmethod
     def _filter_taxa(matrix: AbundanceMatrix, selector: TaxaSelector | None) -> AbundanceMatrix:
