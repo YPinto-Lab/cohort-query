@@ -23,7 +23,7 @@ class Cohort:
         new_matrix = self._filter_taxa(self.matrix, criteria.taxa)
         sample_selectors = [s for s in (criteria.samples, *criteria.sample_filters) if s is not None]
         new_metadata = self._filter_metadata(self.metadata, sample_selectors)
-        new_matrix = self._reindex_matrix_rows(new_matrix, list(new_metadata.df["acc"]))
+        new_matrix = new_matrix.for_samples(new_metadata.df["acc"])
         return Cohort(matrix=new_matrix, metadata=new_metadata)
 
     def write(self, out_dir: Path, fmt: str = "counts") -> list[Path]:
@@ -96,8 +96,3 @@ class Cohort:
             result = result.filter(selector)
         return result
 
-    @staticmethod
-    def _reindex_matrix_rows(matrix: AbundanceMatrix, sample_ids: list[str]) -> AbundanceMatrix:
-        present = [acc for acc in sample_ids if acc in matrix.counts.index]
-        new_counts = matrix.counts.reindex(present)
-        return AbundanceMatrix(counts=new_counts, lookup=matrix._lookup, lineage_df=matrix._lineage_df)
