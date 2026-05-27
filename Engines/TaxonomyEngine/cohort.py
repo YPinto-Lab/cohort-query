@@ -48,7 +48,8 @@ class Cohort:
     def enrich(self, extras: pd.DataFrame, *, left_on: str, right_on: str) -> Cohort:
         self._require_column(left_on)
         self._require_extras_column(extras, right_on)
-        return Cohort(matrix=self.matrix, metadata=self._merged_metadata(extras, left_on, right_on))
+        merged_metadata = self._merged_metadata(extras, left_on, right_on)
+        return Cohort(matrix=self.matrix, metadata=merged_metadata)
 
     def _require_column(self, column: str) -> None:
         if column in self.metadata.df.columns:
@@ -67,12 +68,15 @@ class Cohort:
             return Metadata(df=joined)
         return Metadata(df=joined.drop(columns=[right_on]))
 
-    def split_by(self, column: str) -> dict:
+    def split_by(self, column: str) -> dict[str, Cohort]:
         self._require_column(column)
-        return {value: self._only_where(column, value) for value in self.unique(column)}
+        column_unique_values = self.unique(column)
 
-    def _only_where(self, column: str, value) -> "Cohort":
-        return self.filter(FilterCriteria(sample_filters=(SampleSelector(column=column, values=(value,)),)))
+        def by(value: str):
+            return FilterCriteria(sample_filters=(SampleSelector(column, (value,)),))
+
+        result = {value: self.filter(by(value)) for value in column_unique_values}
+        return result
 
     @staticmethod
     def _filter_taxa(matrix: AbundanceMatrix, selector: TaxaSelector | None) -> AbundanceMatrix:
