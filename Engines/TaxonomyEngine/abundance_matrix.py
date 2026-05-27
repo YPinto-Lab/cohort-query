@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from functools import cached_property
 from pathlib import Path
 
@@ -26,6 +27,11 @@ class AbundanceMatrix:
         lookup["tax_id"] = pd.to_numeric(lookup["tax_id"], errors="coerce")
         lineage["tax_id"] = pd.to_numeric(lineage["tax_id"], errors="coerce")
         return lookup.merge(lineage, on="tax_id", how="left")
+
+    def for_samples(self, sample_ids: Iterable[str]) -> "AbundanceMatrix":
+        present = [s for s in sample_ids if s in self.counts.index]
+        new_counts = self.counts.reindex(present)
+        return AbundanceMatrix(counts=new_counts, lookup=self._lookup, lineage_df=self._lineage_df)
 
     def write(self, path: Path, fmt: str = "counts") -> Path:
         from Accessors.matrix_writers.matrix_writer_factory import MatrixWriterFactory

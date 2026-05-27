@@ -48,3 +48,27 @@ def test_relative_all_zero_row_is_zero_and_float():
 
     assert relative.loc["SRR_empty"].sum() == 0.0
     assert all(dtype == float for dtype in relative.dtypes)
+
+
+def test_for_samples_keeps_only_requested_rows():
+    matrix = _matrix()
+
+    subset = matrix.for_samples(["SRR1"])
+
+    assert list(subset.counts.index) == ["SRR1"]
+
+
+def test_for_samples_ignores_unknown_ids():
+    matrix = _matrix()
+
+    subset = matrix.for_samples(["SRR1", "SRR_NOT_THERE"])
+
+    assert list(subset.counts.index) == ["SRR1"]
+
+
+def test_for_samples_preserves_taxa_lookup():
+    matrix = _matrix()
+
+    subset = matrix.for_samples(["SRR1"])
+
+    assert list(subset.taxa.columns) == list(matrix.taxa.columns)
