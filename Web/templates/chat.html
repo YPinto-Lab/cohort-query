@@ -1,0 +1,8 @@
+<!doctype html><html><body>
+<h1>{{workspace}}</h1>
+<div id="log"></div>
+<form hx-post="/w/{{workspace}}/messages" hx-target="#log" hx-swap="beforeend">
+  <input name="message" placeholder="Ask..."><button>Send</button>
+</form>
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</body></html>

@@ -1,0 +1,88 @@
+from __future__ import annotations
+import json
+import os
+import uuid
+from pathlib import Path
+from typing import Iterator
+
+from fastapi import FastAPI, Form, Request, Response
+from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+from Agents.agent import Agent
+from Agents.workspace import Workspace
+from Agents.llm_client import LLMClient, AnthropicClient
+from Agents.events import Event
+from Web.sessions_index import list_sessions, load_transcript
+
+WORKSPACES_ROOT = Path(os.environ.get("ASKSLM_WORKSPACES", "./Workspaces"))
+
+BASE = Path(__file__).parent
+app = FastAPI()
+app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
+templates = Jinja2Templates(directory=BASE / "templates")
+
+_AGENTS: dict[tuple[str, str], Agent] = {}
+
+
+def build_llm() -> LLMClient:
+    return AnthropicClient()
+
+
+def _cookie_session(request: Request, response: Response) -> str:
+    sid = request.cookies.get("askslm_session")
+    if not sid:
+        sid = uuid.uuid4().hex
+        response.set_cookie("askslm_session", sid, httponly=True, samesite="lax")
+    return sid
+
+
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request):
+    if not WORKSPACES_ROOT.is_dir():
+        workspaces = []
+    else:
+        workspaces = sorted([p.name for p in WORKSPACES_ROOT.iterdir() if p.is_dir()])
+    return templates.TemplateResponse(request, "index.html", {"workspaces": workspaces})
+
+
+@app.get("/w/{workspace}", response_class=HTMLResponse)
+def chat_page(workspace: str, request: Request, response: Response):
+    _cookie_session(request, response)
+    return templates.TemplateResponse(request, "chat.html", {"workspace": workspace})
+
+
+@app.post("/w/{workspace}/messages")
+def messages(workspace: str, request: Request, response: Response, message: str = Form(...)):
+    sid = _cookie_session(request, response)
+    key = (workspace, sid)
+    agent = _AGENTS.get(key)
+    if agent is None:
+        ws = Workspace.open(WORKSPACES_ROOT / workspace)
+        agent = Agent(workspace=ws, llm=build_llm())
+        _AGENTS[key] = agent
+
+    def event_stream() -> Iterator[bytes]:
+        for ev in agent.chat(message):
+            data = json.dumps({"type": ev.type, **ev.payload})
+            yield f"event: {ev.type}\ndata: {data}\n\n".encode()
+            html = templates.get_template("_event.html").render(event=ev)
+            yield f"event: html\ndata: {html}\n\n".encode()
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/w/{workspace}/sessions", response_class=HTMLResponse)
+def sessions(workspace: str, request: Request):
+    ws = Workspace.open(WORKSPACES_ROOT / workspace)
+    entries = list_sessions(ws.agent_log_dir)
+    return templates.TemplateResponse(request, "sessions.html", {"workspace": workspace, "entries": entries})
+
+
+@app.get("/w/{workspace}/sessions/{session_id}", response_class=HTMLResponse)
+def replay(workspace: str, session_id: str, request: Request):
+    ws = Workspace.open(WORKSPACES_ROOT / workspace)
+    path = ws.agent_log_dir / f"{session_id}.jsonl"
+    records = load_transcript(path)
+    return templates.TemplateResponse(request, "replay.html", {"workspace": workspace, "records": records})

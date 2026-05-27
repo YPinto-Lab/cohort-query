@@ -1,0 +1,11 @@
+<!doctype html><html><body>
+<h1>{{workspace}} — replay</h1>
+{% for r in records %}
+  {% if r.type == "user" %}<div><b>You:</b> {{r.content}}</div>
+  {% elif r.type == "assistant" %}<div><b>Assistant:</b> {{r.content}}</div>
+  {% elif r.type == "tool_call" %}<div><code>{{r.tool}}({{r.args}})</code></div>
+  {% elif r.type == "tool_result" %}<pre>{{r.result_summary or r.error}}</pre>
+  {% elif r.type == "error" %}<div style="color:red">{{r.message}}</div>
+  {% endif %}
+{% endfor %}
+</body></html>

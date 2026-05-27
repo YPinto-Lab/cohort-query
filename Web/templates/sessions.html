@@ -1,0 +1,4 @@
+<!doctype html><html><body>
+<h1>{{workspace}} — past sessions</h1>
+<ul>{% for e in entries %}<li><a href="/w/{{workspace}}/sessions/{{e.id}}">{{e.id}} — {{e.title}}</a></li>{% endfor %}</ul>
+</body></html>
