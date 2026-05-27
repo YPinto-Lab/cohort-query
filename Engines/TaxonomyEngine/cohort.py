@@ -42,28 +42,33 @@ class Cohort:
         return self.matrix.counts.shape[1]
 
     def unique(self, column: str) -> list[str]:
-        if column not in self.metadata.df.columns:
-            raise ValueError(f"Column '{column}' not found in metadata")
+        self._require_column(column)
         return sorted(self.metadata.df[column].dropna().unique().tolist())
 
-    def enrich(self, df: pd.DataFrame, *, left_on: str, right_on: str) -> Cohort:
-        if left_on not in self.metadata.df.columns:
-            raise ValueError(f"Column '{left_on}' not found in cohort metadata")
-        if right_on not in df.columns:
-            raise ValueError(f"Column '{right_on}' not found in provided DataFrame")
-        new_df = self.metadata.df.merge(
-            df.drop_duplicates(subset=[right_on]),
-            left_on=left_on,
-            right_on=right_on,
-            how="left",
-        )
-        if right_on != left_on:
-            new_df = new_df.drop(columns=[right_on])
-        return Cohort(matrix=self.matrix, metadata=Metadata(df=new_df))
+    def enrich(self, extras: pd.DataFrame, *, left_on: str, right_on: str) -> Cohort:
+        self._require_column(left_on)
+        self._require_extras_column(extras, right_on)
+        return Cohort(matrix=self.matrix, metadata=self._merged_metadata(extras, left_on, right_on))
+
+    def _require_column(self, column: str) -> None:
+        if column in self.metadata.df.columns:
+            return
+        raise ValueError(f"Column '{column}' not found in cohort metadata")
+
+    def _require_extras_column(self, extras: pd.DataFrame, column: str) -> None:
+        if column in extras.columns:
+            return
+        raise ValueError(f"Column '{column}' not found in extras")
+
+    def _merged_metadata(self, extras: pd.DataFrame, left_on: str, right_on: str) -> Metadata:
+        deduped = extras.drop_duplicates(subset=[right_on])
+        joined = self.metadata.df.merge(deduped, left_on=left_on, right_on=right_on, how="left")
+        if right_on == left_on:
+            return Metadata(df=joined)
+        return Metadata(df=joined.drop(columns=[right_on]))
 
     def split_by(self, column: str) -> dict:
-        if column not in self.metadata.df.columns:
-            raise ValueError(f"Column '{column}' not found in metadata")
+        self._require_column(column)
         return {
             value: self._cohort_for_group(group_df)
             for value, group_df in self.metadata.df.dropna(subset=[column]).groupby(column)
