@@ -1,3 +1,4 @@
+import pytest
 import pandas as pd
 
 from Engines.MetadataEngine.metadata import Metadata
@@ -149,3 +150,15 @@ def test_n_samples_returns_row_count():
 def test_n_taxa_returns_column_count():
     cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
     assert cohort.n_taxa == 3
+
+
+def test_unique_returns_sorted_list_of_column_values():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+    # cohort has SRR1 (WGS/treatment), SRR2 (WGS/control), SRR3 (AMPLICON/treatment)
+    assert cohort.unique("assay_type") == ["AMPLICON", "WGS"]
+
+
+def test_unique_raises_for_unknown_column():
+    cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
+    with pytest.raises(ValueError, match="not_a_col"):
+        cohort.unique("not_a_col")
