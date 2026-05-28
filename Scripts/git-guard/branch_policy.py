@@ -54,3 +54,15 @@ _DELETE_PATTERNS = [
 def is_branch_delete(command: str) -> bool:
     """True if the command tries to delete a branch (always forbidden for agents)."""
     return any(p.search(command) for p in _DELETE_PATTERNS)
+
+
+# Commands that switch to a protected branch — forbidden regardless of current branch.
+_CHECKOUT_PROTECTED_PATTERNS = [
+    re.compile(r"(^|[\s;&|()`])git\s+checkout\s+main(\s|$)"),
+    re.compile(r"(^|[\s;&|()`])git\s+switch\s+main(\s|$)"),
+]
+
+
+def is_checkout_protected(command: str) -> bool:
+    """True if the command attempts to switch to a protected branch (e.g. main)."""
+    return any(p.search(command) for p in _CHECKOUT_PROTECTED_PATTERNS)
