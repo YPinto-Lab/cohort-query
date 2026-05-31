@@ -78,6 +78,15 @@ def test_build_from_matrix_at_same_rank_is_idempotent():
     pd.testing.assert_frame_equal(genus_twice.matrix, genus_once.matrix)
 
 
+def test_build_from_matrix_collapses_when_tax_id_is_string_typed():
+    long_df = _long().astype({"tax_id": str})
+
+    full = AbundanceMatrixBuilder().build(long_df)
+    genus = AbundanceMatrixBuilder().build(full, "genus")
+
+    assert set(genus.matrix.columns) == {"genus||Escherichia||561"}
+
+
 def test_build_rejects_unsupported_source_type():
     with pytest.raises(TypeError):
         AbundanceMatrixBuilder().build(42)

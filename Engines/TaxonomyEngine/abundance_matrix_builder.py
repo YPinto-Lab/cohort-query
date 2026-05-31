@@ -59,14 +59,15 @@ class AbundanceMatrixBuilder:
         return rows[["taxon_key", "tax_id", "rank", "name"]].drop_duplicates(subset=["taxon_key"]).reset_index(drop=True)
 
     def _column_to_rank_ancestor(self, source: AbundanceMatrix, rank: str) -> dict[str, str | None]:
-        lookup = source._taxon_key_lookup.set_index("taxon_key")
-        lineage = source._tax_id_lineage_lookup.set_index("tax_id")
-        ancestors: dict[str, str | None] = {}
-        for taxon_key in source.matrix.columns:
-            tax_id = lookup.loc[taxon_key, "tax_id"]
-            ancestor_name = lineage.loc[tax_id, rank] if tax_id in lineage.index else None
-            ancestors[taxon_key] = ancestor_name if isinstance(ancestor_name, str) else None
-        return ancestors
+        lookup = self._numeric_tax_id(source._taxon_key_lookup[["taxon_key", "tax_id"]])
+        lineage = self._numeric_tax_id(source._tax_id_lineage_lookup[["tax_id", rank]])
+        ancestor = lookup.merge(lineage, on="tax_id", how="left").set_index("taxon_key")[rank]
+        return {key: value if isinstance(value, str) else None for key, value in ancestor.items()}
+
+    def _numeric_tax_id(self, frame: pd.DataFrame) -> pd.DataFrame:
+        frame = frame.copy()
+        frame["tax_id"] = pd.to_numeric(frame["tax_id"], errors="coerce")
+        return frame
 
     def _kept_columns(self, matrix: pd.DataFrame, ancestors: dict[str, str | None]) -> list[str]:
         return [c for c in matrix.columns if ancestors.get(c) is not None]
