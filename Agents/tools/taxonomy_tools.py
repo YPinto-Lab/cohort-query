@@ -43,7 +43,8 @@ def build_abundance_matrix(
     """Build a single-rank abundance matrix from a ResolvedTaxonomy handle.
     Returns a handle to an AbundanceMatrix."""
     resolved = session.variables.get(taxonomy)
-    matrix = tx_api.build_abundance_matrix(resolved.df, rank=rank)
+    builder = tx_api.AbundanceMatrixBuilder()
+    matrix = builder.build(builder.build(resolved.df), rank)
     h = session.variables.put(matrix, hint="matrix")
     return session.variables.summary(h)
 

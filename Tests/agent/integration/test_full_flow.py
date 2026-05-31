@@ -46,7 +46,7 @@ def test_run_python_produces_handle_for_skbio_distance(tmp_path):
 
     code = (
         "from skbio.diversity import beta_diversity\n"
-        "df = matrix_1.counts\n"
+        "df = matrix_1.matrix\n"
         "bray = beta_diversity('braycurtis', df.values, ids=list(df.index))\n"
         "bray_df = pandas.DataFrame(bray.data, index=bray.ids, columns=bray.ids)\n"
     )

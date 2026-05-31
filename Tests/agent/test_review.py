@@ -40,20 +40,20 @@ def test_clusters_recurring_snippets(tmp_path):
     log.mkdir(parents=True)
     _write_jsonl(log / "s1.jsonl", [
         {"type": "tool_call", "tool": "run_python", "tool_use_id": "u1",
-         "code": "x = matrix_1.relative.mean()", "imports_used": []},
+         "code": "x = matrix_1.relative_abundance.mean()", "imports_used": []},
     ])
     _write_jsonl(log / "s2.jsonl", [
         {"type": "tool_call", "tool": "run_python", "tool_use_id": "u1",
-         "code": "y = matrix_2.relative.mean()", "imports_used": []},
+         "code": "y = matrix_2.relative_abundance.mean()", "imports_used": []},
     ])
     _write_jsonl(log / "s3.jsonl", [
         {"type": "tool_call", "tool": "run_python", "tool_use_id": "u1",
-         "code": "z = matrix_1.relative.mean()", "imports_used": []},
+         "code": "z = matrix_1.relative_abundance.mean()", "imports_used": []},
     ])
     result = analyze(tmp_path)
     clusters = [c for c in result.snippet_clusters if c.count >= 3]
     assert len(clusters) == 1
-    assert ".relative.mean()" in clusters[0].representative
+    assert ".relative_abundance.mean()" in clusters[0].representative
 
 
 def test_format_report_includes_both_sections(tmp_path):
