@@ -31,10 +31,6 @@ def resolve(taxonomy_df: pd.DataFrame, merged_dmp: str | Path = DEFAULT_MERGED_D
     )
 
 
-def build_abundance_matrix(taxonomy_df: pd.DataFrame, rank: str = "genus") -> AbundanceMatrix:
-    return AbundanceMatrixBuilder().build(taxonomy_df, rank)
-
-
 def build_cohort(matrix: AbundanceMatrix, metadata: Metadata) -> Cohort:
     return Cohort(matrix=matrix, metadata=metadata)
 

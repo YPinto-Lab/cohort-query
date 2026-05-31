@@ -16,7 +16,8 @@ def _matrix():
         "ileft": [1, 3, 1],
         "iright": [2, 4, 2],
     })
-    return taxonomy.build_abundance_matrix(long_df, rank="superkingdom")
+    builder = taxonomy.AbundanceMatrixBuilder()
+    return builder.build(builder.build(long_df), "superkingdom")
 
 
 def test_build_cohort_returns_cohort_pairing_matrix_and_metadata():
@@ -26,7 +27,7 @@ def test_build_cohort_returns_cohort_pairing_matrix_and_metadata():
     cohort = taxonomy.build_cohort(matrix, metadata)
 
     assert isinstance(cohort, Cohort)
-    assert list(cohort.metadata.df["acc"]) == list(cohort.matrix.counts.index)
+    assert list(cohort.metadata.df["acc"]) == list(cohort.matrix.matrix.index)
 
 
 def test_build_cohort_then_filter_narrows_by_taxa():
@@ -37,4 +38,4 @@ def test_build_cohort_then_filter_narrows_by_taxa():
         FilterCriteria(taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",)))
     )
 
-    assert list(filtered.matrix.counts.columns) == ["superkingdom||Bacteria||2"]
+    assert list(filtered.matrix.matrix.columns) == ["superkingdom||Bacteria||2"]
