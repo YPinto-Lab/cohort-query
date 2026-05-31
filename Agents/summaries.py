@@ -20,17 +20,17 @@ def _metadata(md: Metadata) -> dict:
 def _abundance_matrix(m: AbundanceMatrix) -> dict:
     return {
         "type": "AbundanceMatrix",
-        "shape": list(m.counts.shape),
-        "samples_preview": list(m.counts.index[:5]),
-        "taxa_preview": list(m.counts.columns[:5]),
+        "shape": list(m.matrix.shape),
+        "samples_preview": list(m.matrix.index[:5]),
+        "taxa_preview": list(m.matrix.columns[:5]),
     }
 
 
 def _cohort(c: Cohort) -> dict:
     return {
         "type": "Cohort",
-        "n_samples": int(len(c.matrix.counts)),
-        "n_taxa": int(c.matrix.counts.shape[1]),
+        "n_samples": int(len(c.matrix.matrix)),
+        "n_taxa": int(c.matrix.matrix.shape[1]),
         "metadata_columns": list(c.metadata.df.columns)[:30],
     }
 

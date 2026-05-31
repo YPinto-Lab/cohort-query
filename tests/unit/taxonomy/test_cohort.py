@@ -2,22 +2,35 @@ import pytest
 import pandas as pd
 
 from Engines.MetadataEngine.metadata import Metadata
-from Engines.TaxonomyEngine.abundance_matrix_builder import AbundanceMatrixBuilder
+from Engines.TaxonomyEngine.abundance_matrix import AbundanceMatrix
 from Engines.TaxonomyEngine.cohort import Cohort
 
 
 def _matrix():
-    long_df = pd.DataFrame({
-        "acc": ["SRR1", "SRR1", "SRR2", "SRR3"],
-        "tax_id": [2, 10239, 2, 2],
-        "rank": ["superkingdom", "superkingdom", "superkingdom", "superkingdom"],
-        "name": ["Bacteria", "Viruses", "Bacteria", "Bacteria"],
-        "total_count": [100, 40, 80, 60],
-        "self_count": [100, 40, 80, 60],
-        "ileft": [1, 3, 1, 1],
-        "iright": [2, 4, 2, 2],
+    matrix = pd.DataFrame(
+        {
+            "superkingdom||Bacteria||2": [100, 80, 60],
+            "superkingdom||Viruses||10239": [40, 0, 0],
+        },
+        index=pd.Index(["SRR1", "SRR2", "SRR3"], name="acc"),
+    )
+    total_reads = pd.Series([140, 80, 60], index=pd.Index(["SRR1", "SRR2", "SRR3"], name="acc"))
+    taxon_key_lookup = pd.DataFrame({
+        "taxon_key": ["superkingdom||Bacteria||2", "superkingdom||Viruses||10239"],
+        "tax_id": [2, 10239],
+        "rank": ["superkingdom", "superkingdom"],
+        "name": ["Bacteria", "Viruses"],
     })
-    return AbundanceMatrixBuilder().build(long_df, rank="superkingdom")
+    tax_id_lineage_lookup = pd.DataFrame({
+        "tax_id": [2, 10239],
+        "superkingdom": ["Bacteria", "Viruses"],
+    })
+    return AbundanceMatrix(
+        matrix=matrix,
+        total_reads=total_reads,
+        taxon_key_lookup=taxon_key_lookup,
+        tax_id_lineage_lookup=tax_id_lineage_lookup,
+    )
 
 
 def _metadata_full():
@@ -32,7 +45,7 @@ def test_construction_aligns_metadata_to_matrix_sample_index():
     cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
 
     # SRR4 is in metadata but not the matrix -> dropped; order matches matrix
-    assert list(cohort.metadata.df["acc"]) == list(cohort.matrix.counts.index)
+    assert list(cohort.metadata.df["acc"]) == list(cohort.matrix.matrix.index)
 
 
 def test_construction_preserves_matrix_sample_order_in_metadata():
@@ -44,7 +57,7 @@ def test_construction_preserves_matrix_sample_order_in_metadata():
 
     cohort = Cohort(matrix=matrix, metadata=shuffled_md)
 
-    assert list(cohort.metadata.df["acc"]) == list(matrix.counts.index)
+    assert list(cohort.metadata.df["acc"]) == list(matrix.matrix.index)
 
 
 from Common.contracts.selectors import FilterCriteria, SampleSelector, TaxaSelector
@@ -55,7 +68,7 @@ def test_filter_by_taxa_keeps_only_matching_clade_columns():
 
     filtered = cohort.filter(FilterCriteria(taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",))))
 
-    assert list(filtered.matrix.counts.columns) == ["superkingdom||Bacteria||2"]
+    assert list(filtered.matrix.matrix.columns) == ["superkingdom||Bacteria||2"]
 
 
 def test_filter_by_samples_keeps_only_matching_rows_in_both_halves():
@@ -63,7 +76,7 @@ def test_filter_by_samples_keeps_only_matching_rows_in_both_halves():
 
     filtered = cohort.filter(FilterCriteria(samples=SampleSelector(column="Group", values=("treatment",))))
 
-    assert list(filtered.matrix.counts.index) == ["SRR1", "SRR3"]
+    assert list(filtered.matrix.matrix.index) == ["SRR1", "SRR3"]
     assert list(filtered.metadata.df["acc"]) == ["SRR1", "SRR3"]
 
 
@@ -75,8 +88,8 @@ def test_filter_combined_taxa_and_samples():
         samples=SampleSelector(column="Group", values=("treatment",)),
     ))
 
-    assert list(filtered.matrix.counts.columns) == ["superkingdom||Bacteria||2"]
-    assert list(filtered.matrix.counts.index) == ["SRR1", "SRR3"]
+    assert list(filtered.matrix.matrix.columns) == ["superkingdom||Bacteria||2"]
+    assert list(filtered.matrix.matrix.index) == ["SRR1", "SRR3"]
     assert list(filtered.metadata.df["acc"]) == ["SRR1", "SRR3"]
 
 
@@ -88,7 +101,7 @@ def test_filter_sample_filters_applies_and_logic_across_columns():
         SampleSelector(column="assay_type", values=("WGS",)),
     )))
 
-    assert list(filtered.matrix.counts.index) == ["SRR1"]
+    assert list(filtered.matrix.matrix.index) == ["SRR1"]
     assert list(filtered.metadata.df["acc"]) == ["SRR1"]
 
 
@@ -100,7 +113,7 @@ def test_filter_samples_and_sample_filters_combine():
         sample_filters=(SampleSelector(column="assay_type", values=("WGS",)),),
     ))
 
-    assert list(filtered.matrix.counts.index) == ["SRR1"]
+    assert list(filtered.matrix.matrix.index) == ["SRR1"]
 
 
 def test_filter_with_empty_criteria_is_identity_on_rows_and_cols():
@@ -108,8 +121,8 @@ def test_filter_with_empty_criteria_is_identity_on_rows_and_cols():
 
     filtered = cohort.filter(FilterCriteria())
 
-    assert list(filtered.matrix.counts.index) == list(cohort.matrix.counts.index)
-    assert list(filtered.matrix.counts.columns) == list(cohort.matrix.counts.columns)
+    assert list(filtered.matrix.matrix.index) == list(cohort.matrix.matrix.index)
+    assert list(filtered.matrix.matrix.columns) == list(cohort.matrix.matrix.columns)
 
 
 def test_filter_preserves_taxa_lookup_through_matrix():
@@ -117,7 +130,7 @@ def test_filter_preserves_taxa_lookup_through_matrix():
 
     filtered = cohort.filter(FilterCriteria(taxa=TaxaSelector(rank="superkingdom", names=("Bacteria",))))
 
-    assert "superkingdom||Bacteria||2" in set(filtered.matrix.taxa["taxon_key"])
+    assert "superkingdom||Bacteria||2" in set(filtered.matrix.taxa_lineage["taxon_key"])
 
 
 def test_write_produces_abundance_matrix_csv_and_metadata_csv(tmp_path):
@@ -149,7 +162,7 @@ def test_n_samples_returns_row_count():
 
 def test_n_taxa_returns_column_count():
     cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
-    assert cohort.n_taxa == 3
+    assert cohort.n_taxa == 2
 
 
 def test_unique_returns_sorted_list_of_column_values():
@@ -249,7 +262,7 @@ def test_split_by_matrix_rows_match_metadata_per_group():
     cohort = Cohort(matrix=_matrix(), metadata=_metadata_full())
     parts = cohort.split_by("Group")
     for label, sub in parts.items():
-        assert list(sub.matrix.counts.index) == list(sub.metadata.df["acc"])
+        assert list(sub.matrix.matrix.index) == list(sub.metadata.df["acc"])
 
 
 def test_split_by_nan_rows_are_excluded():

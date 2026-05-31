@@ -4,12 +4,18 @@ from Accessors.matrix_writers.matrix_writer_factory import MatrixWriterFactory
 
 
 def _matrix():
-    counts = pd.DataFrame({"superkingdom||Bacteria||2": [2, 2]},
+    matrix = pd.DataFrame({"superkingdom||Bacteria||2": [2, 2]},
                           index=pd.Index(["SRR1", "SRR2"], name="acc"))
-    lookup = pd.DataFrame({"taxon_key": ["superkingdom||Bacteria||2"], "tax_id": [2],
-                           "rank": ["superkingdom"], "name": ["Bacteria"]})
-    lineage = pd.DataFrame({"tax_id": [2], "superkingdom": ["Bacteria"]})
-    return AbundanceMatrix(counts=counts, lookup=lookup, lineage_df=lineage)
+    total_reads = pd.Series([2, 2], index=pd.Index(["SRR1", "SRR2"], name="acc"))
+    taxon_key_lookup = pd.DataFrame({"taxon_key": ["superkingdom||Bacteria||2"], "tax_id": [2],
+                                     "rank": ["superkingdom"], "name": ["Bacteria"]})
+    tax_id_lineage_lookup = pd.DataFrame({"tax_id": [2], "superkingdom": ["Bacteria"]})
+    return AbundanceMatrix(
+        matrix=matrix,
+        total_reads=total_reads,
+        taxon_key_lookup=taxon_key_lookup,
+        tax_id_lineage_lookup=tax_id_lineage_lookup,
+    )
 
 
 def test_counts_writer_creates_csv(tmp_path):

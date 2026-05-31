@@ -16,14 +16,14 @@ class Cohort:
     metadata: Metadata
 
     def __post_init__(self) -> None:
-        aligned = self.metadata.reindex_to(self.matrix.counts.index)
+        aligned = self.metadata.reindex_to(self.matrix.matrix.index)
         object.__setattr__(self, "metadata", aligned)
 
     def filter(self, criteria: FilterCriteria) -> Cohort:
         new_matrix = self._filter_taxa(self.matrix, criteria.taxa)
         sample_selectors = [s for s in (criteria.samples, *criteria.sample_filters) if s is not None]
         new_metadata = self._filter_metadata(self.metadata, sample_selectors)
-        new_matrix = new_matrix.for_samples(new_metadata.df["acc"])
+        new_matrix = new_matrix.filter(new_metadata.df["acc"])
         return Cohort(matrix=new_matrix, metadata=new_metadata)
 
     def write(self, out_dir: Path, fmt: str = "counts") -> list[Path]:
@@ -35,11 +35,11 @@ class Cohort:
 
     @property
     def n_samples(self) -> int:
-        return self.matrix.counts.shape[0]
+        return self.matrix.matrix.shape[0]
 
     @property
     def n_taxa(self) -> int:
-        return self.matrix.counts.shape[1]
+        return self.matrix.matrix.shape[1]
 
     def unique(self, column: str) -> list[str]:
         self._require_column(column)
@@ -82,11 +82,16 @@ class Cohort:
     def _filter_taxa(matrix: AbundanceMatrix, selector: TaxaSelector | None) -> AbundanceMatrix:
         if selector is None:
             return matrix
-        taxa = matrix.taxa
+        taxa = matrix.taxa_lineage
         keys = set(taxa[taxa[selector.rank].isin(selector.names)]["taxon_key"])
-        kept_columns = [c for c in matrix.counts.columns if c in keys]
-        new_counts = matrix.counts[kept_columns]
-        return AbundanceMatrix(counts=new_counts, lookup=matrix._lookup, lineage_df=matrix._lineage_df)
+        kept_columns = [c for c in matrix.matrix.columns if c in keys]
+        new_matrix = matrix.matrix[kept_columns]
+        return AbundanceMatrix(
+            matrix=new_matrix,
+            total_reads=matrix.total_reads,
+            taxon_key_lookup=matrix._taxon_key_lookup,
+            tax_id_lineage_lookup=matrix._tax_id_lineage_lookup,
+        )
 
     @staticmethod
     def _filter_metadata(metadata: Metadata, selectors: list[SampleSelector]) -> Metadata:
