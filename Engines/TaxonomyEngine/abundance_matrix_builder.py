@@ -4,6 +4,7 @@ from functools import singledispatchmethod
 
 import pandas as pd
 
+from . import abundance_matrix
 from .abundance_matrix import AbundanceMatrix
 from .nested_set_lineage_resolver import NestedSetLineageResolver
 
@@ -21,7 +22,7 @@ class AbundanceMatrixBuilder:
         raise TypeError(f"Cannot build AbundanceMatrix from {type(source).__name__}")
 
     @build.register
-    def _build_from_taxonomy(self, taxonomy_df: pd.DataFrame) -> AbundanceMatrix:
+    def _build_from_dataframe(self, taxonomy_df: pd.DataFrame) -> AbundanceMatrix:
         rows = self._rows_with_taxon_key(taxonomy_df)
         matrix = self._pivot_self_counts(rows)
         total_reads = matrix.sum(axis=1)
@@ -38,6 +39,11 @@ class AbundanceMatrixBuilder:
         total_reads = new_matrix.sum(axis=1)
         new_lookup = self._rank_lookup(source._taxon_key_lookup, rank, new_matrix.columns)
         return AbundanceMatrix(new_matrix, total_reads, new_lookup, source._tax_id_lineage_lookup)
+
+    @build.register
+    def _build_from_dataframe_and_rank(self, taxonomy_df: pd.DataFrame, rank:str) -> AbundanceMatrix:
+        abundance_matrix = self._build_from_dataframe(taxonomy_df)
+        at_rank = abundance_matrix.filter_by_rank(rank)
 
     def _rows_with_taxon_key(self, taxonomy_df: pd.DataFrame) -> pd.DataFrame:
         rows = taxonomy_df.copy()

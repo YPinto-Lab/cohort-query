@@ -23,7 +23,7 @@ class Cohort:
         new_matrix = self._filter_taxa(self.matrix, criteria.taxa)
         sample_selectors = [s for s in (criteria.samples, *criteria.sample_filters) if s is not None]
         new_metadata = self._filter_metadata(self.metadata, sample_selectors)
-        new_matrix = new_matrix.filter(new_metadata.df["acc"])
+        new_matrix = new_matrix.filter_samples(new_metadata.df["acc"])
         return Cohort(matrix=new_matrix, metadata=new_metadata)
 
     def write(self, out_dir: Path, fmt: str = "counts") -> list[Path]:

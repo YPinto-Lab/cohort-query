@@ -8,7 +8,7 @@ import pandas as pd
 
 
 class AbundanceMatrix:
-    """Samples x taxa counts at one collapsed view of a taxonomy."""
+    """Samples x taxa"""
 
     def __init__(
         self,
@@ -28,8 +28,8 @@ class AbundanceMatrix:
 
     @cached_property
     def relative_abundance(self) -> pd.DataFrame:
-        denom = self.total_reads.reindex(self.matrix.index).replace(0, float("nan"))
-        return self.matrix.div(denom, axis=0).fillna(0.0)
+        denominator = self.total_reads.reindex(self.matrix.index).replace(0, float("nan"))
+        return self.matrix.div(denominator, axis=0).fillna(0.0)
 
     @cached_property
     def taxa_lineage(self) -> pd.DataFrame:
@@ -39,7 +39,7 @@ class AbundanceMatrix:
         lineage["tax_id"] = pd.to_numeric(lineage["tax_id"], errors="coerce")
         return lookup.merge(lineage, on="tax_id", how="left")
 
-    def filter(self, sample_ids: Iterable[str], exclude: bool = False) -> AbundanceMatrix:
+    def filter_samples(self, sample_ids: Iterable[str], exclude: bool = False) -> AbundanceMatrix:
         if exclude:
             return self._drop_samples(sample_ids)
         return self._keep_samples(sample_ids)

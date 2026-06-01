@@ -80,7 +80,7 @@ def test_taxa_lineage_joins_lookup_and_lineage():
 def test_filter_keeps_requested_samples_by_default():
     matrix = _matrix()
 
-    subset = matrix.filter(["SRR1"])
+    subset = matrix.filter_samples(["SRR1"])
 
     assert subset.samples == ["SRR1"]
     assert subset.total_reads.loc["SRR1"] == 140
@@ -89,7 +89,7 @@ def test_filter_keeps_requested_samples_by_default():
 def test_filter_with_exclude_drops_listed_samples():
     matrix = _matrix()
 
-    subset = matrix.filter(["SRR1"], exclude=True)
+    subset = matrix.filter_samples(["SRR1"], exclude=True)
 
     assert subset.samples == ["SRR2"]
 
@@ -97,7 +97,7 @@ def test_filter_with_exclude_drops_listed_samples():
 def test_filter_ignores_unknown_sample_ids():
     matrix = _matrix()
 
-    subset = matrix.filter(["SRR1", "SRR_NOT_THERE"])
+    subset = matrix.filter_samples(["SRR1", "SRR_NOT_THERE"])
 
     assert subset.samples == ["SRR1"]
 
@@ -105,6 +105,6 @@ def test_filter_ignores_unknown_sample_ids():
 def test_filter_preserves_taxa_lineage_columns():
     matrix = _matrix()
 
-    subset = matrix.filter(["SRR1"])
+    subset = matrix.filter_samples(["SRR1"])
 
     assert list(subset.taxa_lineage.columns) == list(matrix.taxa_lineage.columns)
