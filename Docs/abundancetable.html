@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask-SLM · The AbundanceTable, the five phases &amp; the library palette</title>
+<style>
+  :root{
+    --ink:#1b2330; --muted:#5b6473; --line:#e3e7ee; --bg:#ffffff; --soft:#f6f8fb;
+    --counts:#2563eb; --obs:#0d9488; --samp:#d97706;
+    --accent:#6d28d9; --code:#0f172a; --codebg:#f1f5f9; --query:#0891b2; --link:#1d4ed8;
+    --maxw:960px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+  a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+  a code{color:var(--link)}
+  header.hero{background:linear-gradient(135deg,#1e1b4b,#312e81 55%,#1d4ed8);color:#fff;padding:60px 24px 52px}
+  header.hero .wrap{max-width:var(--maxw);margin:0 auto}
+  header.hero .kicker{letter-spacing:.18em;text-transform:uppercase;font-size:12px;opacity:.8;margin:0 0 14px}
+  header.hero h1{font-size:34px;line-height:1.18;margin:0 0 14px;font-weight:700}
+  header.hero p{font-size:17px;opacity:.92;margin:0;max-width:700px}
+  nav{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+  nav .wrap{max-width:var(--maxw);margin:0 auto;padding:10px 24px;display:flex;gap:15px;flex-wrap:wrap;font-size:13.5px}
+  nav a{color:var(--muted)}nav a:hover{color:var(--accent);text-decoration:none}
+  main{max-width:var(--maxw);margin:0 auto;padding:8px 24px 80px}
+  section{padding:38px 0;border-bottom:1px solid var(--line)}section:last-child{border-bottom:0}
+  h2{font-size:26px;margin:0 0 6px;font-weight:700}
+  h2 .num{color:var(--accent);font-weight:700;margin-right:10px}
+  h3{font-size:18px;margin:24px 0 8px}
+  h4.fam{font-size:16px;margin:26px 0 4px}
+  .lead{color:var(--muted);margin:0 0 18px;font-size:17px}
+  p{margin:0 0 14px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--codebg);color:var(--code);padding:1px 6px;border-radius:5px;font-size:.86em}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:18px 0}
+  .part{border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--soft)}
+  .part h4{margin:0 0 6px;font-size:15px;display:flex;align-items:center;gap:8px}
+  .dot{width:11px;height:11px;border-radius:50%;display:inline-block}
+  .part p{font-size:14px;color:var(--muted);margin:0}
+  .amfig{display:grid;grid-template-columns:30px minmax(210px,1fr) 200px;grid-template-rows:24px auto auto;gap:10px;align-items:stretch;margin:24px 0 8px;max-width:700px}
+  .amfig .lbl-top{grid-column:2;grid-row:1;text-align:center;font-size:12.5px;color:var(--muted);font-weight:600}
+  .amfig .lbl-left{grid-column:1;grid-row:2;writing-mode:vertical-rl;transform:rotate(180deg);justify-self:center;align-self:center;font-size:12.5px;color:var(--muted);font-weight:600;white-space:nowrap}
+  .amfig .matrix{grid-column:2;grid-row:2;border:2px solid var(--counts);border-radius:10px;min-height:148px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--counts);font-weight:700;
+    background-image:linear-gradient(90deg,#dbe4f7 1px,transparent 1px),linear-gradient(#dbe4f7 1px,transparent 1px);background-size:32px 26px;background-position:8px 8px}
+  .amfig .matrix small{font-weight:500;color:var(--muted);font-size:12.5px;margin-top:4px}
+  .amfig .meta{border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;justify-content:center;font-weight:700;font-size:14px}
+  .amfig .meta small{font-weight:500;color:var(--muted);margin-top:5px;font-size:12.5px}
+  .amfig .meta.samp{grid-column:3;grid-row:2;border:2px solid var(--samp);color:var(--samp);background:#fffaf2}
+  .amfig .meta.obs{grid-column:2;grid-row:3;border:2px solid var(--obs);color:var(--obs);background:#f0fbfa}
+  .figcap{font-size:13px;color:var(--muted);margin:0 0 6px;max-width:700px}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--soft);font-weight:600}
+  td code{font-size:12px}
+  td.goal{font-weight:600;white-space:nowrap}
+  .pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12px;font-weight:600}
+  .pill.query{background:#cffafe;color:#0e7490}.pill.build{background:#ede9fe;color:#6d28d9}
+  .pill.transform{background:#dbeafe;color:#1d4ed8}.pill.split{background:#fef3c7;color:#b45309}
+  .pill.analyze{background:#dcfce7;color:#15803d}
+  .flow{display:flex;align-items:stretch;flex-wrap:wrap;margin:20px 0}
+  .stage{flex:1;min-width:135px;border:1px solid var(--line);border-radius:12px;padding:13px;background:#fff;margin:0 12px 12px 0}
+  .stage b{display:block;font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+  .stage small{color:var(--muted);font-size:12px;display:block}
+  .stage.q b{color:var(--query)}.stage.b b{color:var(--accent)}.stage.t b{color:var(--counts)}.stage.s b{color:var(--samp)}.stage.a b{color:#15803d}
+  .why{border:1px dashed var(--line);border-radius:12px;padding:14px 18px;margin:14px 0;background:#fcfdff}
+  .why h4{margin:0 0 6px;font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .ours{background:#f5f3ff;border-left:4px solid var(--accent);border-radius:0 10px 10px 0;padding:13px 18px;margin:16px 0;font-size:14px}
+  .ours strong{color:var(--accent)}
+  .ours .lbl{display:inline-block;font-size:11px;font-weight:700;background:#ede9fe;color:#6d28d9;padding:1px 8px;border-radius:6px;margin-right:8px;text-transform:uppercase;letter-spacing:.04em}
+  .gap{background:#fff7ed;border-left:4px solid var(--samp);border-radius:0 10px 10px 0;padding:12px 16px;margin:14px 0;font-size:14px}
+  .gap strong{color:#b45309}
+  .contract{background:#ecfdf5;border-left:4px solid #059669;border-radius:0 10px 10px 0;padding:14px 18px;margin:16px 0}
+  .contract strong{color:#047857}
+  .assume h4{margin:20px 0 4px;font-size:15px;color:var(--ink)}
+  .assume ul{margin:0 0 8px;padding-left:20px}.assume li{margin:5px 0;font-size:14.5px}
+  .q-ans{font-weight:600;margin:18px 0 2px}.q-ans span{color:var(--accent)}
+  .metrics{font-size:13px;color:var(--muted);margin:8px 0 0}
+  dl.glossary{display:grid;grid-template-columns:200px 1fr;gap:8px 18px;margin:14px 0}
+  dl.glossary dt{font-weight:600}dl.glossary dd{margin:0;color:var(--muted)}
+  footer{max-width:var(--maxw);margin:0 auto;padding:30px 24px 60px;color:var(--muted);font-size:13px}
+  @media(max-width:720px){.grid3{grid-template-columns:1fr}dl.glossary{grid-template-columns:1fr}header.hero h1{font-size:26px}
+    table{font-size:12.5px}.amfig{grid-template-columns:24px 1fr}.amfig .meta.samp{grid-column:2;grid-row:4}}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="kicker">Ask-SLM · Metagenomic analysis toolkit</p>
+    <h1>The <em>AbundanceTable</em>, the five phases &amp; the library palette</h1>
+    <p>One object, five kinds of operation, and — for each — the real library calls underneath, each linked to its
+       docs. This page maps the raw material we build on; the Ask-SLM API is designed on top of it.</p>
+  </div>
+</header>
+
+<nav><div class="wrap">
+  <a href="#glossary">Glossary</a>
+  <a href="#object">The object</a>
+  <a href="#ops">Five phases</a>
+  <a href="#ingest">Ingest</a>
+  <a href="#build">Build</a>
+  <a href="#transform">Transform</a>
+  <a href="#split">Split</a>
+  <a href="#analyze">Analyze</a>
+  <a href="#assumptions">Data contract</a>
+  <a href="#code">Where we write code</a>
+</div></nav>
+
+<main>
+
+<section id="glossary">
+  <h2><span class="num">1</span>Glossary</h2>
+  <p class="lead">The small, stable vocabulary the whole toolkit is written in.</p>
+  <dl class="glossary">
+    <dt>AbundanceTable</dt><dd>The whole object: a thin wrapper over a <a href="https://biom-format.org/documentation/table_objects.html" target="_blank" rel="noopener"><code>biom.Table</code></a> holding the three parts below.</dd>
+    <dt>feature</dt><dd>One microbe in the table — an NCBI taxon. <em>This is the one word we use.</em> (biom's axis name is &ldquo;observation&rdquo;; &ldquo;OTU&rdquo; / &ldquo;ASV&rdquo; are synonyms.)</dd>
+    <dt>sample</dt><dd>One sequencing run (its accession, <code>acc</code>).</dd>
+    <dt>counts</dt><dd>The matrix of read counts — samples against features. <code>self_count</code> = reads assigned directly to a feature.</dd>
+    <dt>sample metadata</dt><dd>Attributes of each sample: cluster, day, host. What we filter and split by.</dd>
+    <dt>feature metadata</dt><dd>Attributes of each feature: its full NCBI lineage / taxonomy.</dd>
+    <dt>lineage</dt><dd>A feature's chain of NCBI ancestors (… &rarr; genus &rarr; species).</dd>
+    <dt>clade</dt><dd>A feature and everything beneath it; selected when a taxid appears in the lineage.</dd>
+    <dt>rank</dt><dd>A level of the taxonomy (phylum, genus, species, …).</dd>
+    <dt>relative abundance</dt><dd>Counts normalised so each sample sums to 1.</dd>
+    <dt>alpha diversity</dt><dd>Diversity <em>within</em> one sample (richness, evenness).</dd>
+    <dt>beta diversity</dt><dd>Dissimilarity <em>between</em> samples (Bray-Curtis: 0 identical, 1 nothing shared).</dd>
+    <dt>group</dt><dd>One sub-table from a split (a stratum); a study's groups are its cohorts.</dd>
+  </dl>
+</section>
+
+<section id="object">
+  <h2><span class="num">2</span>The object: <code>AbundanceTable</code></h2>
+  <p class="lead">A microbial community is <strong>one object</strong> — a thin wrapper over a
+     <a href="https://biom-format.org/documentation/table_objects.html" target="_blank" rel="noopener"><code>biom.Table</code></a> — made of three aligned parts.</p>
+  <div class="grid3">
+    <div class="part"><h4><span class="dot" style="background:var(--counts)"></span>Counts</h4>
+      <p>The matrix — <strong>samples</strong> against <strong>features</strong>. Each cell is a read count.</p></div>
+    <div class="part"><h4><span class="dot" style="background:var(--samp)"></span>Sample metadata</h4>
+      <p>One row per sample — e.g. <strong>cluster</strong>, <strong>day</strong>, <strong>host</strong>.</p></div>
+    <div class="part"><h4><span class="dot" style="background:var(--obs)"></span>Feature metadata</h4>
+      <p>One row per feature — e.g. its <strong>full lineage / taxonomy</strong>.</p></div>
+  </div>
+  <p class="figcap">Sample metadata describes the rows, feature metadata describes the columns, the counts matrix sits between.</p>
+  <figure class="amfig">
+    <div class="lbl-top">features &rarr;</div>
+    <div class="lbl-left">samples &darr;</div>
+    <div class="matrix">counts<small>the matrix of read counts</small></div>
+    <div class="meta samp">sample&nbsp;metadata<small>cluster · day · host</small></div>
+    <div class="meta obs">feature metadata<small>full lineage / taxonomy</small></div>
+  </figure>
+  <div class="why"><h4>Why one object, but the parts stay separate</h4>
+    <p style="margin:0">&ldquo;One object&rdquo; does <strong>not</strong> mean one merged spreadsheet. A
+       <a href="https://biom-format.org/" target="_blank" rel="noopener">biom.Table</a> — like
+       <a href="https://joey711.github.io/phyloseq/" target="_blank" rel="noopener">phyloseq</a> and
+       <a href="https://qiime2.org/" target="_blank" rel="noopener">QIIME&nbsp;2</a> — keeps the counts matrix, the
+       feature metadata and the sample metadata as <em>separate, id-aligned slots</em> in one container. biom does the
+       storage and heavy lifting; Ask-SLM only adds names and the few pieces of real logic libraries don't have.</p></div>
+
+  <h3>Querying — read the parts back</h3>
+  <p>The attached metadata is queryable with one call per axis; the result is a plain pandas DataFrame you explore with pandas. No custom code needed.</p>
+<pre><code>sm = table.metadata_to_dataframe("sample")        # ask: sample metadata as a DataFrame
+fm = table.metadata_to_dataframe("observation")   # ask: feature metadata as a DataFrame
+
+keep = sm.index[sm["day"] == 0]                    # answer: the sample ids you want
+sub  = table.filter(keep, axis="sample")           # subset — counts AND metadata travel together</code></pre>
+  <p><a href="https://biom-format.org/documentation/generated/biom.table.Table.metadata_to_dataframe.html" target="_blank" rel="noopener"><code>Table.metadata_to_dataframe(axis)</code></a> is the built-in for this.</p>
+  <div class="why"><h4>Counts and metadata move together — for free</h4>
+    <p style="margin:0">Metadata lives on the axis, so a filtered table already carries the subset metadata — nothing to re-sync.
+       <code>filter</code> even accepts the predicate directly, collapsing ask + subset into one call:
+       <code>table.filter(lambda v, i, md: md["day"] == 0, axis="sample")</code>.</p></div>
+</section>
+
+<section id="ops">
+  <h2><span class="num">3</span>The five phases</h2>
+  <p class="lead">Every operation is one of five kinds, classified by what it does to the type.</p>
+  <table>
+    <tr><th>Phase</th><th>In &rarr; Out</th><th>Output</th><th>Meaning</th></tr>
+    <tr><td><span class="pill query">ingest</span></td><td>source &rarr; raw parts</td><td>standardised tables</td><td>Acquire raw data from any source into our schema.</td></tr>
+    <tr><td><span class="pill build">build</span></td><td>parts &rarr; 1</td><td><code>AbundanceTable</code></td><td>Assemble &amp; align the parts into one object.</td></tr>
+    <tr><td><span class="pill transform">transform</span></td><td>1 &rarr; 1</td><td><code>AbundanceTable</code></td><td>Reshape; same kind of thing. Chains.</td></tr>
+    <tr><td><span class="pill split">split</span></td><td>1 &rarr; <strong>N</strong></td><td><code>AbundanceTable</code>s</td><td>Partition into sub-tables (groups).</td></tr>
+    <tr><td><span class="pill analyze">analyze</span></td><td>1 (or N) &rarr; result</td><td>a measurement</td><td>The answer is no longer a table.</td></tr>
+  </table>
+  <div class="flow">
+    <div class="stage q"><b>ingest</b><small>source &rarr; raw parts</small></div>
+    <div class="stage b"><b>build</b><small>parts &rarr; 1 table</small></div>
+    <div class="stage t"><b>transform</b><small>1 &rarr; 1</small></div>
+    <div class="stage s"><b>split</b><small>1 &rarr; N</small></div>
+    <div class="stage a"><b>analyze</b><small>table &rarr; result</small></div>
+  </div>
+  <p class="figcap">Each chapter lists the <strong>library calls</strong> for that phase (linked to docs), with what they do and
+     their params. Purple <span style="color:var(--accent);font-weight:600">Ask-SLM logic</span> boxes mark the only
+     places we write real code. We assume clean input and fail fast — see the <a href="#assumptions">data contract</a>.</p>
+</section>
+
+<section id="ingest">
+  <h2><span class="num">4</span><span class="pill query">ingest</span> &nbsp;Acquire raw data</h2>
+  <p class="lead">Pull raw data out of wherever it lives. <strong>Input varies and barely matters</strong>;
+     <strong>output is the contract</strong> — always the same tidy tables: a taxonomy table
+     (<code>acc, tax_id, self_count, total_count, rank, name</code>) and a sample-metadata table (one row per <code>acc</code>).</p>
+  <table>
+    <tr><th>Goal</th><th>Library call</th><th>What it does · key params</th></tr>
+    <tr><td class="goal">read a delimited report</td><td><a href="https://pandas.pydata.org/docs/reference/api/pandas.read_csv.html" target="_blank" rel="noopener"><code>pandas.read_csv(path, sep, usecols, dtype)</code></a></td><td>parse a Kraken/Bracken/CSV/TSV report. <code>sep</code> = delimiter, <code>usecols</code> = columns to keep, <code>dtype</code> = force <code>tax_id</code> to int.</td></tr>
+    <tr><td class="goal">read a spreadsheet</td><td><a href="https://pandas.pydata.org/docs/reference/api/pandas.read_excel.html" target="_blank" rel="noopener"><code>pandas.read_excel(path, sheet_name)</code></a></td><td>parse an <code>.xlsx</code> metadata sheet (e.g. the cluster map).</td></tr>
+    <tr><td class="goal">load an existing biom</td><td><a href="https://biom-format.org/documentation/generated/biom.load_table.html" target="_blank" rel="noopener"><code>biom.load_table(path)</code></a></td><td>read a <code>.biom</code> file straight into a Table — already carries counts + both metadata.</td></tr>
+    <tr><td class="goal">fetch from SRA</td><td><em>external</em>: <a href="https://github.com/saketkc/pysradb" target="_blank" rel="noopener"><code>pysradb</code></a> / <a href="https://biopython.org/docs/latest/api/Bio.Entrez.html" target="_blank" rel="noopener">Entrez</a></td><td>query run accessions &rarr; run info &amp; profiles. An integration, not one call.</td></tr>
+  </table>
+  <div class="ours"><span class="lbl">Ask-SLM logic</span><strong>Standardise every source to one schema.</strong>
+     pandas reads bytes; it does not know our columns. The Accessor (one per source) renames/selects the columns and
+     coerces <code>tax_id</code> to int — the minimum for downstream libraries to work. It does <em>not</em> defensively
+     validate; we trust the input (see the <a href="#assumptions">data contract</a>). A new source is a new Accessor.</div>
+</section>
+
+<section id="build">
+  <h2><span class="num">5</span><span class="pill build">build</span> &nbsp;Assemble one table</h2>
+  <p class="lead">Derive the feature metadata, align the three parts by id, wrap a <code>biom.Table</code>. Counts stay
+     <strong>atomic</strong> (<code>self_count</code>); no clade or rank baked in.</p>
+  <table>
+    <tr><th>Goal</th><th>Library call</th><th>What it does · key params</th></tr>
+    <tr><td class="goal">lineage per feature</td><td><a href="http://etetoolkit.org/docs/latest/tutorial/tutorial_ncbitaxonomy.html" target="_blank" rel="noopener"><code>NCBITaxa.get_lineage_translator(taxids)</code></a></td><td>batch &rarr; <code>{taxid: [ancestors, root→tip]}</code>. Translates merged ids automatically.</td></tr>
+    <tr><td class="goal">rank of each node</td><td><a href="http://etetoolkit.org/docs/latest/tutorial/tutorial_ncbitaxonomy.html" target="_blank" rel="noopener"><code>NCBITaxa.get_rank(taxids)</code></a></td><td>&rarr; <code>{taxid: "species" | "genus" | …}</code>.</td></tr>
+    <tr><td class="goal">name of each node</td><td><a href="http://etetoolkit.org/docs/latest/tutorial/tutorial_ncbitaxonomy.html" target="_blank" rel="noopener"><code>NCBITaxa.get_taxid_translator(taxids)</code></a></td><td>&rarr; <code>{taxid: scientific name}</code>.</td></tr>
+    <tr><td class="goal">make the container</td><td><a href="https://biom-format.org/documentation/table_objects.html" target="_blank" rel="noopener"><code>biom.Table(data, observation_ids, sample_ids)</code></a></td><td>construct from a 2-D matrix + the ids for each axis.</td></tr>
+    <tr><td class="goal">attach metadata</td><td><a href="https://biom-format.org/documentation/generated/biom.table.Table.add_metadata.html" target="_blank" rel="noopener"><code>Table.add_metadata(md, axis)</code></a></td><td>attach <code>{id: {field: value}}</code> dicts to an axis, matched by id.</td></tr>
+    <tr><td class="goal">reshape long&rarr;matrix</td><td><a href="https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.pivot_table.html" target="_blank" rel="noopener"><code>DataFrame.pivot_table(index, columns, values, aggfunc, fill_value)</code></a></td><td>long taxonomy table &rarr; features × samples matrix. <code>values="self_count"</code>, <code>aggfunc="sum"</code>, <code>fill_value=0</code>.</td></tr>
+  </table>
+  <div class="ours"><span class="lbl">Ask-SLM logic</span><strong>lineage_table</strong> — fold the three ete3 dicts into one
+     feature-metadata table keyed by tax_id (lineage + rank + name) and precompute the <em>ancestor-at-each-rank</em>
+     mapping. <strong>build</strong> — pivot the counts, align all three parts by id, wrap. No defensive validation.</div>
+
+  <h3><code>lineage_table(taxids)</code> &mdash; the one piece worth building</h3>
+  <p>The only genuinely new logic in this phase. Spec, no implementation yet:</p>
+  <table>
+    <tr><th style="width:90px">Input</th><td>an iterable of NCBI <code>tax_id</code>s — the features present in the counts.</td></tr>
+    <tr><th>Output</th><td>a tidy table, one row per <code>tax_id</code>: its full <strong>lineage</strong> (ancestor taxids, root&rarr;tip), its <strong>rank</strong>, its <strong>name</strong>, and the <strong>ancestor taxid at each standard rank</strong> (so clade-filter and rank-collapse can read it).</td></tr>
+    <tr><th>Does</th><td>batch-calls ete3 (<code>get_lineage_translator</code> + <code>get_rank</code> + <code>get_taxid_translator</code>) and stitches the three dicts into one frame keyed by tax_id. ete3 translates merged / deprecated ids; an unresolvable id yields an empty lineage and is simply dropped later by the clade filter.</td></tr>
+    <tr><th>Becomes</th><td>the <strong>feature metadata</strong> attached to the table at build.</td></tr>
+  </table>
+  <div class="gap"><strong>Why <code>self_count</code>, not <code>total_count</code>.</strong> <code>self_count</code> = reads
+     assigned <em>directly</em> to a feature (atomic, non-overlapping, safe to sum). <code>total_count</code> already
+     includes the whole sub-tree, so summing it double-counts. The rank roll-up re-derives the clade total itself.</div>
+</section>
+
+<section id="transform">
+  <h2><span class="num">6</span><span class="pill transform">transform</span> &nbsp;Reshape the table (1 &rarr; 1)</h2>
+  <p class="lead">Each call takes a table and returns a table, so they chain. biom does the mechanics; the
+     <em>rules</em> we feed in are ours.</p>
+  <table>
+    <tr><th>Goal</th><th>Library call</th><th>What it does · key params</th></tr>
+    <tr><td class="goal">keep features/samples</td><td><a href="https://biom-format.org/documentation/generated/biom.table.Table.filter.html" target="_blank" rel="noopener"><code>Table.filter(ids_to_keep, axis, invert, inplace)</code></a></td><td><code>ids_to_keep</code> = an iterable of ids <em>or</em> a function <code>f(values, id, md) → bool</code>; keeps where true. <code>axis="observation"</code> for features.</td></tr>
+    <tr><td class="goal">roll up to a rank</td><td><a href="https://biom-format.org/documentation/generated/biom.table.Table.collapse.html" target="_blank" rel="noopener"><code>Table.collapse(f, norm=False, axis="observation")</code></a></td><td>group vectors by <code>f(id, md) → label</code>. <code>norm=False</code> <strong>sums</strong>; <code>norm=True</code> (default) <em>averages</em>. Atomic counts &rarr; per-rank counts.</td></tr>
+    <tr><td class="goal">relative abundance</td><td><a href="https://biom-format.org/documentation/generated/biom.table.Table.norm.html" target="_blank" rel="noopener"><code>Table.norm(axis="sample", inplace)</code></a></td><td>divide each sample by its total so it sums to 1.</td></tr>
+    <tr><td class="goal">even sampling depth</td><td><a href="https://biom-format.org/documentation/generated/biom.table.Table.subsample.html" target="_blank" rel="noopener"><code>Table.subsample(n, axis="sample", with_replacement, seed)</code></a></td><td>randomly rarefy each sample to <code>n</code> reads (drops samples below <code>n</code>).</td></tr>
+    <tr><td class="goal">presence / absence</td><td><a href="https://biom-format.org/documentation/generated/biom.table.Table.pa.html" target="_blank" rel="noopener"><code>Table.pa(inplace)</code></a></td><td>convert counts to 0/1.</td></tr>
+    <tr><td class="goal">per-vector maths</td><td><a href="https://biom-format.org/documentation/generated/biom.table.Table.transform.html" target="_blank" rel="noopener"><code>Table.transform(f, axis, inplace)</code></a></td><td>apply <code>f(values, id, md)</code> to each vector (e.g. log).</td></tr>
+    <tr><td class="goal">compositional transform</td><td><a href="https://scikit.bio/docs/latest/generated/skbio.stats.composition.clr.html" target="_blank" rel="noopener"><code>composition.clr(mat)</code></a> after <a href="https://scikit.bio/docs/latest/generated/skbio.stats.composition.multi_replace.html" target="_blank" rel="noopener"><code>multi_replace(mat)</code></a></td><td>centre-log-ratio of each composition; <code>multi_replace</code> swaps zeros for tiny values first so the log is defined.</td></tr>
+  </table>
+  <div class="ours"><span class="lbl">Ask-SLM logic</span>The <strong>predicates and grouping functions</strong> passed to
+     <code>filter</code>/<code>collapse</code>: &ldquo;is this clade's taxid in the lineage?&rdquo;, &ldquo;what is this
+     feature's ancestor at <em>rank</em>?&rdquo;, prevalence / minimum-abundance thresholds, dropping unclassified
+     features. biom executes them; the rules are ours.</div>
+  <div class="gap"><strong>Clade by taxid, not rank name.</strong> NCBI renamed <code>superkingdom</code> to
+     <code>domain</code>, so label matching is brittle. Testing &ldquo;taxid 2 ∈ lineage&rdquo; works at any level.</div>
+</section>
+
+<section id="split">
+  <h2><span class="num">7</span><span class="pill split">split</span> &nbsp;Partition into groups (1 &rarr; N)</h2>
+  <p class="lead">Cut one table into many along a sample-metadata column — one full table per distinct value.</p>
+  <table>
+    <tr><th>Goal</th><th>Library call</th><th>What it does · key params</th></tr>
+    <tr><td class="goal">keep one value's samples</td><td><a href="https://biom-format.org/documentation/generated/biom.table.Table.filter.html" target="_blank" rel="noopener"><code>Table.filter(ids_to_keep, axis="sample")</code></a></td><td>the only library primitive here — keep the samples matching one value. No library call returns many tables at once.</td></tr>
+  </table>
+  <div class="ours"><span class="lbl">Ask-SLM logic</span><strong>split</strong> is genuinely ours: take a column, find its
+     distinct values, return a <code>dict[value → AbundanceTable]</code> by filtering once per value. The only 1&rarr;N
+     operation — disciplined, repeated filtering.</div>
+</section>
+
+<section id="analyze">
+  <h2><span class="num">8</span><span class="pill analyze">analyze</span> &nbsp;Measure &amp; compare &mdash; the full palette</h2>
+  <p class="lead">The widest phase: take a community (or several groups) and return a <strong>measurement</strong>. Almost
+     entirely library territory — <a href="https://scikit.bio/" target="_blank" rel="noopener">scikit-bio</a> and
+     <a href="https://docs.scipy.org/doc/scipy/reference/stats.html" target="_blank" rel="noopener">scipy</a> are deep
+     here. Bray-Curtis is one cell in family C.</p>
+
+  <h4 class="fam">A · Describe the community</h4>
+  <p class="q-ans"><span>Question:</span> what is in here, and how much?</p>
+  <table>
+    <tr><th>Goal</th><th>Library call</th><th>What it does · key params</th></tr>
+    <tr><td class="goal">relative composition</td><td><a href="https://biom-format.org/documentation/generated/biom.table.Table.norm.html" target="_blank" rel="noopener"><code>Table.norm</code></a> &rarr; <a href="https://biom-format.org/documentation/generated/biom.table.Table.to_dataframe.html" target="_blank" rel="noopener"><code>Table.to_dataframe(dense=True)</code></a></td><td>per-sample relative abundance as a DataFrame for plotting/grouping.</td></tr>
+    <tr><td class="goal">read depth per sample</td><td><a href="https://biom-format.org/documentation/generated/biom.table.Table.sum.html" target="_blank" rel="noopener"><code>Table.sum(axis="sample")</code></a></td><td>total reads in each sample.</td></tr>
+    <tr><td class="goal">prevalence</td><td><a href="https://biom-format.org/documentation/generated/biom.table.Table.pa.html" target="_blank" rel="noopener"><code>Table.pa()</code></a> &rarr; <a href="https://biom-format.org/documentation/generated/biom.table.Table.sum.html" target="_blank" rel="noopener"><code>Table.sum(axis="observation")</code></a></td><td>in how many samples each feature occurs.</td></tr>
+  </table>
+  <div class="ours"><span class="lbl">Ask-SLM logic</span><strong>core features</strong> (present in ≥ X % of samples) and a
+     <strong>summary</strong> — thin threshold/aggregation on top of the calls above.</div>
+
+  <h4 class="fam">B · Alpha diversity &mdash; within a sample</h4>
+  <p class="q-ans"><span>Question:</span> how rich / even is each individual community?</p>
+  <table>
+    <tr><th>Goal</th><th>Library call</th><th>What it does · key params</th></tr>
+    <tr><td class="goal">per-sample diversity</td><td><a href="https://scikit.bio/docs/latest/generated/skbio.diversity.alpha_diversity.html" target="_blank" rel="noopener"><code>alpha_diversity(metric, counts, ids)</code></a></td><td>&rarr; a <code>Series</code>, one value per sample. <code>counts</code> accepts a <code>biom.Table</code> directly.</td></tr>
+    <tr><td class="goal">does a group differ?</td><td><a href="https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.kruskal.html" target="_blank" rel="noopener"><code>scipy.stats.kruskal(*groups)</code></a> · <a href="https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.mannwhitneyu.html" target="_blank" rel="noopener"><code>mannwhitneyu(x, y)</code></a></td><td>non-parametric tests of per-sample values across groups &rarr; statistic + p.</td></tr>
+  </table>
+  <p class="metrics"><em>metric ∈</em> <code>observed_features</code>, <code>shannon</code>, <code>simpson</code>,
+     <code>inv_simpson</code>, <code>pielou_e</code>, <code>chao1</code>, <code>fisher_alpha</code>, <code>faith_pd</code><sup>†</sup>, …
+     (<a href="https://scikit.bio/docs/latest/diversity.html" target="_blank" rel="noopener">~40 in scikit-bio</a>).</p>
+
+  <h4 class="fam">C · Beta diversity &mdash; between samples</h4>
+  <p class="q-ans"><span>Question:</span> how different are communities, and do groups separate?</p>
+  <table>
+    <tr><th>Goal</th><th>Library call</th><th>What it does · key params</th></tr>
+    <tr><td class="goal">pairwise distances</td><td><a href="https://scikit.bio/docs/latest/generated/skbio.diversity.beta_diversity.html" target="_blank" rel="noopener"><code>beta_diversity(metric, counts, ids, tree=…)</code></a></td><td>&rarr; a <code>DistanceMatrix</code>. <code>counts</code> accepts a <code>biom.Table</code>; UniFrac also needs <code>tree=</code> + feature ids.</td></tr>
+    <tr><td class="goal">reduce to a 2-D map</td><td><a href="https://scikit.bio/docs/latest/generated/skbio.stats.ordination.pcoa.html" target="_blank" rel="noopener"><code>pcoa(distmat, dimensions=2)</code></a></td><td>eigen-decompose the distance matrix &rarr; sample coordinates + variance explained.</td></tr>
+    <tr><td class="goal">do groups differ?</td><td><a href="https://scikit.bio/docs/latest/generated/skbio.stats.distance.permanova.html" target="_blank" rel="noopener"><code>permanova(distmat, grouping, column, permutations=999)</code></a></td><td>&rarr; pseudo-F + p via permutation. <code>grouping</code> = a metadata column.</td></tr>
+    <tr><td class="goal">(alternative test)</td><td><a href="https://scikit.bio/docs/latest/generated/skbio.stats.distance.anosim.html" target="_blank" rel="noopener"><code>anosim(distmat, grouping, column)</code></a></td><td>&rarr; R statistic + p.</td></tr>
+    <tr><td class="goal">correlate two distances</td><td><a href="https://scikit.bio/docs/latest/generated/skbio.stats.distance.mantel.html" target="_blank" rel="noopener"><code>mantel(x, y, method="pearson", permutations=999)</code></a></td><td>&rarr; <code>(r, p, n)</code> — e.g. community distance vs a temporal distance.</td></tr>
+  </table>
+  <p class="metrics"><em>metric ∈</em> <code>braycurtis</code>, <code>jaccard</code>, <code>jensenshannon</code>,
+     <code>euclidean</code>, <code>canberra</code>, <code>weighted_unifrac</code><sup>†</sup>, <code>unweighted_unifrac</code><sup>†</sup>, …
+     &nbsp;<em>plot:</em> <a href="https://seaborn.pydata.org/generated/seaborn.scatterplot.html" target="_blank" rel="noopener"><code>seaborn.scatterplot</code></a> (PCoA), <a href="https://seaborn.pydata.org/generated/seaborn.clustermap.html" target="_blank" rel="noopener"><code>clustermap</code></a> (distances).</p>
+
+  <h4 class="fam">D · Differential abundance &mdash; which features differ</h4>
+  <p class="q-ans"><span>Question:</span> which features are over- / under-represented in a group?</p>
+  <table>
+    <tr><th>Goal</th><th>Library call</th><th>What it does · key params</th></tr>
+    <tr><td class="goal">ANCOM</td><td><a href="https://scikit.bio/docs/latest/generated/skbio.stats.composition.ancom.html" target="_blank" rel="noopener"><code>composition.ancom(table, grouping, alpha, p_adjust, sig_test)</code></a></td><td>&rarr; per-feature significance (W + reject flag). <code>grouping</code> = a Series of labels.</td></tr>
+    <tr><td class="goal">ANCOM-BC</td><td><a href="https://scikit.bio/docs/latest/generated/skbio.stats.composition.ancombc.html" target="_blank" rel="noopener"><code>composition.ancombc(table, …)</code></a></td><td>bias-corrected differential abundance.</td></tr>
+    <tr><td class="goal">Dirichlet-multinomial</td><td><a href="https://scikit.bio/docs/latest/generated/skbio.stats.composition.dirmult_ttest.html" target="_blank" rel="noopener"><code>composition.dirmult_ttest(…)</code></a></td><td>DA via a Dirichlet-multinomial model.</td></tr>
+  </table>
+  <div class="gap"><strong>Reality check (corrected).</strong> This scikit-bio build ships <code>ancom</code>,
+     <code>ancombc</code>, <code>dirmult_ttest</code>, <code>dirmult_lme</code> — Python DA is in better shape than its old
+     reputation. <code>ALDEx2</code>, <code>LEfSe</code>, <code>MaAsLin2</code> remain R-only; we may not need them.</div>
+
+  <h4 class="fam">E · Longitudinal &mdash; change over time</h4>
+  <p class="q-ans"><span>Question:</span> how does a subject's community move across timepoints?</p>
+  <p>No single library call. The building block is <a href="https://scikit.bio/docs/latest/generated/skbio.diversity.beta_diversity.html" target="_blank" rel="noopener"><code>beta_diversity</code></a>; everything else is selection over sample metadata.</p>
+  <div class="ours"><span class="lbl">Ask-SLM logic</span>For each subject: pick the day-0 sample (within a tolerance) and the
+     last sample, restrict to that pair, take the <code>beta_diversity</code> distance, assemble one row per subject.
+     Variants: <strong>distance-from-baseline</strong> and <strong>volatility</strong>. This selection is genuinely ours.</div>
+
+  <h4 class="fam">F · Horizon &mdash; later, not now</h4>
+  <table>
+    <tr><th>Area</th><th>Library</th><th>What it answers</th></tr>
+    <tr><td class="goal">feature ↔ variable correlation</td><td><a href="https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.spearmanr.html" target="_blank" rel="noopener"><code>scipy.stats.spearmanr</code></a> · <a href="https://www.statsmodels.org/stable/index.html" target="_blank" rel="noopener">statsmodels</a></td><td>which features track a continuous variable.</td></tr>
+    <tr><td class="goal">supervised prediction</td><td><a href="https://scikit-learn.org/stable/" target="_blank" rel="noopener">scikit-learn</a></td><td>classify a group from composition; rank feature importance.</td></tr>
+    <tr><td class="goal">co-occurrence networks</td><td>SparCC / <a href="https://github.com/zdk123/SpiecEasi" target="_blank" rel="noopener">SpiecEasi</a> (mostly R)</td><td>which features appear together.</td></tr>
+  </table>
+
+  <div class="gap"><sup>†</sup> <strong>Phylogenetic metrics need a tree.</strong> UniFrac and Faith&nbsp;PD require one.
+     <a href="http://etetoolkit.org/docs/latest/tutorial/tutorial_ncbitaxonomy.html" target="_blank" rel="noopener"><code>NCBITaxa.get_topology(taxids)</code></a> returns a pruned NCBI <em>taxonomy</em> tree we could feed in — but
+     that is a topology, not a true phylogeny, so treat tree-based metrics as a deliberate, separate decision.</div>
+</section>
+
+<section id="assumptions">
+  <h2><span class="num">9</span>Data contract &mdash; what we assume</h2>
+  <div class="contract"><strong>Trust the input; fail fast.</strong> The user is responsible for supplying well-formed
+     data. We do the work or let the underlying library raise — <em>no</em> validation layers, <em>no</em> friendly error
+     messages, minimum code. The assumptions below are the things we are allowed to take for granted, so that none of
+     them needs a check. If robustness is ever needed (a public API, untrusted uploads), validation is added at one
+     place — the Accessor boundary — and nowhere else.</div>
+
+  <div class="assume">
+    <h4>The taxonomy table (raw counts)</h4>
+    <ul>
+      <li>Every <code>tax_id</code> is a real NCBI taxid — an integer, non-null, resolvable by ete3.</li>
+      <li><code>self_count</code> and <code>total_count</code> are non-negative integers, non-null.</li>
+      <li><code>self_count</code> is atomic — non-overlapping across features within a sample — so summing is valid.</li>
+      <li><code>acc</code> (the sample id) is a non-empty string on every row.</li>
+    </ul>
+
+    <h4>The sample-metadata table</h4>
+    <ul>
+      <li>Exactly one row per <code>acc</code>; no duplicates.</li>
+      <li>Every column we filter or split by exists and is already the right type (<code>day</code> numeric, etc.) — no coercion, no whitespace/case cleanup.</li>
+      <li>Categorical values are spelled consistently (one cluster = one spelling).</li>
+    </ul>
+
+    <h4>The counts matrix at build time</h4>
+    <ul>
+      <li>Raw integer reads, <em>not</em> pre-normalised.</li>
+      <li>Every sample has &gt; 0 total reads, so <code>norm</code> never divides by zero; no empty samples.</li>
+      <li>Feature ids align between the counts and the feature metadata.</li>
+    </ul>
+
+    <h4>Taxonomy / ete3</h4>
+    <ul>
+      <li>The ete3 NCBI database is built and present locally (offline) at <code>~/.etetoolkit/taxa.sqlite</code>.</li>
+      <li>A tax_id ete3 cannot resolve yields an empty lineage &rarr; that feature is silently dropped by the clade filter. Acceptable, not an error.</li>
+    </ul>
+
+    <h4>Analysis time</h4>
+    <ul>
+      <li>A grouping column passed to PERMANOVA / ANCOM / etc. defines a valid comparison (≥ 2 groups, enough samples). If not, the library raises — we do not pre-check.</li>
+      <li>Longitudinal: a subject lacking a baseline or a second timepoint is skipped, not errored.</li>
+      <li>Samples are comparable enough to compare; we do not force rarefaction unless asked.</li>
+    </ul>
+
+    <h4>Environment</h4>
+    <ul>
+      <li>Trusted, single-user, local input — not a public or adversarial API. No security / sanitisation layer.</li>
+      <li>Paths exist; a missing file simply raises on open. That is our &ldquo;fail fast&rdquo;.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="code">
+  <h2><span class="num">10</span>Where Ask-SLM actually writes code</h2>
+  <p class="lead">Everything else is a delegate — and honestly, most of even this list is one biom call plus a one-line
+     predicate. The <em>genuinely</em> new code is small: chiefly <code>lineage_table</code> (stitching ete3's three dicts
+     into the attached feature metadata) and the longitudinal selection (the actual analysis). The rest, name only if the
+     repetition truly hurts.</p>
+  <table>
+    <tr><th>Phase</th><th>Real logic we own</th></tr>
+    <tr><td><span class="pill query">ingest</span></td><td>Accessors that standardise each source to one schema (rename / coerce; no defensive validation).</td></tr>
+    <tr><td><span class="pill build">build</span></td><td><code>lineage_table</code> (lineage + rank + ancestor-at-rank per feature); <code>build</code> (pivot, id-align, wrap).</td></tr>
+    <tr><td><span class="pill transform">transform</span></td><td><em>thin.</em> The predicates / keys fed to filter &amp; collapse (clade-in-lineage, ancestor-at-rank, thresholds) — each is a single <code>biom.filter</code>/<code>collapse</code> call plus a one-line predicate.</td></tr>
+    <tr><td><span class="pill split">split</span></td><td><em>convenience.</em> Partition into <code>dict[value → table]</code> — a small loop over <code>biom.filter</code>; worth it only if per-group sub-tables recur.</td></tr>
+    <tr><td><span class="pill analyze">analyze</span></td><td>core-features &amp; summary; the longitudinal selection (baseline / shift / volatility).</td></tr>
+  </table>
+  <div class="why"><h4>The line</h4><p style="margin:0">Libraries answer &ldquo;how do I compute X?&rdquo; Ask-SLM answers
+     &ldquo;given <em>our</em> data, do X reproducibly, in our words, the same way every time.&rdquo; If a proposed
+     Ask-SLM method is just a rename of one library call, it should not exist — call the library.</p></div>
+</section>
+
+</main>
+
+<footer>
+  Ask-SLM · design source of truth: the <code>AbundanceTable</code>, the five phases, the library palette, and the data contract.
+</footer>
+
+</body>
+</html>
