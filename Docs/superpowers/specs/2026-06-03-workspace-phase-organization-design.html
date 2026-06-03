@@ -93,8 +93,8 @@
     <tr><td><strong>transform</strong> (+ split)</td><td>named, free-form explorations that shape the community</td><td>many, side by side</td></tr>
     <tr><td><strong>analyze</strong></td><td>measure / plot a chosen exploration's result</td><td>many per exploration</td></tr>
   </table>
-  <div class="why"><h4>The spine</h4><p style="margin:0"><code>inputs/</code> &rarr; <code>build/community.biom</code>
-     &rarr; <code>transform/&lt;exploration&gt;/result/</code> &rarr; <code>analyze/&lt;analysis&gt;/{data,plots}/</code>.
+  <div class="why"><h4>The spine</h4><p style="margin:0"><code>0_inputs/</code> &rarr; <code>1_build/community.biom</code>
+     &rarr; <code>2_transform/&lt;exploration&gt;/result/</code> &rarr; <code>3_analyze/&lt;exploration&gt;/&lt;analysis&gt;/{data,plots}/</code>.
      Each arrow is a file written to disk and read by the next phase.</p></div>
 </section>
 
@@ -102,29 +102,29 @@
   <h2><span class="num">2</span>The folder tree</h2>
   <p class="lead">The canonical layout. Every workspace looks like this, so any one reads as designed.</p>
 <pre><span class="f">Workspaces/ABX/</span>
-├── <span class="d">inputs/</span>                          <span class="c"># ingest: raw dumps land here (one Accessor per source)</span>
-├── <span class="d">build/</span>
+├── <span class="d">0_inputs/</span>                        <span class="c"># ingest: raw dumps land here (one Accessor per source)</span>
+├── <span class="d">1_build/</span>
 │   ├── build.py                     <span class="c"># ingest + build — runs ONCE</span>
 │   ├── build.md                     <span class="c"># frontmatter: inputs → outputs</span>
 │   └── community.biom               <span class="c"># THE shared building block</span>
-├── <span class="d">transform/</span>                       <span class="c"># the transform + split phase</span>
+├── <span class="d">2_transform/</span>                     <span class="c"># the transform + split phase</span>
 │   ├── shared.py                    <span class="c"># (workspace, transform) helpers: exclude_control_subjects, wgs_only</span>
 │   ├── <span class="d">no-control_bacteria/</span>          <span class="c"># a named exploration — free-form, ONE script</span>
 │   │   ├── explore.py               <span class="c"># imports ../shared.py + the askslm package</span>
-│   │   ├── explore.md               <span class="c"># frontmatter: input=../../build/community.biom</span>
+│   │   ├── explore.md               <span class="c"># frontmatter: input=../../1_build/community.biom</span>
 │   │   └── <span class="d">result/</span>                   <span class="c"># the community/communities it produced (.biom)</span>
 │   └── <span class="d">with-control_viruses/</span> …
-└── <span class="d">analyze/</span>                         <span class="c"># the analyze phase — top-level, grouped by source exploration</span>
+└── <span class="d">3_analyze/</span>                       <span class="c"># the analyze phase — top-level, grouped by source exploration</span>
     ├── shared.py                    <span class="c"># (workspace, analyze) helpers — shared across ALL analyses</span>
     ├── <span class="d">no-control_bacteria/</span>          <span class="c"># ── all analyses OF this exploration, grouped</span>
     │   ├── <span class="d">braycurtis/</span>
     │   │   ├── analysis.py
-    │   │   ├── analysis.md          <span class="c"># input: ../../../transform/no-control_bacteria/result/community.biom</span>
+    │   │   ├── analysis.md          <span class="c"># input: ../../../2_transform/no-control_bacteria/result/community.biom</span>
     │   │   ├── <span class="d">data/</span>                 <span class="c"># csv the plots are built from</span>
     │   │   └── <span class="d">plots/</span>                <span class="c"># png</span>
     │   └── <span class="d">alpha-shannon/</span>           <span class="c"># a 2nd analysis OF THE SAME exploration</span>
     │       ├── analysis.py
-    │       ├── analysis.md          <span class="c"># input: ../../../transform/no-control_bacteria/result/community.biom</span>
+    │       ├── analysis.md          <span class="c"># input: ../../../2_transform/no-control_bacteria/result/community.biom</span>
     │       ├── <span class="d">data/</span>
     │       └── <span class="d">plots/</span>
     └── <span class="d">with-control_viruses/</span> …        <span class="c"># analyses of a DIFFERENT exploration</span></pre>
@@ -198,7 +198,7 @@
 <pre><span class="d">---</span>
 <span class="k">kind</span>:    analysis
 <span class="k">intent</span>:  Bray-Curtis day0→last shift, per cluster
-<span class="k">input</span>:   ../../../transform/no-control_bacteria/result/community.biom
+<span class="k">input</span>:   ../../../2_transform/no-control_bacteria/result/community.biom
 <span class="k">outputs</span>: [data/braycurtis.csv, plots/braycurtis_box.png]
 <span class="k">params</span>:  { metric: braycurtis, from: 0, to: last }
 <span class="d">---</span>
@@ -236,7 +236,7 @@ Finding: cluster 3 shifts least (mean BC ≈ 0.33).</pre>
     <tr><td>Phase handoff</td><td>always a file on disk (<code>community.biom</code> → <code>result/*.biom</code> → <code>data</code>+<code>plots</code>)</td></tr>
     <tr><td>Idempotency</td><td>a phase writes only its own folder; re-run overwrites own outputs, never upstream</td></tr>
     <tr><td>Promotion rule</td><td>inline first; lift to <code>shared.py</code> when a 2nd script in the phase needs it</td></tr>
-    <tr><td>Naming</td><td>explorations intent-named; analyses <code>&lt;method&gt;_&lt;exploration&gt;</code></td></tr>
+    <tr><td>Naming</td><td>phase folders carry a numeric prefix for sort order (<code>0_inputs</code>, <code>1_build</code>, <code>2_transform</code>, <code>3_analyze</code>); explorations intent-named; analyses grouped under their exploration by <code>&lt;method&gt;</code></td></tr>
     <tr><td>Toolkit home</td><td>general functions stay in the <code>askslm</code> package (the Engine free functions)</td></tr>
   </table>
 </section>
