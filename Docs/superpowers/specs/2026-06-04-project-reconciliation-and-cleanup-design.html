@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask-SLM · Project reconciliation & cleanup — design for review</title>
+<style>
+  :root{
+    --ink:#1b2330;--muted:#5b6473;--line:#e3e7ee;--bg:#fff;--soft:#f6f8fb;
+    --accent:#6d28d9;--code:#0f172a;--codebg:#f1f5f9;--link:#1d4ed8;
+    --lock:#059669;--prop:#d97706;--die:#dc2626;--live:#059669;--maxw:940px;
+  }
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+  a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+  header.hero{background:linear-gradient(135deg,#1e1b4b,#312e81 55%,#1d4ed8);color:#fff;padding:54px 24px 46px}
+  header.hero .wrap{max-width:var(--maxw);margin:0 auto}
+  header.hero .kicker{letter-spacing:.18em;text-transform:uppercase;font-size:12px;opacity:.85;margin:0 0 12px}
+  header.hero h1{font-size:32px;line-height:1.18;margin:0 0 12px;font-weight:700}
+  header.hero p{font-size:17px;opacity:.92;margin:0;max-width:720px}
+  .status{display:inline-block;margin-top:14px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);padding:3px 12px;border-radius:999px;font-size:13px}
+  nav{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+  nav .wrap{max-width:var(--maxw);margin:0 auto;padding:10px 24px;display:flex;gap:16px;flex-wrap:wrap;font-size:13.5px}
+  nav a{color:var(--muted)}nav a:hover{color:var(--accent);text-decoration:none}
+  main{max-width:var(--maxw);margin:0 auto;padding:8px 24px 80px}
+  section{padding:36px 0;border-bottom:1px solid var(--line)}section:last-child{border-bottom:0}
+  h2{font-size:25px;margin:0 0 6px;font-weight:700}
+  h2 .num{color:var(--accent);margin-right:10px}
+  h3{font-size:17px;margin:22px 0 6px}
+  .lead{color:var(--muted);margin:0 0 16px;font-size:17px}
+  p{margin:0 0 14px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--codebg);color:var(--code);padding:1px 6px;border-radius:5px;font-size:.86em}
+  pre{background:var(--code);color:#e2e8f0;padding:16px 18px;border-radius:12px;overflow:auto;font-size:13px;line-height:1.5;margin:14px 0}
+  pre .c{color:#7f8ea3}pre .d{color:#fcd34d}pre .f{color:#7dd3fc}pre .k{color:#c4b5fd}pre .s{color:#86efac}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--soft);font-weight:600}
+  td code{font-size:12px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:6px;letter-spacing:.03em}
+  .tag.lock{background:#d1fae5;color:#047857}.tag.prop{background:#fef3c7;color:#b45309}
+  .tag.live{background:#d1fae5;color:#047857}.tag.die{background:#fee2e2;color:#b91c1c}
+  .why{border:1px dashed var(--line);border-radius:12px;padding:14px 18px;margin:14px 0;background:#fcfdff}
+  .why h4{margin:0 0 6px;font-size:13.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .callout{border-left:4px solid var(--accent);background:var(--soft);border-radius:0 10px 10px 0;padding:13px 18px;margin:16px 0}
+  ul.tight{margin:8px 0;padding-left:20px}ul.tight li{margin:5px 0}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13.5px;color:var(--muted);margin:6px 0 0}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .cols h4{margin:0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  footer{max-width:var(--maxw);margin:0 auto;padding:26px 24px 60px;color:var(--muted);font-size:13px}
+  @media(max-width:700px){table{font-size:12.5px}header.hero h1{font-size:25px}.cols{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header class="hero"><div class="wrap">
+  <p class="kicker">Ask-SLM · Design for review</p>
+  <h1>Project reconciliation &amp; cleanup</h1>
+  <p>The code still embodies the old toolkit; the docs and <code>ABX_new</code> embody the new agent-driven, feature-table
+     model. This pass makes the repository tell one story: a durable project definition, the old domain code deleted,
+     the source consolidated under one package — clearing the ground before the Web UI is re-specified.</p>
+  <span class="status">PROPOSED · 2026-06-04 · awaiting your review</span>
+</div></header>
+
+<nav><div class="wrap">
+  <a href="#why">Why</a>
+  <a href="#definition">Definition</a>
+  <a href="#map">Survives / dies</a>
+  <a href="#agent">Agent surface</a>
+  <a href="#layout">Folder layout</a>
+  <a href="#sweep">Junk sweep</a>
+  <a href="#docs">Reframed docs</a>
+  <a href="#order">Order of work</a>
+  <a href="#scope">Out of scope</a>
+  <a href="#verify">Verification</a>
+</div></nav>
+
+<main>
+
+<section id="why">
+  <h2><span class="num">1</span>Why this pass exists</h2>
+  <p class="lead">The repository currently describes two different projects at once.</p>
+  <div class="cols">
+    <div>
+      <h4>The docs say (new)</h4>
+      <ul class="tight">
+        <li>One <code>biom.Table</code> feature table; <strong>no</strong> <code>AbundanceMatrix</code> wrapper.</li>
+        <li>Five operation kinds; computation delegated to the library palette.</li>
+        <li>Numbered phase workspaces: <code>0_inputs / 1_build / 2_transform / 3_analyze</code>.</li>
+        <li>Agent-driven, exemplified by <code>Workspaces/ABX_new</code>.</li>
+      </ul>
+    </div>
+    <div>
+      <h4>The code still does (old)</h4>
+      <ul class="tight">
+        <li><code>askslm/__init__.py</code> re-exports <code>Engines.MetadataEngine</code> / <code>TaxonomyEngine</code>.</li>
+        <li><code>Agents/tools</code> import <code>Engines.TaxonomyEngine.abundance_matrix.AbundanceMatrix</code> — the retired wrapper.</li>
+        <li><code>Accessors/matrix_writers</code> (maaslin / relative / counts) — the old write path.</li>
+        <li><code>Managers/</code>, <code>resolve</code>, <code>build_cohort</code>, selector contracts — the old lean-core API.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout">A naïve "delete the old layers" would break the survivors. The dependency trace below distinguishes
+     <em>load-bearing</em> code (used by <code>ABX_new</code>, the scaffold CLI, the agent, or the web app) from
+     <em>genuinely dead</em> code. The reconciliation deletes the latter and rewires the former onto the feature-table model.</div>
+</section>
+
+<section id="definition">
+  <h2><span class="num">2</span>The durable project definition <span class="tag lock">LOCKED</span></h2>
+  <p class="lead">Replaces the SRA-specific overview and the layer-architecture table. Written to last.</p>
+  <div class="callout">
+    <p style="margin:0 0 10px"><strong>Ask-SLM</strong> is a workbench that makes metagenomic analysis easy and reproducible.
+       The user works entirely through a <strong>web UI</strong>, chatting with an <strong>LLM agent</strong> that builds and
+       analyzes the study with them — from raw inputs to results — and answers questions about the data along the way.</p>
+    <p style="margin:0 0 10px">The agent works by <strong>authoring and running Python</strong> against the <code>askslm</code>
+       package and established libraries (biom, ete3, scikit-bio, scipy, pandas), standardizing everything into one
+       structure: a <strong>biom feature table</strong> (counts + sample metadata + feature lineage).</p>
+    <p style="margin:0 0 10px">Each study is a reproducible <strong>workspace</strong>: a plain folder of files on disk
+       (Python scripts, <code>.biom</code> tables, CSVs, plots), organized into phases (build → transform → analyze).
+       <strong>The disk is the source of truth</strong> — the web UI is the driver, not a walled garden, so the user or any
+       other application can open, view, or edit anything directly. <code>Workspaces/ABX_new</code> is the canonical example.</p>
+    <p style="margin:0">The domain today is metagenomics; the structure is general enough to extend.</p>
+  </div>
+  <div class="why"><h4>Why this shape</h4><p style="margin:0">It names the interaction model (web ↔ agent), the agent's
+     mechanism (run Python over a toolbox), the one data structure, the filesystem-first contract, and a concrete example —
+     none of which churns weekly. It deliberately omits the internal layer table, the command list, and SRA specifics,
+     which did churn.</p></div>
+</section>
+
+<section id="map">
+  <h2><span class="num">3</span>Reconciliation map — survives vs dies</h2>
+  <p class="lead">Judged by one test: does <code>ABX_new</code>, the scaffold CLI, the agent, or the web app actually use it?
+     (Verified by import trace, not by name.)</p>
+
+  <h3>Survives <span class="tag live">LIVE</span></h3>
+  <table>
+    <tr><th>Code</th><th>Used by</th></tr>
+    <tr><td><code>askslm/workspace.py</code> (phase tooling)</td><td>every phase script; already clean (biom only)</td></tr>
+    <tr><td><code>Clients/cli.py</code> (scaffold CLI: <code>workspace new</code> / <code>transform add</code> / <code>analysis add</code>)</td><td>agent &amp; humans stamp the phase tree</td></tr>
+    <tr><td><code>metadata.extract</code> (+ <code>MetadataAccessor</code>, <code>metadata_extractor</code>, <code>sra_schema</code>)</td><td><code>ABX_new/1_build/build.py</code>; agent</td></tr>
+    <tr><td><code>metadata.overview</code> (+ <code>metadata_overview_builder</code>, <code>MetadataOverview</code>)</td><td>agent</td></tr>
+    <tr><td><code>taxonomy.load</code> (<code>TaxonomyAccessor/taxonomy_file_accessor</code>)</td><td><code>ABX_new/1_build/build.py</code></td></tr>
+    <tr><td><code>taxonomy.lineage_table</code> (ete3 only)</td><td><code>ABX_new/1_build/build.py</code> — "the one piece worth building"</td></tr>
+    <tr><td><code>Agents/</code> &rarr; <code>agent/</code>, <code>Web/</code> &rarr; <code>web/</code></td><td>the two-part product; agent rewired (§4)</td></tr>
+    <tr><td><code>Scripts/git-guard/</code></td><td>branching policy enforcement</td></tr>
+  </table>
+
+  <h3>Dies <span class="tag die">DELETE</span></h3>
+  <table>
+    <tr><th>Code</th><th>Status / reason</th></tr>
+    <tr><td><code>Engines/TaxonomyEngine/abundance_matrix.py</code> + <code>abundance_matrix_builder.py</code></td><td>the <strong>retired</strong> <code>AbundanceMatrix</code> wrapper</td></tr>
+    <tr><td><code>Engines/TaxonomyEngine/taxonomy_resolver.py</code> + <code>cohort.py</code> (<code>resolve</code>, <code>build_cohort</code>)</td><td>old model; <code>ABX_new</code> does cohort itself in <code>shared.py</code></td></tr>
+    <tr><td><code>Engines/TaxonomyEngine/nested_set_lineage_resolver.py</code></td><td>old lineage path; superseded by ete3 <code>lineage_table</code></td></tr>
+    <tr><td><code>Accessors/matrix_writers/</code> (maaslin / relative / counts / factory)</td><td><strong>no importer anywhere</strong> — confirmed dead</td></tr>
+    <tr><td><code>Accessors/MergedDumpAccessor/</code> + <code>merged.dmp</code></td><td>only <code>resolve</code> used it</td></tr>
+    <tr><td><code>Managers/</code></td><td><strong>no importer outside tests</strong> — confirmed dead</td></tr>
+    <tr><td><code>Common/contracts/selectors.py</code>, <code>taxonomy_results.py</code></td><td>only the dying old-API referenced them</td></tr>
+  </table>
+  <div class="why"><h4>Kept by your call</h4><p style="margin:0"><code>Queries/Athena_Query.sql</code>,
+     <code>Scripts/scrape_metalog</code>, and <code>Accessors/LoganAccessor/</code> are <strong>kept</strong> — useful SRA
+     fetch scratch, even though no Python imports them.</p></div>
+  <div class="why"><h4>The two edits that unlock the deletions</h4>
+    <ul class="tight" style="margin:0">
+      <li><code>askslm/__init__.py</code> &amp; <code>contracts.py</code> trimmed to the surviving surface only — no
+          <code>resolve</code> / <code>build_abundance_matrix</code> / <code>build_cohort</code> re-exports, no selectors.</li>
+      <li><code>Agents/tools</code> rewired onto the survivors; tools calling deleted functions are dropped (§4). No
+          backward-compat aliases — rename/remove everywhere, commit clean.</li>
+    </ul></div>
+  <div class="why"><h4>Verifier's note on <code>nested_set_lineage_resolver.py</code></h4><p style="margin:0">Flagged for deletion
+     on the reasoning that <code>build.py</code> uses ete3's <code>lineage_table</code>, not the nested-set resolver. The
+     implementation step <strong>must confirm no surviving importer</strong> (same import-trace gate as every other deletion)
+     before removing it.</p></div>
+</section>
+
+<section id="agent">
+  <h2><span class="num">4</span>The agent surface <span class="tag lock">LOCKED</span></h2>
+  <p class="lead">The interaction model decides this: the agent achieves goals by running Python, not by calling narrow
+     pre-baked domain tools.</p>
+  <p>The agent authors and runs Python — exactly like the <code>ABX_new</code> phase scripts — using <code>askslm</code>,
+     the libraries, and the scaffold CLI. So:</p>
+  <table>
+    <tr><th>Agent tool</th><th>Fate</th></tr>
+    <tr><td><code>run_python</code> (the wildcard executor)</td><td><span class="tag live">keep</span> — the primary mechanism</td></tr>
+    <tr><td><code>session</code> tools, <code>registry</code></td><td><span class="tag live">keep</span> — session/state plumbing</td></tr>
+    <tr><td><code>taxonomy_tools.py</code>, <code>metadata_tools.py</code> (narrow, <code>AbundanceMatrix</code>-coupled)</td><td><span class="tag die">delete</span> — the old narrow-tool model</td></tr>
+  </table>
+  <div class="why"><h4>Consequence</h4><p style="margin:0">The agent loses one-shot tools like "build an abundance matrix."
+     Feature tables are instead built by the agent writing a <code>build.py</code> (via <code>run_python</code> + the scaffold
+     CLI), which is how <code>ABX_new</code> already works. The agent's whole capability stays intact — the <em>how</em>
+     changes from rigid tools to authored Python. Deleting these two files removes the last importers of
+     <code>AbundanceMatrix</code> and the old contracts, unlocking §3.</p></div>
+</section>
+
+<section id="layout">
+  <h2><span class="num">5</span>Target folder layout <span class="tag lock">LOCKED</span></h2>
+  <p class="lead">Consolidate all source under <code>src/</code> as three peer packages: the toolbox, and the two parts of the
+     product that sits on it.</p>
+<pre><span class="c"># source — three peer packages</span>
+src/
+├── askslm/        <span class="c"># the toolbox the agent calls</span>
+│   ├── __init__.py     <span class="c"># public surface: metadata, taxonomy, workspace</span>
+│   ├── workspace.py    <span class="c"># phase tooling (unchanged)</span>
+│   ├── metadata.py     <span class="c"># surviving MetadataEngine: extract, overview</span>
+│   ├── taxonomy.py     <span class="c"># surviving TaxonomyEngine: load, lineage_table</span>
+│   ├── accessors/      <span class="c"># metadata_file_accessor, taxonomy_file_accessor</span>
+│   ├── contracts.py    <span class="c"># MetadataOverview only</span>
+│   └── cli.py          <span class="c"># scaffold CLI (was Clients/cli.py)</span>
+├── agent/         <span class="c"># the LLM agent (was Agents/) — run_python, session, registry</span>
+└── web/           <span class="c"># the web UI (was Web/) — the only thing the user touches</span>
+
+<span class="c"># non-source, stays at top level</span>
+Docs/  Tests/  Workspaces/  Scripts/git-guard/  Notebooks/  <span class="c"># Notebooks/ = just biom_explore.ipynb</span>
+pyproject.toml  askslm.py  README.md  CLAUDE.md  AGENTS.md
+</pre>
+  <div class="why"><h4>Why <code>src/</code> peers</h4><p style="margin:0">It matches "consolidate under <code>src/</code>", ends the
+     <code>ask_slm</code>-vs-<code>askslm</code> egg-info split, and mirrors the product's own shape: <code>askslm</code> is the
+     reusable toolbox, <code>agent</code> + <code>web</code> are the application. <code>pyproject</code>'s
+     <code>packages.find</code> changes <code>where = ["src"]</code>, include the three packages.</p></div>
+  <div class="callout"><strong>Import churn is real and must be done in one move.</strong> Engine/Accessor code moving into
+     <code>askslm/</code> means every surviving import path changes (<code>Engines.MetadataEngine</code> &rarr;
+     <code>askslm.metadata</code>, etc.), in <code>askslm</code>, <code>agent</code>, <code>web</code>, and <code>Tests/</code>.
+     The implementation plan treats the move + import rewrite as a single atomic step, gated by the test suite.</div>
+</section>
+
+<section id="sweep">
+  <h2><span class="num">6</span>Junk sweep <span class="tag lock">LOCKED</span> — no code impact</h2>
+  <ul class="tight">
+    <li><strong>Notebooks/</strong>: keep <code>biom_explore.ipynb</code>; delete <code>Cli_Runner</code>, <code>Demo</code>,
+        <code>cluster_braycurtis</code>, <code>new</code>, <code>pivot</code>, <code>runner.ipynb</code>, the <code>out/</code>
+        scratch, <code>__pycache__</code>, and the stray <code>Viral_Ecological_Clusters_Master_Map-v2.xlsx</code> (the real
+        copy lives in <code>ABX_new/0_inputs/</code>). Decide a home: a top-level <code>Notebooks/</code> for the surviving
+        explorer is fine.</li>
+    <li><strong><code>Notebooks/taxdump.tar.gz</code></strong> (misplaced): the NCBI dump that feeds ete3. It is runtime data
+        ete3 unpacks to <code>~/.etetoolkit/</code> — it does not belong in the repo. <strong>Delete it; document that the
+        ete3 DB (<code>~/.etetoolkit/taxa.sqlite</code>) is a local prerequisite</strong> (the data contract already says so).</li>
+    <li><strong>Build/editor junk</strong>: delete both <code>*.egg-info/</code> dirs, all <code>__pycache__/</code>,
+        <code>.DS_Store</code>; add them plus <code>.idea/</code> to <code>.gitignore</code>.</li>
+  </ul>
+  <div class="callout"><strong>No <code>archive/</code> graveyard — git history is the archive.</strong> Superseded docs are
+     <em>deleted</em>, not moved aside. Anything needed later is recoverable from git.</div>
+
+  <h3>Docs disposition</h3>
+  <p>The bulk of the sweep is here: most of <code>Docs/</code> describes the old runner / <code>AbundanceMatrix</code> model.</p>
+  <table>
+    <tr><th>Path</th><th>Fate</th><th>Reason</th></tr>
+    <tr><td><code>feature-table-and-library-palette.html</code></td><td><span class="tag live">keep</span></td><td>the bible — source of truth for the new model</td></tr>
+    <tr><td><code>superpowers/specs/2026-06-03-workspace-tooling-design.html</code><br><code>superpowers/specs/2026-06-03-workspace-phase-organization-design.html</code></td><td><span class="tag live">keep</span></td><td>live design of the phase tooling that <code>ABX_new</code> uses</td></tr>
+    <tr><td><code>superpowers/specs/2026-06-04-project-reconciliation-and-cleanup-design.html</code></td><td><span class="tag live">keep</span></td><td>this spec</td></tr>
+    <tr><td><code>requirements.txt</code></td><td><span class="tag live">keep</span></td><td><strong>the only dependency manifest</strong> (<code>pyproject</code> has no deps). Trim stale entries: <code>pandera</code> (schema-validation, contradicts the trust-input contract), and the notebook/plotly extras if unused.</td></tr>
+    <tr><td><code>research_capabilities.md</code> (Hebrew capabilities doc)</td><td><span class="tag live">keep</span></td><td>seed material for the upcoming Web UI spec (kept by your call). Has old-model bits (hard-schema validation, mapping UI).</td></tr>
+    <tr><td><code>product-documentation/</code> (entire tree: <code>index.html</code>, <code>focus/</code>, <code>sequence-diagrams/</code>, <code>uml/</code>, starter outline)</td><td><span class="tag die">delete</span></td><td>old runner / DatasetAssembly / CLI model — per your call, no archive</td></tr>
+    <tr><td><code>engineering-playbook.md</code></td><td><span class="tag die">delete</span></td><td>stale process doc (mentions backward-compat, <code>metadata-overview</code> CLI); process now lives in <code>CLAUDE.md</code> / <code>AGENTS.md</code></td></tr>
+    <tr><td><code>superpowers/plans/</code> (all 11)</td><td><span class="tag die">delete</span></td><td>spent implementation plans — the code is the record</td></tr>
+    <tr><td><code>superpowers/specs/</code> old (<code>lean-core-api</code>, <code>agent-orchestrator</code>, <code>cohort-*</code> ×2, <code>web-ui-readability-spec-b</code>)</td><td><span class="tag die">delete</span></td><td>superseded designs; the old web-ui spec is being re-created anyway</td></tr>
+    <tr><td><code>superpowers/decisions/2026-05-25-abundance-count-semantics.md</code></td><td><span class="tag die">delete</span></td><td>the <code>self_count</code>/<code>total_count</code> rationale now lives in the bible</td></tr>
+  </table>
+
+  <div class="why"><h4>Workspaces</h4><p style="margin:0">The five stale runtime workspaces (~15 GB, git-ignored) are
+     <strong>kept</strong> per your call; docs simply note <code>ABX_new</code> is canonical. No deletion there.</p></div>
+</section>
+
+<section id="docs">
+  <h2><span class="num">7</span>Reframed docs <span class="tag prop">PROPOSED</span></h2>
+  <table>
+    <tr><th>File</th><th>Change</th></tr>
+    <tr><td><code>CLAUDE.md</code></td><td>Replace the SRA overview + layer table with §2's definition. Keep the branching policy
+        (still enforced). Replace "Layer Architecture" with the <code>src/</code> map and the feature-table model; point to the
+        HTML bible. Drop the two-DataFrame rule and the old <code>AskSLMAPI</code> example.</td></tr>
+    <tr><td><code>README.md</code></td><td>Rewrite the canonical-usage block: the product is the web-UI agent, the toolbox is
+        <code>askslm</code>; show the <code>ABX_new</code> phase-script style, not the retired <code>build_abundance_matrix</code>
+        flow.</td></tr>
+    <tr><td><code>AGENTS.md</code></td><td>Delete the entire legacy section (<code>Managers</code>, <code>DatasetAssemblyEngine</code>,
+        stage_01–05, the old CLI command list). Keep the numbered-phase workflow, the scaffold-CLI rules, biom-JSON
+        serialization, and the promotion rule. Update paths to <code>src/</code>.</td></tr>
+  </table>
+  <div class="why"><h4>Marked PROPOSED, not LOCKED</h4><p style="margin:0">The exact prose of the three docs is the one place
+     worth a second look on review; the §2 definition they embed is locked.</p></div>
+</section>
+
+<section id="order">
+  <h2><span class="num">8</span>Order of work</h2>
+  <p class="lead">Sequenced so the tree is never broken between steps; each step ends green.</p>
+  <ol class="tight">
+    <li><strong>Rewire, then delete.</strong> Trim <code>askslm/__init__.py</code> + <code>contracts.py</code>; delete the two
+        narrow agent tool files and their registrations. Now nothing imports the dead code.</li>
+    <li><strong>Delete dead code + its tests</strong> (§3 "dies" table; remove matching <code>Tests/</code> files).</li>
+    <li><strong>Move surviving domain code into <code>src/askslm/</code></strong>, move <code>Agents/</code>&rarr;<code>src/agent/</code>,
+        <code>Web/</code>&rarr;<code>src/web/</code>; rewrite every import; update <code>pyproject</code> + <code>askslm.py</code>.
+        Atomic, test-gated.</li>
+    <li><strong>Junk sweep + <code>.gitignore</code></strong> (§6): delete the old Docs (no archive), notebooks, build junk.</li>
+    <li><strong>Reframe the three docs</strong> (§7).</li>
+    <li><strong>Verify</strong> (§9): suite green + <code>ABX_new</code> phase chain runs end-to-end.</li>
+  </ol>
+</section>
+
+<section id="scope">
+  <h2><span class="num">9</span>Out of scope</h2>
+  <ul class="tight">
+    <li><strong>The Web UI re-spec</strong> — this pass clears the ground; the new UI spec is the next, separate effort.</li>
+    <li><strong>New analysis features</strong> — no new operations beyond what <code>ABX_new</code> exercises.</li>
+    <li><strong>Deleting the runtime workspaces</strong> — kept by your decision.</li>
+    <li><strong>Re-architecting the agent</strong> — only the tool surface is reconciled (§4); the loop/session machinery is unchanged.</li>
+  </ul>
+</section>
+
+<section id="verify">
+  <h2><span class="num">10</span>Verification — done means</h2>
+  <ul class="tight">
+    <li><code>grep -rn "AbundanceMatrix\|matrix_writers\|Managers\|from Engines\|Common.contracts.selectors"</code> over
+        <code>src/</code> returns nothing.</li>
+    <li><code>python -m pytest Tests -q</code> is green (after dead-code tests are removed and import paths updated).</li>
+    <li>The <code>ABX_new</code> chain runs unedited: <code>build.py</code> &rarr; <code>explore.py</code> &rarr;
+        both analyses, producing the same <code>feature_table.biom</code> / CSVs / plots.</li>
+    <li><code>pip install -e .</code> succeeds with the single <code>src/</code> layout; one egg-info, named <code>ask_slm</code>.</li>
+    <li>Fresh read of <code>CLAUDE.md</code> / <code>README.md</code> / <code>AGENTS.md</code> describes only the new model — no
+        layer table, no <code>AbundanceMatrix</code>, no SRA command list.</li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  Ask-SLM · reconciliation &amp; cleanup design · 2026-06-04 · source of truth for the new model:
+  <code>Docs/feature-table-and-library-palette.html</code>. This pass precedes the Web UI re-spec.
+</footer>
+
+</body>
+</html>
