@@ -1,5 +1,6 @@
 """askslm scaffold CLI: stamp the locked workspace phase tree. Entry point: main().
 
+Run from the repo root — paths are resolved against `Workspaces/` in the working directory.
 Conventions it encodes are the law in AGENTS.md; rationale is in
 Docs/superpowers/specs/2026-06-03-workspace-tooling-design.html.
 """
@@ -86,7 +87,7 @@ def workspace_new(name: str) -> None:
 def transform_add(name: str, exploration: str) -> None:
     folder = WORKSPACES / name / "2_transform" / exploration
     _write(folder / "explore.py", EXPLORE_PY.format(exploration=exploration))
-    _write(folder / "explore.md", EXPLORE_MD.format(exploration=exploration))
+    _write(folder / "explore.md", EXPLORE_MD)
 
 
 def analysis_add(name: str, exploration: str, analysis: str) -> None:
@@ -100,7 +101,7 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text)
 
 
-def main(argv=None) -> None:
+def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
     _dispatch(args)
 
@@ -140,4 +141,5 @@ def _dispatch(args) -> None:
         return workspace_new(args.name)
     if args.group == "transform":
         return transform_add(args.name, args.exploration)
-    return analysis_add(args.name, args.exploration, args.analysis)
+    if args.group == "analysis":
+        return analysis_add(args.name, args.exploration, args.analysis)

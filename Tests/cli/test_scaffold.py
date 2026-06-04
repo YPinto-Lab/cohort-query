@@ -30,7 +30,9 @@ def test_transform_add_creates_exploration(tmp_path, monkeypatch):
     main(["transform", "add", "ABX", "no-control_bacteria"])
 
     explore = tmp_path / "Workspaces" / "ABX" / "2_transform" / "no-control_bacteria" / "explore.py"
-    assert "ws.upstream()" in explore.read_text()
+    body = explore.read_text()
+    assert "ws.upstream()" in body
+    assert "askslm-no-control_bacteria" in body
 
 
 def test_analysis_add_creates_grouped_analysis(tmp_path, monkeypatch):
@@ -40,6 +42,6 @@ def test_analysis_add_creates_grouped_analysis(tmp_path, monkeypatch):
 
     main(["analysis", "add", "ABX", "no-control_bacteria", "braycurtis"])
 
-    analysis = (tmp_path / "Workspaces" / "ABX" / "3_analyze"
-                / "no-control_bacteria" / "braycurtis" / "analysis.py")
-    assert "ws.upstream()" in analysis.read_text()
+    analysis_dir = tmp_path / "Workspaces" / "ABX" / "3_analyze" / "no-control_bacteria" / "braycurtis"
+    assert "ws.upstream()" in (analysis_dir / "analysis.py").read_text()
+    assert "no-control_bacteria" in (analysis_dir / "analysis.md").read_text()
