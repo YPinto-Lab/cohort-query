@@ -3,6 +3,20 @@
 ## What this repo is
 Ask-SLM is a microbiome/metagenomic query engine. Use `askslm.py` for scripted runs and `runner.ipynb` for interactive work.
 
+## Workspace phase workflow (numbered phases)
+A study lives in `Workspaces/<name>/` as phases handed off through files on disk:
+`0_inputs/ -> 1_build/community.biom -> 2_transform/<exploration>/result/community.biom -> 3_analyze/<exploration>/<analysis>/{data,plots}`.
+
+- **Scaffold with the CLI, never by hand:** `askslm workspace new <name>`, `askslm transform add <ws> <exploration>`, `askslm analysis add <ws> <exploration> <name>`.
+- **Every phase script starts** `from askslm import workspace` then `ws = workspace.phase(__file__)`. No `sys.path` / `parents[N]`. Use `ws.inputs`, `ws.upstream()`, `ws.result`, `ws.data`, `ws.plots`, `ws.shared`.
+- **Promotion rule:** write a step inline first; lift it into that phase's `shared.py` only when a 2nd script in the same phase needs it.
+- **Two libraries:** general reusable logic lives in the `askslm` package; study-specific helpers live in `<phase>/shared.py`.
+- **Naming:** explorations are intent-named (`no-control_bacteria`); analyses are grouped under their exploration by method (`braycurtis`).
+- **Serialization:** communities are biom **JSON** (`to_json` / `load_table`) — HDF5 cannot round-trip the nested lineage metadata.
+- Rationale and full model: `Docs/abundancetable.html` and `Docs/superpowers/specs/2026-06-03-workspace-tooling-design.html`.
+
+> Note: the legacy `## Workspace conventions` / `## CLI entrypoints` sections below describe the older `Workspaces/<ws>/{inputs,results}` layout and `askslm.py` command set, which the numbered-phase workflow supersedes for new studies.
+
 ## Architecture to respect
 - Dependency flow is **Client -> Managers -> Engines -> Accessors**; do not call upward.
 - Put orchestration in `managers/analysis_pipeline_manager.py`.
