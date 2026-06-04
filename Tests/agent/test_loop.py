@@ -1,9 +1,9 @@
 import pandas as pd
-from Agents.workspace import Workspace
-from Agents.session import Session
-from Agents.llm_client import FakeLLMClient, ToolUse, AssistantText
-from Agents.loop import run
-from Agents.tools import default_registry
+from agent.workspace import Workspace
+from agent.session import Session
+from agent.llm_client import FakeLLMClient, ToolUse, AssistantText
+from agent.loop import run
+from agent.tools import default_registry
 
 
 def _sess(tmp_path):
@@ -41,7 +41,7 @@ def test_loop_recovers_from_bad_args(tmp_path):
 
 def test_loop_step_limit(tmp_path, monkeypatch):
     sess = _sess(tmp_path)
-    import Agents.loop as loop_mod
+    import agent.loop as loop_mod
     monkeypatch.setattr(loop_mod, "MAX_STEPS", 2)
     fake = FakeLLMClient(responses=[
         [ToolUse(id=f"u{i}", name="list_workspace_inputs", input={})] for i in range(5)

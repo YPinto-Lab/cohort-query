@@ -1,6 +1,6 @@
 import pandas as pd
-from Common.contracts.sra_schema import SRAMetadataSchema
-from Accessors.MetadataAccessor.metadata_file_accessor import MetadataFileAccessor
+from askslm.sra_schema import SRAMetadataSchema
+from askslm.accessors.metadata_file_accessor import MetadataFileAccessor
 
 
 def _write_csv(tmp_path):

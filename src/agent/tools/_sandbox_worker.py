@@ -11,7 +11,7 @@ WHITELIST_IMPORTS = ("pandas", "numpy", "scipy", "skbio")
 # runtime type paths use the concrete module (type(obj).__module__), e.g. biom.table not biom
 RECOGNIZED_TYPE_PATHS = (
     "biom.table.Table",
-    "Common.contracts.metadata_results.MetadataOverview",
+    "askslm.contracts.MetadataOverview",
     "pandas.core.frame.DataFrame",
 )
 

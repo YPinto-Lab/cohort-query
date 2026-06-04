@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from biom import Table
 
-from Agents.summaries import summarize_object
+from agent.summaries import summarize_object
 
 
 def test_feature_table_summary():

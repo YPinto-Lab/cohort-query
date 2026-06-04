@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 from ete3 import NCBITaxa
 
-from Accessors.TaxonomyAccessor.taxonomy_file_accessor import TaxonomyFileAccessor
+from askslm.accessors.taxonomy_file_accessor import TaxonomyFileAccessor
 
 
 def load(source: str | Path) -> pd.DataFrame:

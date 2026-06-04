@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any
-from Agents.summaries import summarize_object
+from agent.summaries import summarize_object
 
 
 class VariableStore:

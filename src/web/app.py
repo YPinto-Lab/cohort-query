@@ -10,11 +10,11 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from Agents.agent import Agent
-from Agents.workspace import Workspace
-from Agents.llm_client import LLMClient, AnthropicClient
-from Agents.events import Event
-from Web.sessions_index import list_sessions, load_transcript
+from agent.agent import Agent
+from agent.workspace import Workspace
+from agent.llm_client import LLMClient, AnthropicClient
+from agent.events import Event
+from web.sessions_index import list_sessions, load_transcript
 
 WORKSPACES_ROOT = Path(os.environ.get("ASKSLM_WORKSPACES", "./Workspaces"))
 

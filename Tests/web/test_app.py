@@ -9,7 +9,7 @@ def _ws(tmp_path):
 
 
 def test_index_lists_workspaces(tmp_path, monkeypatch):
-    from Web import app as app_mod
+    from web import app as app_mod
     monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
     _ws(tmp_path)
     client = TestClient(app_mod.app)
@@ -19,7 +19,7 @@ def test_index_lists_workspaces(tmp_path, monkeypatch):
 
 
 def test_chat_page_renders(tmp_path, monkeypatch):
-    from Web import app as app_mod
+    from web import app as app_mod
     monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
     _ws(tmp_path)
     client = TestClient(app_mod.app)
@@ -29,8 +29,8 @@ def test_chat_page_renders(tmp_path, monkeypatch):
 
 
 def test_sse_streams_events_with_fake_llm(tmp_path, monkeypatch):
-    from Web import app as app_mod
-    from Agents.llm_client import FakeLLMClient, AssistantText
+    from web import app as app_mod
+    from agent.llm_client import FakeLLMClient, AssistantText
     monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
     monkeypatch.setattr(app_mod, "build_llm", lambda: FakeLLMClient([[AssistantText(text="hi")]]))
     _ws(tmp_path)
@@ -44,7 +44,7 @@ def test_sse_streams_events_with_fake_llm(tmp_path, monkeypatch):
 
 
 def test_sessions_listing_shows_past_transcripts(tmp_path, monkeypatch):
-    from Web import app as app_mod
+    from web import app as app_mod
     monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
     root = _ws(tmp_path)
     (root / "results" / "agent_log").mkdir(parents=True)
@@ -58,7 +58,7 @@ def test_sessions_listing_shows_past_transcripts(tmp_path, monkeypatch):
 
 
 def test_replay_renders_transcript(tmp_path, monkeypatch):
-    from Web import app as app_mod
+    from web import app as app_mod
     monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
     root = _ws(tmp_path)
     (root / "results" / "agent_log").mkdir(parents=True)
@@ -74,7 +74,7 @@ def test_replay_renders_transcript(tmp_path, monkeypatch):
 
 
 def test_workspace_path_traversal_is_rejected(tmp_path, monkeypatch):
-    from Web import app as app_mod
+    from web import app as app_mod
     monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
     _ws(tmp_path)
     client = TestClient(app_mod.app)
@@ -84,7 +84,7 @@ def test_workspace_path_traversal_is_rejected(tmp_path, monkeypatch):
 
 
 def test_session_id_path_traversal_is_rejected(tmp_path, monkeypatch):
-    from Web import app as app_mod
+    from web import app as app_mod
     monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
     root = _ws(tmp_path)
     (root / "results" / "agent_log").mkdir(parents=True)

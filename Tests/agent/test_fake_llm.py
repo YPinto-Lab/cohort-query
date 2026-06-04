@@ -1,4 +1,4 @@
-from Agents.llm_client import FakeLLMClient, ToolUse, AssistantText
+from agent.llm_client import FakeLLMClient, ToolUse, AssistantText
 
 
 def test_fake_returns_scripted_responses_in_order():

@@ -1,5 +1,5 @@
 from typing import get_type_hints
-from Agents.handle import Handle
+from agent.handle import Handle
 
 
 def test_handle_is_str_at_runtime():
@@ -9,12 +9,12 @@ def test_handle_is_str_at_runtime():
 
 
 def test_handle_unwrap_arg_returns_underlying_type():
-    from Agents.handle import unwrap_handle_arg
+    from agent.handle import unwrap_handle_arg
     def fn(x: Handle[int]) -> None: ...
     hint = get_type_hints(fn, include_extras=True)["x"]
     assert unwrap_handle_arg(hint) is int
 
 
 def test_unwrap_returns_none_for_non_handle():
-    from Agents.handle import unwrap_handle_arg
+    from agent.handle import unwrap_handle_arg
     assert unwrap_handle_arg(str) is None

@@ -1,6 +1,6 @@
 from __future__ import annotations
-from Agents.session import Session
-from Agents.tools.registry import Registry
+from agent.session import Session
+from agent.tools.registry import Registry
 
 session_registry = Registry()
 

@@ -1,7 +1,7 @@
 import pandas as pd
-from Agents.workspace import Workspace
-from Agents.session import Session
-from Agents.tools.session_tools import session_registry
+from agent.workspace import Workspace
+from agent.session import Session
+from agent.tools.session_tools import session_registry
 
 
 def test_summarize_returns_handle_summary(tmp_path):

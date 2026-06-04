@@ -2,10 +2,10 @@ from __future__ import annotations
 import json
 from typing import Iterator
 
-from Agents.events import Event
-from Agents.session import Session
-from Agents.llm_client import LLMClient
-from Agents.tools.registry import Registry
+from agent.events import Event
+from agent.session import Session
+from agent.llm_client import LLMClient
+from agent.tools.registry import Registry
 
 MAX_STEPS = 20
 
@@ -85,7 +85,7 @@ def _transcript_extras(tu) -> dict:
     # Inline import keeps this leaky coupling to a private helper local to one branch.
     if tu.name != "run_python":
         return {}
-    from Agents.tools.run_python import _extract_imports
+    from agent.tools.run_python import _extract_imports
     code = tu.input.get("code", "")
     return {"code": code, "imports_used": _extract_imports(code)}
 

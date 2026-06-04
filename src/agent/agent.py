@@ -1,13 +1,13 @@
 from __future__ import annotations
 from typing import Iterator
 
-from Agents.workspace import Workspace
-from Agents.session import Session
-from Agents.events import Event
-from Agents.llm_client import LLMClient
-from Agents.tools import default_registry
-from Agents.tools.registry import Registry
-from Agents.loop import run
+from agent.workspace import Workspace
+from agent.session import Session
+from agent.events import Event
+from agent.llm_client import LLMClient
+from agent.tools import default_registry
+from agent.tools.registry import Registry
+from agent.loop import run
 
 
 class Agent:

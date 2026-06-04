@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
-from Agents.workspace import Workspace
-from Agents.session import Session
-from Agents.tools.run_python import run_python_registry
+from agent.workspace import Workspace
+from agent.session import Session
+from agent.tools.run_python import run_python_registry
 
 
 def test_basic_arithmetic(tmp_path):

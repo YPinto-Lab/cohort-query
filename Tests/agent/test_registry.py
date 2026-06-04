@@ -1,9 +1,9 @@
 import pytest
 from typing import Literal
-from Agents.tools.registry import tool, Registry
-from Agents.handle import Handle
-from Agents.session import Session
-from Agents.workspace import Workspace
+from agent.tools.registry import tool, Registry
+from agent.handle import Handle
+from agent.session import Session
+from agent.workspace import Workspace
 
 
 @pytest.fixture
@@ -102,5 +102,5 @@ def test_unknown_tool_errors(session):
 
 
 def test_default_registry_includes_all_tools():
-    from Agents.tools import default_registry
+    from agent.tools import default_registry
     assert set(default_registry._tools) == {"list_workspace_inputs", "run_python", "summarize"}

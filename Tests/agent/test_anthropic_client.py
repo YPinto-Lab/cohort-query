@@ -1,5 +1,5 @@
 from unittest.mock import MagicMock
-from Agents.llm_client import AnthropicClient
+from agent.llm_client import AnthropicClient
 
 
 def test_anthropic_client_parses_tool_use(monkeypatch):
@@ -15,7 +15,7 @@ def test_anthropic_client_parses_tool_use(monkeypatch):
     fake_client = MagicMock()
     fake_client.messages.create.return_value = fake_msg
 
-    import Agents.llm_client as m
+    import agent.llm_client as m
     monkeypatch.setattr(m, "_anthropic_client", lambda: fake_client)
 
     client = AnthropicClient(model="claude-test")

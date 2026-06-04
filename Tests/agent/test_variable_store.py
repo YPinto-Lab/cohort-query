@@ -1,6 +1,6 @@
 import pandas as pd
 import pytest
-from Agents.variable_store import VariableStore
+from agent.variable_store import VariableStore
 
 
 def test_put_returns_handle_and_get_returns_object():

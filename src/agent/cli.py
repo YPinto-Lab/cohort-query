@@ -3,8 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from Agents.review import analyze, format_report
-from Agents.show import format_session
+from agent.review import analyze, format_report
+from agent.show import format_session
 
 
 def main() -> None:

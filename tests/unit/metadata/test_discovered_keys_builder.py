@@ -1,5 +1,5 @@
 import pandas as pd
-from Engines.MetadataEngine.discovered_keys_builder import DiscoveredKeysBuilder
+from askslm.metadata.discovered_keys_builder import DiscoveredKeysBuilder
 
 
 def _extracted():

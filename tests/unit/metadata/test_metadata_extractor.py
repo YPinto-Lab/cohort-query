@@ -1,5 +1,5 @@
 import pandas as pd
-from Engines.MetadataEngine.metadata_extractor import MetadataExtractor
+from askslm.metadata.metadata_extractor import MetadataExtractor
 
 
 def _raw():

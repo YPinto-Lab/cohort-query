@@ -1,5 +1,5 @@
 import pandas as pd
-from Engines.MetadataEngine.metadata_overview_builder import MetadataOverviewBuilder
+from askslm.metadata.metadata_overview_builder import MetadataOverviewBuilder
 
 
 def _extracted():

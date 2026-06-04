@@ -1,4 +1,4 @@
-from Agents.events import Event
+from agent.events import Event
 
 
 def test_event_factories():

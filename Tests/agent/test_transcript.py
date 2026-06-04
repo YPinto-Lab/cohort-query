@@ -1,5 +1,5 @@
 import json
-from Agents.transcript import TranscriptWriter
+from agent.transcript import TranscriptWriter
 
 
 def test_writes_user_message(tmp_path):

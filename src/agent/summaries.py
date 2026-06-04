@@ -3,7 +3,7 @@ from typing import Any, Callable
 import pandas as pd
 from biom import Table
 
-from Common.contracts.metadata_results import MetadataOverview
+from askslm.contracts import MetadataOverview
 
 
 def _biom_table(t: Table) -> dict:

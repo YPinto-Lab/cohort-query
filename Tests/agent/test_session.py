@@ -1,6 +1,6 @@
 import pandas as pd
-from Agents.workspace import Workspace
-from Agents.session import Session
+from agent.workspace import Workspace
+from agent.session import Session
 
 
 def test_session_creates_transcript_in_workspace(tmp_path):

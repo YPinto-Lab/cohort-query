@@ -2,9 +2,9 @@ import os
 import pandas as pd
 import pytest
 
-from Agents.agent import Agent
-from Agents.workspace import Workspace
-from Agents.llm_client import AnthropicClient
+from agent.agent import Agent
+from agent.workspace import Workspace
+from agent.llm_client import AnthropicClient
 
 pytestmark = pytest.mark.llm
 

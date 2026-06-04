@@ -1,5 +1,5 @@
 import pandas as pd
-from Engines.MetadataEngine.source_key_parser import SourceKeyParser
+from askslm.metadata.source_key_parser import SourceKeyParser
 
 
 def test_parses_jattr_and_attributes():

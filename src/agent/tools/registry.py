@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Any, Callable, get_type_hints
 from pydantic import ValidationError, create_model
 
-from Agents.handle import unwrap_handle_arg
-from Agents.session import Session
+from agent.handle import unwrap_handle_arg
+from agent.session import Session
 
 
 @dataclass

@@ -1,5 +1,5 @@
 from pathlib import Path
-from Accessors.TaxonomyAccessor.taxonomy_file_accessor import TaxonomyFileAccessor
+from askslm.accessors.taxonomy_file_accessor import TaxonomyFileAccessor
 
 FIXTURE = Path(__file__).parent.parent.parent / "fixtures" / "taxonomy_tiny.csv"
 

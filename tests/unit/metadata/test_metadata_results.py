@@ -1,5 +1,5 @@
 import pandas as pd
-from Common.contracts.metadata_results import MetadataOverview
+from askslm.contracts import MetadataOverview
 
 
 def _overview():

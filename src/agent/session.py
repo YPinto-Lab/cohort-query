@@ -4,9 +4,9 @@ from datetime import datetime, timezone
 from typing import Any
 import uuid
 
-from Agents.workspace import Workspace
-from Agents.variable_store import VariableStore
-from Agents.transcript import TranscriptWriter
+from agent.workspace import Workspace
+from agent.variable_store import VariableStore
+from agent.transcript import TranscriptWriter
 
 
 @dataclass

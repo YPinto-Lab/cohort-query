@@ -1,7 +1,7 @@
 from __future__ import annotations
-from Agents.tools.registry import Registry
-from Agents.tools.session_tools import session_registry
-from Agents.tools.run_python import run_python_registry
+from agent.tools.registry import Registry
+from agent.tools.session_tools import session_registry
+from agent.tools.run_python import run_python_registry
 
 
 def _merge(*regs: Registry) -> Registry:

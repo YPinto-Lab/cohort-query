@@ -1,5 +1,5 @@
 import pandas as pd
-import Engines.MetadataEngine as metadata
+import askslm.metadata as metadata
 
 
 def _raw():

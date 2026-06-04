@@ -1,4 +1,4 @@
-from Clients.cli import main
+from askslm.cli import main
 
 
 def test_workspace_new_stamps_phase_tree(tmp_path, monkeypatch):

@@ -1,5 +1,5 @@
 import json
-from Agents.show import format_session
+from agent.show import format_session
 
 
 def test_format_session_renders_chronological(tmp_path):

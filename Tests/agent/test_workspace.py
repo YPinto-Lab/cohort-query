@@ -1,5 +1,5 @@
 import pytest
-from Agents.workspace import Workspace
+from agent.workspace import Workspace
 
 
 def test_paths_resolve_relative_to_root(tmp_path):

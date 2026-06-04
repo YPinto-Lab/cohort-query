@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from Common.contracts.metadata_results import MetadataOverview
-from Common.contracts.sra_schema import SRAMetadataSchema
+from askslm.contracts import MetadataOverview
+from askslm.sra_schema import SRAMetadataSchema
 from .discovered_keys_builder import DiscoveredKeysBuilder
 from .metadata_coverage_builder import MetadataCoverageBuilder
 from .metadata_summary_builder import MetadataSummaryBuilder

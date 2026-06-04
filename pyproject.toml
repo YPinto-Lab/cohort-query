@@ -9,11 +9,9 @@ description = "Ask-SLM: a metagenomic analysis toolkit for querying and analyzin
 requires-python = ">=3.12"
 
 [project.scripts]
-askslm = "Clients.cli:main"
+askslm = "askslm.cli:main"
 
-# Flat layout: the importable top-level packages live at the repo root. namespaces=true so the
-# layers without an __init__.py (Accessors, Common) are picked up as namespace packages.
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["askslm*", "Engines*", "Accessors*", "Common*", "Clients*"]
+where = ["src"]
+include = ["askslm*", "agent*", "web*"]
 namespaces = true

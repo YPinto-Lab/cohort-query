@@ -1,5 +1,5 @@
 import pandas as pd
-from Engines.MetadataEngine.metadata_coverage_builder import MetadataCoverageBuilder
+from askslm.metadata.metadata_coverage_builder import MetadataCoverageBuilder
 
 
 def _extracted():

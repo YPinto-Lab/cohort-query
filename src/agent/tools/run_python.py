@@ -4,8 +4,8 @@ import pickle
 import subprocess
 import sys
 
-from Agents.session import Session
-from Agents.tools.registry import Registry
+from agent.session import Session
+from agent.tools.registry import Registry
 
 run_python_registry = Registry()
 
@@ -46,7 +46,7 @@ def run_python(session: Session, code: str, timeout_s: int = DEFAULT_TIMEOUT_S) 
 
     try:
         proc = subprocess.run(
-            [sys.executable, "-m", "Agents.tools._sandbox_worker"],
+            [sys.executable, "-m", "agent.tools._sandbox_worker"],
             input=payload,
             capture_output=True,
             timeout=timeout_s,

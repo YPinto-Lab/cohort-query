@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from Common.contracts.sra_schema import SRATaxonomySchema
+from askslm.sra_schema import SRATaxonomySchema
 
 
 class TaxonomyFileAccessor:
