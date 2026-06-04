@@ -1,7 +1,17 @@
 # AGENTS.md
 
 ## What this repo is
-Ask-SLM is a microbiome/metagenomic query engine. Use `askslm.py` for scripted runs and `runner.ipynb` for interactive work.
+Ask-SLM is a workbench for reproducible metagenomic analysis. The user drives everything through
+the web UI; the LLM agent authors and runs Python using the `askslm` package and the domain
+library palette to build and analyze studies as workspaces of phase scripts.
+
+## Architecture
+
+- `src/askslm/` — the toolbox the agent calls (workspace phase tooling, metadata, taxonomy, accessors, cli).
+- `src/agent/` — the LLM agent (run_python, session, registry).
+- `src/web/` — the web UI; the only surface the user touches.
+
+Dependencies flow downward: agent and web call `askslm`, never the reverse.
 
 ## Workspace phase workflow (numbered phases)
 A study lives in `Workspaces/<name>/` as phases handed off through files on disk:
@@ -15,41 +25,11 @@ A study lives in `Workspaces/<name>/` as phases handed off through files on disk
 - **Serialization:** communities are biom **JSON** (`to_json` / `load_table`) — HDF5 cannot round-trip the nested lineage metadata.
 - Rationale and full model: `Docs/feature-table-and-library-palette.html` and `Docs/superpowers/specs/2026-06-03-workspace-tooling-design.html`.
 
-> Note: the legacy `## Workspace conventions` / `## CLI entrypoints` sections below describe the older `Workspaces/<ws>/{inputs,results}` layout and `askslm.py` command set, which the numbered-phase workflow supersedes for new studies.
-
-## Architecture to respect
-- Dependency flow is **Client -> Managers -> Engines -> Accessors**; do not call upward.
-- Put orchestration in `managers/analysis_pipeline_manager.py`.
-- Keep computations in `Engines/` and external I/O in `Accessors/`.
-- Shared cross-layer payloads and schemas live in `Common/contracts/*`.
-
-## Workspace conventions
-- Canonical workspace layout is `Workspaces/<workspace>/inputs`, `mapping_configs`, and `results`.
-- `SRAWorkspaceInputAccessor` accepts split inputs such as `metadata_*.csv`, `metadata_parts/*.csv`, `taxonomy_parts/*.csv`, then writes canonical `metadata.csv` / `taxonomy.csv` when needed.
-- CLI path resolution defaults to workspace-native folders and is case-insensitive for folder names.
-
-## Mapping and taxonomy rules
-- `MappingEngine` is guided-config: first run writes `<project>.json.template`, later runs consume `<project>.json`.
-- Metadata discovery comes from `jattr`, `attributes`, and direct metadata columns; `metadata-overview` reports all three sources.
-- Taxonomy lineage uses the nested-set model (`ileft`/`iright`) via `TaxonomyAccessor` and `Accessors/TaxonomyAccessor/merged.dmp`.
-- `build-taxonomy-lineage` creates `results/abundance_matrices/stage_05_accessor/taxon_query_db.json`; run it before `alpha-diversity`.
-
-## DatasetAssemblyEngine artifact flow
-- Stage order is `enrichment -> taxonomy_resolution -> aggregation -> final_assembly -> accessor`.
-- Canonical abundance outputs are written in **Final Assembly**, not earlier stages.
-- Key stage folders under `results/abundance_matrices/` are `stage_01_enrichment`, `stage_02_taxonomy_resolution`, `stage_03_aggregation`, `stage_04_final_assembly`, and `stage_05_accessor`.
-
-## CLI entrypoints and aliases
-- `askslm.py` is the primary CLI entrypoint; `cli.py` builds the parser.
-- `--workspace` is canonical; `--view` is accepted only as a deprecated alias.
-- Main commands: `metadata-overview`, `abundance-matrix`, `alpha-diversity`, `taxonomic-abundance`, `single-taxon-abundance`, `build-taxonomy-lineage`, `init`.
-
 ## Validation workflow
-- Install dependencies from `Docs/requirements.txt`.
-- Quick syntax check: `python -m py_compile askslm.py cli.py`.
-- Smoke-test the CLI with `python askslm.py metadata-overview --workspace ABX` and `python askslm.py abundance-matrix --workspace ABX`.
-- Tests are `unittest`-based; targeted examples include `python -m unittest Tests.unit.test_cli_top_values_formatting` and `python -m unittest Tests.e2e.test_cli_end_to_end`.
+- Install dependencies: `pip install -r Docs/requirements.txt && pip install -e .`
+- Run the test suite: `python -m pytest Tests -q`.
+- Verify the canonical example by running the phase scripts under `Workspaces/ABX_new` in order.
 
 ## Documentation maintenance
-If you change flow, contracts, stage order, cache behavior, or outputs, update the relevant docs in the same change set (`Docs/CLAUDE.md`, `Docs/engineering-playbook.md`, and the focused docs under `Docs/product-documentation/*`).
-
+If you change flow, contracts, phase structure, or outputs, update the relevant docs in the same
+change set: `CLAUDE.md`, `AGENTS.md`, and `Docs/feature-table-and-library-palette.html`.

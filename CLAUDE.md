@@ -2,82 +2,37 @@
 
 ## Project Overview
 
-Ask-SLM is a metagenomic analysis toolkit for querying and analyzing SRA (Sequence Read Archive) datasets. 
-- analysis and manipulation of metadata,
-- Analysis and manipulation of taxonomy
-- Facilitates and enables the activation of various existing statistical tools.
+Ask-SLM is a workbench that makes metagenomic analysis easy and reproducible. The user works
+entirely through a **web UI**, chatting with an **LLM agent** that builds and analyzes the study
+with them — from raw inputs to results — and answers questions about the data.
 
-## Layer Architecture
+The agent works by authoring and running Python against the `askslm` package and established
+libraries (biom, ete3, scikit-bio, scipy, pandas), standardizing everything into one structure:
+a **biom feature table** (counts + sample metadata + feature lineage).
 
-Dependencies flow downward only. Never import upward.
+Each study is a reproducible **workspace**: a plain folder of files on disk (Python scripts,
+`.biom` tables, CSVs, plots), organized into phases (build → transform → analyze). The disk is
+the source of truth; the web UI is the driver, not a walled garden. `Workspaces/ABX_new` is the
+canonical example. The domain today is metagenomics; the structure is general enough to extend.
 
-| Layer | Folder | Role |
-|---|---|---|
-| Client | `Clients/` | Public Python API (`askslm.metadata`, `askslm.taxonomy`). A user-facing CLI/UI is deferred to a separate layer. |
-| Engine | `Engines/` | Business logic — pure computation, no I/O |
-| Accessor | `Accessors/` | External resources — files, APIs, databases |
-| Utilities | `Common/` | Cross-cutting — Logger, RunnerContext, contracts |
+Design source of truth: `Docs/feature-table-and-library-palette.html`.
 
-**Calling rules:** Client → Engine → Accessor. Never call upward.
-
-`Scripts/` and `Queries/` are developer tooling outside the layer model.
-
-## Workspace Structure
-
-`Workspaces/` is the canonical runtime folder (git ignored). Each named workspace:
+## Layout
 
 ```
-Workspaces/
-└── <WorkspaceName>/
-    ├── inputs/
-    │   ├── metadata_parts/
-    │   ├── taxonomy_parts/
-    │   ├── mapping_configs/
-    │   └── appendix/
-    └── results/
-        ├── metadata-overview/
-        └── ...
+src/askslm/   the toolbox the agent calls (workspace phase tooling, metadata, taxonomy, accessors, cli)
+src/agent/    the LLM agent (run_python + session + registry)
+src/web/      the web UI — the only thing the user touches
+Workspaces/   runtime studies (git-ignored); ABX_new is canonical
+Docs/ Tests/ Scripts/git-guard/
 ```
 
-Entry point: `askslm.py` (thin shell). Implementation: `Clients/cli.py`.
+## The feature table
 
-## API Design Decisions
-
-### Two-level structure
-
-```python
-api = AskSLMAPI(workspaces_root="./Workspaces")
-workspace = api.create_workspace("my_study")   # creates folder skeleton, returns Workspace
-workspace = api.open_workspace("my_study")     # opens existing, returns Workspace
-
-workspace.analyze_metadata()
-workspace.alpha_diversity(rank="genus")
-```
-
-`AskSLMAPI` is the factory. `Workspace` holds paths and config, delegates to engines.
-
-### Disk-first operations
-
-Workspace operations write results to disk under `Workspaces/<name>/results/`. They return a result handle, not raw data. The disk record is the source of truth.
-
-### Idempotency
-
-Every operation is safe to run more than once. If the inputs have not changed since the last run, skip the operation and return the existing result. If they have changed, recompute and overwrite.
-
-### Lazy result objects
-
-Result objects do not load data at construction. Data loads on first property access.
-
-```python
-result = workspace.analyze_metadata()
-result.summary_path   # instant — just a Path
-result.df             # triggers CSV read on first access, cached after
-```
-
-## Key Conventions
-
-- **Two-DataFrame rule:** `metadata_df` and `taxonomy_df` are always kept separate. Never merge them into one DataFrame until a narrow, intentional analysis requires it.
-- **Each Accessor reads exactly one source.** Joins belong in Managers or Engines, not Accessors.
+One `biom.Table` per community study: counts (features × samples) + sample metadata + feature
+metadata (lineage). Five operation kinds — ingest, build, transform, split, analyze — delegate to
+the library palette; Ask-SLM adds only the small logic libraries lack (chiefly `lineage_table`).
+We trust input and fail fast: no defensive validation outside the accessor boundary.
 
 ## Branching Policy (enforced)
 
