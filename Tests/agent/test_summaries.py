@@ -1,25 +1,26 @@
+import numpy as np
 import pandas as pd
-from Engines.MetadataEngine.metadata import Metadata
+from biom import Table
+
 from Agents.summaries import summarize_object
 
 
-def test_summarize_metadata():
-    df = pd.DataFrame({"acc": ["S1", "S2"], "group": ["a", "b"]})
-    md = Metadata(df=df)
-    s = summarize_object(md)
-    assert s["type"] == "Metadata"
-    assert s["n_samples"] == 2
-    assert "group" in s["columns"]
+def test_feature_table_summary():
+    t = Table(np.array([[1, 2], [3, 4]]), observation_ids=["10", "20"], sample_ids=["sA", "sB"])
+    out = summarize_object(t)
+    assert out["type"] == "FeatureTable"
+    assert out["shape"] == [2, 2]
+    assert out["features_preview"] == ["10", "20"]
+    assert out["samples_preview"] == ["sA", "sB"]
 
 
-def test_summarize_dataframe():
-    df = pd.DataFrame({"x": [1, 2, 3]})
-    s = summarize_object(df)
-    assert s["type"] == "DataFrame"
-    assert s["shape"] == [3, 1]
+def test_dataframe_summary():
+    out = summarize_object(pd.DataFrame({"a": [1, 2], "b": [3, 4]}))
+    assert out["type"] == "DataFrame"
+    assert out["shape"] == [2, 2]
 
 
-def test_summarize_unknown_falls_back_to_repr():
-    s = summarize_object(object())
-    assert s["type"] == "object"
-    assert "repr" in s
+def test_unknown_object_falls_back():
+    out = summarize_object(object())
+    assert out["type"] == "object"
+    assert "repr" in out

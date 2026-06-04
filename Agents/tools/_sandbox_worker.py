@@ -8,11 +8,9 @@ import traceback
 from contextlib import redirect_stdout, redirect_stderr
 
 WHITELIST_IMPORTS = ("pandas", "numpy", "scipy", "skbio")
+# runtime type paths use the concrete module (type(obj).__module__), e.g. biom.table not biom
 RECOGNIZED_TYPE_PATHS = (
-    "Engines.MetadataEngine.metadata.Metadata",
-    "Engines.TaxonomyEngine.abundance_matrix.AbundanceMatrix",
-    "Engines.TaxonomyEngine.cohort.Cohort",
-    "Common.contracts.taxonomy_results.ResolvedTaxonomy",
+    "biom.table.Table",
     "Common.contracts.metadata_results.MetadataOverview",
     "pandas.core.frame.DataFrame",
 )

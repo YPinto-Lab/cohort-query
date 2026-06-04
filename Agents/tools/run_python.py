@@ -33,8 +33,8 @@ def _extract_imports(code: str) -> list[str]:
 def run_python(session: Session, code: str, timeout_s: int = DEFAULT_TIMEOUT_S) -> dict:
     """Execute a Python snippet in a sandboxed subprocess. Existing handles
     (variable names like meta_1, matrix_1) are pre-loaded into the namespace.
-    New top-level variables that are recognized domain objects (Metadata,
-    AbundanceMatrix, Cohort, ResolvedTaxonomy, DataFrame) become new handles."""
+    New top-level variables that are recognized domain objects
+    (biom.Table feature tables, MetadataOverview, DataFrame) become new handles."""
     timeout_s = max(1, min(int(timeout_s), MAX_TIMEOUT_S))
     imports_used = _extract_imports(code)
 
