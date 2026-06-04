@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import numpy as np
@@ -66,3 +67,19 @@ def test_lineage_window_is_feature_metadata_table(tmp_path):
     assert "name" in w.columns and "rank" in w.columns
     name_col = w.columns.index("name")
     assert w.rows[0][name_col] == "Bacteria"
+
+
+def test_window_past_end_is_empty(tmp_path):
+    p = _fixture_biom(tmp_path / "t.biom")
+    cw = counts_window(p, row_off=10)
+    assert cw.index == [] and cw.rows == [] and cw.total_rows == 3
+    lw = lineage_window(p, row_off=10)
+    assert lw.index == []
+
+
+def test_lineage_nested_value_is_stringified(tmp_path):
+    p = _fixture_biom(tmp_path / "t.biom")
+    w = lineage_window(p)
+    lineage_col = w.columns.index("lineage")
+    cell = w.rows[0][lineage_col]
+    assert isinstance(cell, str) and cell == json.dumps([1, 2])

@@ -38,6 +38,8 @@ def _load(path: Path) -> Table:
     key = (str(path), path.stat().st_mtime)
     table = _CACHE.get(key)
     if table is None:
+        for stale in [k for k in _CACHE if k[0] == str(path)]:
+            del _CACHE[stale]
         table = load_table(str(path))
         _CACHE[key] = table
     return table
@@ -51,6 +53,8 @@ def counts_window(path: Path, row_off: int = 0, col_off: int = 0,
     row_ids = obs_ids[row_off:row_off + row_page]
     col_ids = sample_ids[col_off:col_off + col_page]
 
+    # Subset to the window (sparse) BEFORE densifying, so we never materialize the
+    # full dense matrix. filter() doesn't preserve caller order, so reindex() restores it.
     sub = (table.filter(row_ids, axis="observation", inplace=False)
                 .filter(col_ids, axis="sample", inplace=False))
     frame = sub.to_dataframe(dense=True).reindex(index=row_ids, columns=col_ids)
@@ -101,7 +105,7 @@ def _metadata_window(path: Path, axis: str, row_off: int, row_page: int) -> Tabl
         row_offset=row_off,
         col_offset=0,
         row_page=row_page,
-        col_page=row_page,
+        col_page=len(columns),
     )
 
 
