@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask-SLM · Workspace tooling — design for review</title>
+<style>
+  :root{
+    --ink:#1b2330;--muted:#5b6473;--line:#e3e7ee;--bg:#fff;--soft:#f6f8fb;
+    --accent:#6d28d9;--code:#0f172a;--codebg:#f1f5f9;--link:#1d4ed8;
+    --lock:#059669;--prop:#d97706;--maxw:940px;
+  }
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+  a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+  header.hero{background:linear-gradient(135deg,#1e1b4b,#312e81 55%,#1d4ed8);color:#fff;padding:54px 24px 46px}
+  header.hero .wrap{max-width:var(--maxw);margin:0 auto}
+  header.hero .kicker{letter-spacing:.18em;text-transform:uppercase;font-size:12px;opacity:.85;margin:0 0 12px}
+  header.hero h1{font-size:32px;line-height:1.18;margin:0 0 12px;font-weight:700}
+  header.hero p{font-size:17px;opacity:.92;margin:0;max-width:720px}
+  .status{display:inline-block;margin-top:14px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);padding:3px 12px;border-radius:999px;font-size:13px}
+  nav{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+  nav .wrap{max-width:var(--maxw);margin:0 auto;padding:10px 24px;display:flex;gap:16px;flex-wrap:wrap;font-size:13.5px}
+  nav a{color:var(--muted)}nav a:hover{color:var(--accent);text-decoration:none}
+  main{max-width:var(--maxw);margin:0 auto;padding:8px 24px 80px}
+  section{padding:36px 0;border-bottom:1px solid var(--line)}section:last-child{border-bottom:0}
+  h2{font-size:25px;margin:0 0 6px;font-weight:700}
+  h2 .num{color:var(--accent);margin-right:10px}
+  h3{font-size:17px;margin:22px 0 6px}
+  .lead{color:var(--muted);margin:0 0 16px;font-size:17px}
+  p{margin:0 0 14px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--codebg);color:var(--code);padding:1px 6px;border-radius:5px;font-size:.86em}
+  pre{background:var(--code);color:#e2e8f0;padding:16px 18px;border-radius:12px;overflow:auto;font-size:13px;line-height:1.5;margin:14px 0}
+  pre .c{color:#7f8ea3}pre .d{color:#fcd34d}pre .f{color:#7dd3fc}pre .k{color:#c4b5fd}pre .s{color:#86efac}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--soft);font-weight:600}
+  td code{font-size:12px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:6px;letter-spacing:.03em}
+  .tag.lock{background:#d1fae5;color:#047857}.tag.prop{background:#fef3c7;color:#b45309}
+  .why{border:1px dashed var(--line);border-radius:12px;padding:14px 18px;margin:14px 0;background:#fcfdff}
+  .why h4{margin:0 0 6px;font-size:13.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .callout{border-left:4px solid var(--accent);background:var(--soft);border-radius:0 10px 10px 0;padding:13px 18px;margin:16px 0}
+  ul.tight{margin:8px 0;padding-left:20px}ul.tight li{margin:5px 0}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13.5px;color:var(--muted);margin:6px 0 0}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .cols h4{margin:0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  footer{max-width:var(--maxw);margin:0 auto;padding:26px 24px 60px;color:var(--muted);font-size:13px}
+  @media(max-width:700px){table{font-size:12.5px}header.hero h1{font-size:25px}.cols{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header class="hero"><div class="wrap">
+  <p class="kicker">Ask-SLM · Design for review</p>
+  <h1>Workspace tooling</h1>
+  <p>Two pieces that make the locked phase structure reproducible by any agent: a one-line <code>askslm.workspace</code>
+     import that ends the path boilerplate, and a scaffold CLI that stamps the exact tree. The conventions move to an
+     agent-agnostic home — no coupling to any one assistant.</p>
+  <span class="status">PROPOSED · 2026-06-03 · awaiting your review</span>
+</div></header>
+
+<nav><div class="wrap">
+  <a href="#scope">Scope</a>
+  <a href="#problem">Problem</a>
+  <a href="#import">workspace import</a>
+  <a href="#cli">Scaffold CLI</a>
+  <a href="#conventions">Conventions home</a>
+  <a href="#migration">Migration</a>
+  <a href="#decisions">Decisions</a>
+</div></nav>
+
+<main>
+
+<section id="scope">
+  <h2><span class="num">0</span>Scope</h2>
+  <p class="lead">This spec turns the locked
+     <a href="2026-06-03-workspace-phase-organization-design.html">workspace &amp; phase organization</a> into something an
+     agent can reproduce reliably — by replacing convention-followed-by-hand with code and an agent-agnostic rulebook.</p>
+  <p><strong>In:</strong> the <code>askslm.workspace</code> import that resolves a script's paths and shared module; the
+     <code>askslm</code> scaffold CLI that creates the folder tree + template scripts + doc stubs; the <code>AGENTS.md</code>
+     rulebook; migrating the existing <code>ABX_new</code> scripts onto the import to prove it.</p>
+  <p><strong>Out (separate future specs):</strong> the web UI; <code>.biom</code> viewing; any new analysis or domain
+     function. The phase model, folder tree, and the trust-input / fail-fast stance all carry over unchanged.</p>
+  <p class="legend"><span class="tag prop">PROPOSED</span> nothing here is locked until you sign off.</p>
+</section>
+
+<section id="problem">
+  <h2><span class="num">1</span>The problem</h2>
+  <p class="lead">The structure is locked, but reproducing it today leans on two fragile things.</p>
+  <table>
+    <tr><th>Friction</th><th>What it looks like now</th><th>Why it's fragile</th></tr>
+    <tr>
+      <td><strong>Path boilerplate</strong></td>
+      <td>Every script opens with <code>HERE = Path(__file__)…</code>, a <code>sys.path.insert(…)</code> to find
+          <code>shared</code>, and hand-counted <code>.parents[N]</code> walks to the upstream file and to <code>0_inputs/</code>.</td>
+      <td>Off-by-one on <code>parents[N]</code> after any folder rename; silent if the path resolves to something wrong.
+          Pure ceremony that hides the five lines of real logic.</td>
+    </tr>
+    <tr>
+      <td><strong>Uncodified conventions</strong></td>
+      <td>The phase recipe (numbered folders, <code>result/</code>, <code>.md</code> frontmatter, the promotion rule)
+          lives in your head and in <code>Docs/feature-table-and-library-palette.html</code>.</td>
+      <td>A fresh agent session re-derives it from prose — a missed folder, a wrong number, slightly different
+          frontmatter each time. Drift.</td>
+    </tr>
+  </table>
+  <div class="callout"><strong>The fix, in one line:</strong> make the <em>deterministic</em> parts code (an import + a
+     scaffold command) and put the <em>judgment</em> parts where any agent reads them. The agent stops hand-building
+     structure and just fills in logic.</div>
+</section>
+
+<section id="import">
+  <h2><span class="num">2</span>The <code>askslm.workspace</code> import</h2>
+  <p class="lead">One import replaces the whole header. <code>workspace.phase(__file__)</code> self-locates from the
+     numbered-folder convention and hands back everything the script needs.</p>
+
+  <div class="cols">
+    <div>
+      <h4>Before — every script</h4>
+<pre><span class="k">import</span> sys
+<span class="k">from</span> pathlib <span class="k">import</span> Path
+<span class="k">from</span> biom <span class="k">import</span> load_table
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, <span class="s">str</span>(HERE.parents[1]))   <span class="c"># find shared</span>
+<span class="k">import</span> shared
+RESULT = HERE.parents[2] / <span class="s">"2_transform"</span> \
+    / <span class="s">"no-control_bacteria"</span> / <span class="s">"result"</span> / <span class="s">"feature_table.biom"</span>
+feature_table = load_table(<span class="s">str</span>(RESULT))</pre>
+    </div>
+    <div>
+      <h4>After</h4>
+<pre><span class="k">from</span> askslm <span class="k">import</span> workspace
+ws = workspace.phase(__file__)
+
+feature_table = ws.upstream()   <span class="c"># prev phase's .biom</span>
+<span class="c"># … shape it …</span>
+(ws.result / <span class="s">"feature_table.biom"</span>).write_text(   <span class="c"># biom JSON — HDF5 can't</span>
+    feature_table.to_json(<span class="s">"askslm-no-control_bacteria"</span>))  <span class="c"># round-trip nested lineage</span></pre>
+      <p style="margin:10px 0 0;font-size:13.5px;color:var(--muted)">Plain import, so the script still runs with
+         <code>python explore.py</code>. No runner command.</p>
+    </div>
+  </div>
+
+  <h3>The handle <code>workspace.phase(__file__)</code> returns</h3>
+  <table>
+    <tr><th>Member</th><th>Is</th><th>Resolves to (by convention)</th></tr>
+    <tr><td><code>ws.inputs</code></td><td><code>Path</code></td><td>the workspace's <code>0_inputs/</code></td></tr>
+    <tr><td><code>ws.shared</code></td><td>module</td><td>this phase's <code>shared.py</code>, already imported (no <code>sys.path</code>)</td></tr>
+    <tr><td><code>ws.upstream()</code></td><td><code>biom.Table</code></td><td>loads the previous phase's output — see the per-phase table below</td></tr>
+    <tr><td><code>ws.result</code></td><td><code>Path</code></td><td>this script's output dir, created for you — the script writes into it explicitly</td></tr>
+  </table>
+  <div class="why"><h4>Why no <code>ws.save()</code></h4><p style="margin:0">An earlier draft had a <code>ws.save(table)</code>.
+     It was dropped: unlike <code>upstream()</code> (which resolves <em>which</em> file by phase convention — real logic), a
+     save resolves nothing the script doesn't already hold in <code>ws.result</code>; it only adds the filename and a
+     <code>to_json</code> call. That's a thin delegate, and it's asymmetric — analyze writes CSV/PNG and would never use it.
+     The script writes explicitly instead, so every phase uses <code>ws.result</code> the same way. <span class="tag prop">PROPOSED</span></p></div>
+
+  <h3>How it self-locates — and what each phase gets</h3>
+  <p>It walks up from <code>__file__</code> to the workspace root (the child of <code>Workspaces/</code>), reads the numbered
+     ancestor folder (<code>1_build</code> → <em>build</em>, <code>2_transform</code> → <em>transform</em>,
+     <code>3_analyze</code> → <em>analyze</em>), and wires the rest from the same convention the
+     <a href="2026-06-03-workspace-phase-organization-design.html">organization spec</a> locked.</p>
+  <table>
+    <tr><th>Phase</th><th><code>ws.upstream()</code> loads</th><th><code>ws.result</code> is &amp; script writes</th><th>Extra</th></tr>
+    <tr>
+      <td><strong>build</strong></td>
+      <td>— (none; build reads files from <code>ws.inputs</code>)</td>
+      <td><code>1_build/</code> — writes <code>feature_table.biom</code></td>
+      <td>reads multiple input files itself</td>
+    </tr>
+    <tr>
+      <td><strong>transform</strong></td>
+      <td><code>1_build/feature_table.biom</code></td>
+      <td><code>&lt;exploration&gt;/result/</code> — writes <code>feature_table.biom</code></td>
+      <td><code>ws.shared</code> = <code>2_transform/shared.py</code></td>
+    </tr>
+    <tr>
+      <td><strong>analyze</strong></td>
+      <td><code>2_transform/&lt;exploration&gt;/result/feature_table.biom</code><br>(matched by the parent folder name)</td>
+      <td><code>&lt;analysis&gt;/</code>; <code>ws.data</code> + <code>ws.plots</code> sub-dirs created — writes CSV/PNG</td>
+      <td><code>ws.shared</code> = <code>3_analyze/shared.py</code></td>
+    </tr>
+  </table>
+  <div class="why"><h4>Why this is sound — not magic</h4><p style="margin:0">The resolver only encodes conventions that are
+     <em>already locked and enforced by the scaffold</em>: numbered phase folders, <code>result/feature_table.biom</code>, and
+     analyses grouped under their exploration name. Nothing is inferred from data — only from the path. If a script sits in
+     a non-conforming place, <code>workspace.phase</code> raises rather than guessing (trust-input / fail-fast).
+     <span class="tag prop">PROPOSED</span></p></div>
+  <div class="callout"><strong>Is this a real ask-slm function?</strong> Yes — path resolution across the phase
+     convention is genuine glue logic that no library provides and it isn't a thin delegate. It earns its place in the
+     <code>askslm</code> package. Loading/saving biom stays a direct <code>biom</code> call underneath.</div>
+</section>
+
+<section id="cli">
+  <h2><span class="num">3</span>The scaffold CLI</h2>
+  <p class="lead">Deterministic structure becomes deterministic code. Three commands stamp the exact tree, template
+     scripts (already using <code>workspace.phase</code>), and <code>.md</code> frontmatter stubs — so the agent only fills
+     in logic.</p>
+<pre><span class="s">askslm</span> workspace new <span class="d">&lt;name&gt;</span>
+   <span class="c"># 0_inputs/  1_build/{build.py,build.md}  2_transform/shared.py  3_analyze/shared.py</span>
+
+<span class="s">askslm</span> transform add <span class="d">&lt;ws&gt; &lt;exploration&gt;</span>
+   <span class="c"># 2_transform/&lt;exploration&gt;/{explore.py, explore.md}</span>
+
+<span class="s">askslm</span> analysis add <span class="d">&lt;ws&gt; &lt;exploration&gt; &lt;name&gt;</span>
+   <span class="c"># 3_analyze/&lt;exploration&gt;/&lt;name&gt;/{analysis.py, analysis.md}</span></pre>
+  <table>
+    <tr><th>Command</th><th>Creates</th><th>Template body</th></tr>
+    <tr>
+      <td><code>workspace new</code></td>
+      <td>the four phase folders + empty <code>shared.py</code> per phase + a <code>build.py</code>/<code>build.md</code> stub</td>
+      <td><code>build.py</code> pre-wired to read <code>ws.inputs</code> and write <code>feature_table.biom</code> into <code>ws.result</code></td>
+    </tr>
+    <tr>
+      <td><code>transform add</code></td>
+      <td><code>&lt;exploration&gt;/explore.py</code> + <code>explore.md</code> (frontmatter <code>input:</code> pre-filled to build)</td>
+      <td><code>ws.upstream()</code> → … → write into <code>ws.result</code>, with comments cueing clade/rank/cohort steps</td>
+    </tr>
+    <tr>
+      <td><code>analysis add</code></td>
+      <td><code>&lt;exploration&gt;/&lt;name&gt;/analysis.py</code> + <code>analysis.md</code> (frontmatter <code>input:</code> pre-filled to the exploration result)</td>
+      <td><code>ws.upstream()</code> → measure → write into <code>ws.data</code>/<code>ws.plots</code></td>
+    </tr>
+  </table>
+  <div class="why"><h4>Wiring</h4><p style="margin:0">These extend the existing <code>Clients/cli.py</code> and are exposed
+     as a real console script via <code>pyproject.toml</code> (<code>[project.scripts] askslm = "Clients.cli:main"</code>),
+     so <code>askslm …</code> works on the path after <code>pip install -e .</code>. The existing CLI entry, currently
+     unwired, gets wired in the same change. <span class="tag prop">PROPOSED</span></p></div>
+  <div class="callout"><strong>No <code>run</code> command.</strong> Because the import does the path setup, a phase script
+     runs with plain <code>python &lt;script&gt;</code>. Adding a runner would be a second way to do the same thing — omitted
+     to keep the surface small.</div>
+</section>
+
+<section id="conventions">
+  <h2><span class="num">4</span>Where the conventions live — agent-agnostic</h2>
+  <p class="lead">No coupling to any one assistant. The judgment code can't enforce goes in a rulebook every coding agent
+     reads, and at the point of use inside templates.</p>
+  <table>
+    <tr><th>Home</th><th>Holds</th><th>Read by</th></tr>
+    <tr>
+      <td><strong><code>AGENTS.md</code></strong> (repo root)</td>
+      <td>the law in a few lines: the five phases, the <code>workspace.phase()</code> API, the scaffold commands, the
+          promotion rule, how to name an exploration → links to the bible for the why</td>
+      <td>any agent (Gemini, Cursor, Claude, …) — the cross-tool standard, <em>not</em> <code>CLAUDE.md</code></td>
+    </tr>
+    <tr>
+      <td><strong>Template comments</strong></td>
+      <td>build-vs-transform and the rank/clade/cohort cues, inline at the point of use</td>
+      <td>whoever edits the generated script</td>
+    </tr>
+    <tr>
+      <td><strong><code>Docs/feature-table-and-library-palette.html</code></strong></td>
+      <td>rationale — the "why", unchanged</td>
+      <td>you, on review</td>
+    </tr>
+  </table>
+  <div class="why"><h4>Why <code>AGENTS.md</code>, not <code>CLAUDE.md</code></h4><p style="margin:0">The agent driving this
+     workspace can be any tool — it's Gemini today. <code>AGENTS.md</code> is the emerging cross-assistant convention for
+     "instructions any coding agent reads," so the rulebook stays portable. Tool-specific files are avoided.
+     <span class="tag prop">PROPOSED</span></p></div>
+</section>
+
+<section id="migration">
+  <h2><span class="num">5</span>Migrating <code>ABX_new</code> (proves the tooling)</h2>
+  <p class="lead">The four existing scripts swap their boilerplate headers for the one-line import. Logic bodies are
+     untouched — same numbers out. This is the acceptance test.</p>
+  <table>
+    <tr><th>Script</th><th>Header today</th><th>Header after</th></tr>
+    <tr><td><code>1_build/build.py</code></td><td><code>WS = …parents[1]; INPUTS = WS/"0_inputs"</code></td><td><code>ws = workspace.phase(__file__)</code>; uses <code>ws.inputs</code>, writes into <code>ws.result</code></td></tr>
+    <tr><td><code>2_transform/no-control_bacteria/explore.py</code></td><td><code>sys.path.insert</code> + <code>import shared</code> + <code>parents[1]/"1_build"/…</code></td><td><code>ws.upstream()</code>, <code>ws.shared.cohort(…)</code>, writes into <code>ws.result</code></td></tr>
+    <tr><td><code>3_analyze/no-control_bacteria/braycurtis/analysis.py</code></td><td><code>parents[2]/"2_transform"/…</code> + <code>parents[1]</code> for shared</td><td><code>ws.upstream()</code>, <code>ws.shared.per_subject_braycurtis(…)</code>, <code>ws.data</code></td></tr>
+    <tr><td><code>3_analyze/no-control_bacteria/mann-whitney/analysis.py</code></td><td>same pattern</td><td>same — <code>ws.upstream()</code>, <code>ws.shared</code>, <code>ws.data</code></td></tr>
+  </table>
+  <div class="callout"><strong>Acceptance:</strong> after migration, re-running the four scripts reproduces the locked
+     numbers (cluster means ≈ 0.41 / 0.38 / 0.33 / 0.33; Mann-Whitney cluster 0 vs 2 p ≈ 0.028). If they don't match,
+     the tooling is wrong, not the science.</div>
+</section>
+
+<section id="decisions">
+  <h2><span class="num">6</span>Decisions ledger</h2>
+  <h3>Proposed — awaiting your sign-off</h3>
+  <table>
+    <tr><th>Decision</th><th>Choice</th><th>Why this over alternatives</th></tr>
+    <tr><td>How a script gets paths + shared</td><td>a tiny <code>workspace.phase(__file__)</code> import</td><td>smallest change, most readable, scripts still run with plain <code>python</code>; chosen over a runner-execs-script (more magic) and real packages (the numbered folders aren't legal module names)</td></tr>
+    <tr><td>Folder structure</td><td>created by <strong>ask-slm CLI code</strong>, not agent prose</td><td>deterministic structure belongs in deterministic code; serves the human too; prose drifts</td></tr>
+    <tr><td>Scaffold surface</td><td><code>workspace new</code> · <code>transform add</code> · <code>analysis add</code>; <strong>no <code>run</code></strong></td><td>the import removes the need for a runner; one way to do a thing</td></tr>
+    <tr><td>Conventions home</td><td><code>AGENTS.md</code> → <code>Docs/feature-table-and-library-palette.html</code>; template comments at point of use</td><td>agent-agnostic (no <code>CLAUDE.md</code> coupling); the agent is Gemini today</td></tr>
+    <tr><td>CLI wiring</td><td>extend <code>Clients/cli.py</code>; expose <code>[project.scripts] askslm</code> in <code>pyproject.toml</code></td><td>wires the currently-unwired entry; works after <code>pip install -e .</code></td></tr>
+    <tr><td>Acceptance test</td><td>migrate the four <code>ABX_new</code> scripts; numbers must match</td><td>proves the tooling against the real workspace before it's trusted</td></tr>
+  </table>
+  <h3>Carried over (already locked)</h3>
+  <table>
+    <tr><th>From the organization spec</th><th>Status</th></tr>
+    <tr><td>Numbered phase folders, <code>result/feature_table.biom</code> handoff, analyses grouped by exploration</td><td>unchanged — the resolver depends on them</td></tr>
+    <tr><td>Promotion rule, two-library split, <code>.md</code> frontmatter lineage</td><td>unchanged — the scaffold stamps them</td></tr>
+    <tr><td>Trust-input / fail-fast</td><td>unchanged — <code>workspace.phase</code> raises on a non-conforming path rather than guessing</td></tr>
+  </table>
+</section>
+
+</main>
+
+<footer>
+  Ask-SLM · workspace tooling · PROPOSED 2026-06-03. Builds on the locked
+  <a href="2026-06-03-workspace-phase-organization-design.html">workspace &amp; phase organization</a> spec.
+  Next step after your approval: the implementation plan.
+</footer>
+
+</body>
+</html>

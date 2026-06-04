@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask-SLM · Workspace &amp; phase organization — design for review</title>
+<style>
+  :root{
+    --ink:#1b2330;--muted:#5b6473;--line:#e3e7ee;--bg:#fff;--soft:#f6f8fb;
+    --accent:#6d28d9;--code:#0f172a;--codebg:#f1f5f9;--link:#1d4ed8;
+    --lock:#059669;--prop:#d97706;--maxw:940px;
+  }
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+  a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+  header.hero{background:linear-gradient(135deg,#1e1b4b,#312e81 55%,#1d4ed8);color:#fff;padding:54px 24px 46px}
+  header.hero .wrap{max-width:var(--maxw);margin:0 auto}
+  header.hero .kicker{letter-spacing:.18em;text-transform:uppercase;font-size:12px;opacity:.85;margin:0 0 12px}
+  header.hero h1{font-size:32px;line-height:1.18;margin:0 0 12px;font-weight:700}
+  header.hero p{font-size:17px;opacity:.92;margin:0;max-width:720px}
+  .status{display:inline-block;margin-top:14px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);padding:3px 12px;border-radius:999px;font-size:13px}
+  nav{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+  nav .wrap{max-width:var(--maxw);margin:0 auto;padding:10px 24px;display:flex;gap:16px;flex-wrap:wrap;font-size:13.5px}
+  nav a{color:var(--muted)}nav a:hover{color:var(--accent);text-decoration:none}
+  main{max-width:var(--maxw);margin:0 auto;padding:8px 24px 80px}
+  section{padding:36px 0;border-bottom:1px solid var(--line)}section:last-child{border-bottom:0}
+  h2{font-size:25px;margin:0 0 6px;font-weight:700}
+  h2 .num{color:var(--accent);margin-right:10px}
+  h3{font-size:17px;margin:22px 0 6px}
+  .lead{color:var(--muted);margin:0 0 16px;font-size:17px}
+  p{margin:0 0 14px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--codebg);color:var(--code);padding:1px 6px;border-radius:5px;font-size:.86em}
+  pre{background:var(--code);color:#e2e8f0;padding:16px 18px;border-radius:12px;overflow:auto;font-size:13px;line-height:1.5;margin:14px 0}
+  pre .c{color:#7f8ea3}pre .d{color:#fcd34d}pre .f{color:#7dd3fc}pre .k{color:#c4b5fd}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--soft);font-weight:600}
+  td code{font-size:12px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:6px;letter-spacing:.03em}
+  .tag.lock{background:#d1fae5;color:#047857}.tag.prop{background:#fef3c7;color:#b45309}
+  .why{border:1px dashed var(--line);border-radius:12px;padding:14px 18px;margin:14px 0;background:#fcfdff}
+  .why h4{margin:0 0 6px;font-size:13.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .callout{border-left:4px solid var(--accent);background:var(--soft);border-radius:0 10px 10px 0;padding:13px 18px;margin:16px 0}
+  ul.tight{margin:8px 0;padding-left:20px}ul.tight li{margin:5px 0}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13.5px;color:var(--muted);margin:6px 0 0}
+  footer{max-width:var(--maxw);margin:0 auto;padding:26px 24px 60px;color:var(--muted);font-size:13px}
+  @media(max-width:700px){table{font-size:12.5px}header.hero h1{font-size:25px}}
+</style>
+</head>
+<body>
+
+<header class="hero"><div class="wrap">
+  <p class="kicker">Ask-SLM · Design for review</p>
+  <h1>Workspace &amp; phase organization</h1>
+  <p>How a study lives on disk: one workspace, the five phases as folders, free-form explorations composing shared
+     helpers, and a Markdown lineage layer that the future chat-UI renders. The on-disk information architecture — not the UI.</p>
+  <span class="status">LOCKED · 2026-06-03 · approved — ready for the implementation plan</span>
+</div></header>
+
+<nav><div class="wrap">
+  <a href="#scope">Scope</a>
+  <a href="#model">Model</a>
+  <a href="#tree">Folder tree</a>
+  <a href="#contract">Phase contract</a>
+  <a href="#libraries">Two libraries</a>
+  <a href="#docs">Doc layer</a>
+  <a href="#decisions">Decisions</a>
+</div></nav>
+
+<main>
+
+<section id="scope">
+  <h2><span class="num">0</span>Scope</h2>
+  <p class="lead">This spec defines the <strong>on-disk organization of a workspace</strong> and the form of its code
+     and docs. It does not design the UI.</p>
+  <p><strong>In:</strong> the workspace folder layout; how the five phases map to folders; how data is handed between
+     phases; where code and shared helpers live; the per-folder Markdown doc and the lineage graph it forms.</p>
+  <p><strong>Out (separate future specs):</strong> the chat/web UI (it <em>consumes</em> this structure — renders folders,
+     follows the doc links — but doesn't change it); any new input validation (the project's
+     <em>trust-input / fail-fast</em> stance carries over unchanged).</p>
+  <p class="legend"><span class="tag lock">LOCKED</span> every decision in this spec is locked as of 2026-06-03.</p>
+</section>
+
+<section id="model">
+  <h2><span class="num">1</span>The model</h2>
+  <p class="lead">A <strong>workspace</strong> is a study: one folder holding everything. The five phases are stages
+     that hand data to each other <strong>through files on disk</strong> — each phase reads the previous phase's file
+     and writes its own. Nothing is held in memory between phases; the disk record is the source of truth.</p>
+  <table>
+    <tr><th>Phase</th><th>Does</th><th>Cadence</th></tr>
+    <tr><td><strong>ingest</strong></td><td>pull raw data from any source into the workspace</td><td>as sources arrive</td></tr>
+    <tr><td><strong>build</strong></td><td>assemble the one shared feature table (the building block)</td><td>once</td></tr>
+    <tr><td><strong>transform</strong> (+ split)</td><td>named, free-form explorations that shape the feature table</td><td>many, side by side</td></tr>
+    <tr><td><strong>analyze</strong></td><td>measure / plot a chosen exploration's result</td><td>many per exploration</td></tr>
+  </table>
+  <div class="why"><h4>The spine</h4><p style="margin:0"><code>0_inputs/</code> &rarr; <code>1_build/feature_table.biom</code>
+     &rarr; <code>2_transform/&lt;exploration&gt;/result/</code> &rarr; <code>3_analyze/&lt;exploration&gt;/&lt;analysis&gt;/{data,plots}/</code>.
+     Each arrow is a file written to disk and read by the next phase.</p></div>
+</section>
+
+<section id="tree">
+  <h2><span class="num">2</span>The folder tree</h2>
+  <p class="lead">The canonical layout. Every workspace looks like this, so any one reads as designed.</p>
+<pre><span class="f">Workspaces/ABX/</span>
+├── <span class="d">0_inputs/</span>                        <span class="c"># ingest: raw dumps land here (one Accessor per source)</span>
+├── <span class="d">1_build/</span>
+│   ├── build.py                     <span class="c"># ingest + build — runs ONCE</span>
+│   ├── build.md                     <span class="c"># frontmatter: inputs → outputs</span>
+│   └── feature_table.biom               <span class="c"># THE shared building block</span>
+├── <span class="d">2_transform/</span>                     <span class="c"># the transform + split phase</span>
+│   ├── shared.py                    <span class="c"># (workspace, transform) helpers: exclude_control_subjects, wgs_only</span>
+│   ├── <span class="d">no-control_bacteria/</span>          <span class="c"># a named exploration — free-form, ONE script</span>
+│   │   ├── explore.py               <span class="c"># imports ../shared.py + the askslm package</span>
+│   │   ├── explore.md               <span class="c"># frontmatter: input=../../1_build/feature_table.biom</span>
+│   │   └── <span class="d">result/</span>                   <span class="c"># the feature table(s) it produced (.biom)</span>
+│   └── <span class="d">with-control_viruses/</span> …
+└── <span class="d">3_analyze/</span>                       <span class="c"># the analyze phase — top-level, grouped by source exploration</span>
+    ├── shared.py                    <span class="c"># (workspace, analyze) helpers — shared across ALL analyses</span>
+    ├── <span class="d">no-control_bacteria/</span>          <span class="c"># ── all analyses OF this exploration, grouped</span>
+    │   ├── <span class="d">braycurtis/</span>
+    │   │   ├── analysis.py
+    │   │   ├── analysis.md          <span class="c"># input: ../../../2_transform/no-control_bacteria/result/feature_table.biom</span>
+    │   │   ├── <span class="d">data/</span>                 <span class="c"># csv the plots are built from</span>
+    │   │   └── <span class="d">plots/</span>                <span class="c"># png</span>
+    │   └── <span class="d">alpha-shannon/</span>           <span class="c"># a 2nd analysis OF THE SAME exploration</span>
+    │       ├── analysis.py
+    │       ├── analysis.md          <span class="c"># input: ../../../2_transform/no-control_bacteria/result/feature_table.biom</span>
+    │       ├── <span class="d">data/</span>
+    │       └── <span class="d">plots/</span>
+    └── <span class="d">with-control_viruses/</span> …        <span class="c"># analyses of a DIFFERENT exploration</span></pre>
+  <div class="why"><h4>Why analyze is its own phase, grouped by exploration</h4><p style="margin:0">Analyze is a top-level
+     phase folder with one <code>shared.py</code> at its root — shared across <em>every</em> analysis. Inside, analyses are
+     grouped one level by their source exploration (<code>analyze/no-control_bacteria/braycurtis/</code>), so the grouping
+     is visible <em>and</em> the helpers stay workspace-wide. Each <code>analysis.md</code> still records the exact
+     <code>input:</code> result it consumes. <span class="tag lock">LOCKED</span></p></div>
+</section>
+
+<section id="contract">
+  <h2><span class="num">3</span>Phase-by-phase contract</h2>
+  <p class="lead">What each phase reads, writes, and how often. Boundaries are always files.</p>
+  <table>
+    <tr><th>Phase · folder</th><th>Code</th><th>Reads</th><th>Writes</th><th>Cadence</th></tr>
+    <tr>
+      <td><strong>ingest</strong><br><code>inputs/</code></td>
+      <td>(part of <code>build.py</code>)</td>
+      <td>external sources (SRA, reports, files)</td>
+      <td>raw files into <code>inputs/</code></td>
+      <td>as sources arrive</td>
+    </tr>
+    <tr>
+      <td><strong>build</strong><br><code>build/</code></td>
+      <td><code>build.py</code> + <code>build.md</code></td>
+      <td><code>inputs/</code></td>
+      <td><code>feature_table.biom</code></td>
+      <td><strong>once</strong> · re-run overwrites <code>build/</code> only</td>
+    </tr>
+    <tr>
+      <td><strong>transform</strong><br><code>transform/&lt;exploration&gt;/</code></td>
+      <td><code>explore.py</code> + <code>explore.md</code> · <code>../shared.py</code></td>
+      <td><code>../../build/feature_table.biom</code></td>
+      <td><code>result/*.biom</code> (one, or many if split)</td>
+      <td>per exploration · re-run overwrites that <code>result/</code></td>
+    </tr>
+    <tr>
+      <td><strong>analyze</strong><br><code>analyze/&lt;exploration&gt;/&lt;analysis&gt;/</code></td>
+      <td><code>analysis.py</code> + <code>analysis.md</code> · <code>../../shared.py</code></td>
+      <td>one exploration's <code>result/*.biom</code></td>
+      <td><code>data/*.csv</code> + <code>plots/*.png</code></td>
+      <td>per analysis · re-run overwrites that <code>data/</code>+<code>plots/</code></td>
+    </tr>
+  </table>
+  <div class="callout"><strong>Idempotency rule <span class="tag lock">LOCKED</span>:</strong> a phase only ever writes
+     <em>inside its own folder</em>. Re-running overwrites its own outputs and never touches upstream. So you can re-run
+     any exploration or analysis freely; build is the one run-once root everything depends on.</div>
+</section>
+
+<section id="libraries">
+  <h2><span class="num">4</span>Two libraries, two homes</h2>
+  <p class="lead">Shared code splits cleanly by who it's true for.</p>
+  <table>
+    <tr><th></th><th>The toolkit</th><th>Phase helpers</th></tr>
+    <tr><td><strong>What</strong></td><td><code>lineage_table</code>, <code>split_by</code>, <code>restrict_to_clade</code>, biom/skbio wrappers</td><td><code>exclude_control_subjects</code>, <code>wgs_only</code>, plot stylers — specific to <em>this</em> study</td></tr>
+    <tr><td><strong>Where</strong></td><td>the <code>askslm</code> package (your Engine layer)</td><td><code>Workspaces/&lt;study&gt;/&lt;phase&gt;/shared.py</code></td></tr>
+    <tr><td><strong>Scope</strong></td><td>general — every workspace</td><td><strong>(workspace, phase)</strong> — that phase's scripts only</td></tr>
+    <tr><td><strong>Versioned with</strong></td><td>the codebase</td><td>the workspace / data</td></tr>
+  </table>
+  <p>An exploration or analysis script is free-form <em>glue</em> that imports both: the toolkit for general operations,
+     <code>../shared.py</code> for this study's repeated steps. <span class="tag lock">LOCKED</span></p>
+  <div class="callout"><strong>Promotion rule <span class="tag lock">LOCKED</span>:</strong> write a step inline in the
+     first script. The moment a <em>second</em> script in the same phase needs it, lift it into that phase's
+     <code>shared.py</code>. DRY, but only at the scope where reuse actually happens — never sooner, never wider.</div>
+</section>
+
+<section id="docs">
+  <h2><span class="num">5</span>The doc layer &amp; the lineage graph</h2>
+  <p class="lead">Every <code>build/</code>, exploration, and analysis folder carries one <code>.md</code>: a
+     machine-readable header plus two lines of prose. The headers wire the workspace into a graph.</p>
+<pre><span class="d">---</span>
+<span class="k">kind</span>:    analysis
+<span class="k">intent</span>:  Bray-Curtis day0→last shift, per cluster
+<span class="k">input</span>:   ../../../2_transform/no-control_bacteria/result/feature_table.biom
+<span class="k">outputs</span>: [data/braycurtis.csv, plots/braycurtis_box.png]
+<span class="k">params</span>:  { metric: braycurtis, from: 0, to: last }
+<span class="d">---</span>
+Per subject, distance between its day-0 and last-day community, boxed by cluster.
+Finding: cluster 3 shifts least (mean BC ≈ 0.33).</pre>
+  <ul class="tight">
+    <li><strong>For you:</strong> open any folder, read two lines, know what it does and what it used.</li>
+    <li><strong>For the agent:</strong> read the header to safely extend a folder without parsing the code.</li>
+    <li><strong>For the future UI:</strong> the <code>input:</code>/<code>outputs:</code> fields are graph edges —
+       <code>build → exploration → analysis</code> — so the UI renders clickable file links and a dependency view.
+       Markdown is the source; the UI renders it to HTML at display time.</li>
+  </ul>
+  <div class="why"><h4>Format rule</h4><p style="margin:0">Code = <code>.py</code>. Folder docs = <code>.md</code> with
+     YAML frontmatter (authored, versioned, parsed). Standalone presentation artifacts (like the feature table &amp; library
+     palette explainer) = HTML. The UI turns folder <code>.md</code> into rendered HTML on demand. <span class="tag lock">LOCKED</span></p></div>
+</section>
+
+<section id="decisions">
+  <h2><span class="num">6</span>Decisions ledger</h2>
+  <h3>Locked — you chose these</h3>
+  <table>
+    <tr><th>Decision</th><th>Choice</th></tr>
+    <tr><td>What a transform/split "version" is</td><td>a <strong>named free-form exploration</strong> (intent-named, arbitrary code)</td></tr>
+    <tr><td>Code granularity</td><td><strong>one script per exploration/analysis</strong> + a growing shared library</td></tr>
+    <tr><td>Shared-library scope &amp; home</td><td>a single <code>shared.py</code> per <strong>(workspace, phase)</strong></td></tr>
+    <tr><td>Analyze placement</td><td><strong>top-level phase, grouped by exploration</strong> (<code>analyze/&lt;exploration&gt;/&lt;analysis&gt;/</code>); one <code>shared.py</code> at <code>analyze/</code> root</td></tr>
+    <tr><td>Code artifact format</td><td><code>.py</code> + <code>.md</code> (not notebooks)</td></tr>
+    <tr><td>Folder doc</td><td><code>.md</code> with structured YAML frontmatter + short prose</td></tr>
+    <tr><td>md vs html</td><td>md = source; html = render/presentation target</td></tr>
+  </table>
+  <h3>Accepted on review (2026-06-03) — now locked</h3>
+  <table>
+    <tr><th>Decision</th><th>Proposal</th></tr>
+    <tr><td>ingest vs build</td><td>folded into one run-once <code>build.py</code>; <code>inputs/</code> is just the landing zone</td></tr>
+    <tr><td>Phase handoff</td><td>always a file on disk (<code>feature_table.biom</code> → <code>result/*.biom</code> → <code>data</code>+<code>plots</code>)</td></tr>
+    <tr><td>Idempotency</td><td>a phase writes only its own folder; re-run overwrites own outputs, never upstream</td></tr>
+    <tr><td>Promotion rule</td><td>inline first; lift to <code>shared.py</code> when a 2nd script in the phase needs it</td></tr>
+    <tr><td>Naming</td><td>phase folders carry a numeric prefix for sort order (<code>0_inputs</code>, <code>1_build</code>, <code>2_transform</code>, <code>3_analyze</code>); explorations intent-named; analyses grouped under their exploration by <code>&lt;method&gt;</code></td></tr>
+    <tr><td>Toolkit home</td><td>general functions stay in the <code>askslm</code> package (the Engine free functions)</td></tr>
+  </table>
+</section>
+
+</main>
+
+<footer>
+  Ask-SLM · workspace &amp; phase organization · LOCKED 2026-06-03. This is the spec; next step is the implementation plan.
+</footer>
+
+</body>
+</html>
