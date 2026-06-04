@@ -121,3 +121,38 @@ def test_create_workspace_rejects_unsafe_name(tmp_path, monkeypatch):
     r = client.post("/workspaces", data={"name": "../escape"})
     assert r.status_code == 400
     assert not (tmp_path.parent / "escape").exists()
+
+
+def _ws_with_biom(tmp_path):
+    import numpy as np
+    from biom import Table
+    root = tmp_path / "ABX"
+    (root / "1_build").mkdir(parents=True)
+    data = np.array([[0, 12, 3], [5, 0, 9]], dtype=float)
+    table = Table(data, ["f1", "f2"], ["S1", "S2", "S3"],
+                  observation_metadata=[{"name": "Bacteria"}, {"name": "E. coli"}],
+                  sample_metadata=[{"subject": "A"}, {"subject": "B"}, {"subject": "C"}])
+    (root / "1_build" / "feature_table.biom").write_text(table.to_json("t"))
+    return root
+
+
+def test_biom_table_counts_fragment_renders_cells_and_banner(tmp_path, monkeypatch):
+    from web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    _ws_with_biom(tmp_path)
+    client = TestClient(app_mod.app)
+    r = client.get("/w/ABX/biom/table",
+                   params={"path": "1_build/feature_table.biom", "tab": "counts"})
+    assert r.status_code == 200
+    assert "f1" in r.text and "S1" in r.text and "12" in r.text
+    assert "of 2" in r.text  # banner mentions total features
+
+
+def test_biom_table_rejects_path_outside_workspace(tmp_path, monkeypatch):
+    from web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    _ws_with_biom(tmp_path)
+    client = TestClient(app_mod.app)
+    r = client.get("/w/ABX/biom/table",
+                   params={"path": "../secret.biom", "tab": "counts"})
+    assert r.status_code == 404

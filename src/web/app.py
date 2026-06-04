@@ -16,6 +16,7 @@ from agent.workspace import Workspace
 from agent.llm_client import LLMClient, AnthropicClient
 from agent.events import Event
 from web.sessions_index import list_sessions, load_transcript
+from web import biom_view
 
 WORKSPACES_ROOT = Path(os.environ.get("ASKSLM_WORKSPACES", "./Workspaces"))
 
@@ -34,6 +35,21 @@ def _safe_session_path(agent_log_dir: Path, session_id: str) -> Path:
     if not candidate.is_relative_to(log_root) or not candidate.is_file():
         raise HTTPException(status_code=404, detail="session not found")
     return candidate
+
+def _safe_biom_path(ws_dir: Path, rel: str) -> Path:
+    candidate = (ws_dir / rel).resolve()
+    if not candidate.is_relative_to(ws_dir.resolve()) or not candidate.is_file():
+        raise HTTPException(status_code=404, detail="biom not found")
+    return candidate
+
+
+def _table_window(path: Path, tab: str, row_off: int, col_off: int):
+    if tab == "samples":
+        return biom_view.samples_window(path, row_off=row_off)
+    if tab == "lineage":
+        return biom_view.lineage_window(path, row_off=row_off)
+    return biom_view.counts_window(path, row_off=row_off, col_off=col_off)
+
 
 BASE = Path(__file__).parent
 app = FastAPI()
@@ -116,3 +132,14 @@ def replay(workspace: str, session_id: str, request: Request):
     path = _safe_session_path(ws.agent_log_dir, session_id)
     records = load_transcript(path)
     return templates.TemplateResponse(request, "replay.html", {"workspace": workspace, "records": records})
+
+
+@app.get("/w/{workspace}/biom/table", response_class=HTMLResponse)
+def biom_table(workspace: str, request: Request, path: str,
+               tab: str = "counts", row_off: int = 0, col_off: int = 0):
+    ws_dir = _safe_workspace_dir(workspace)
+    biom_path = _safe_biom_path(ws_dir, path)
+    window = _table_window(biom_path, tab, row_off, col_off)
+    return templates.TemplateResponse(request, "_biom_table.html", {
+        "workspace": workspace, "path": path, "tab": tab, "w": window,
+    })
