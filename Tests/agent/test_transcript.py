@@ -13,11 +13,11 @@ def test_writes_user_message(tmp_path):
 
 def test_writes_tool_call_and_result_pair(tmp_path):
     w = TranscriptWriter(tmp_path / "t.jsonl")
-    w.tool_call("build_abundance_matrix", {"taxonomy": "tax_1", "rank": "genus"}, tool_use_id="u1")
-    w.tool_result_ok("u1", {"type": "AbundanceMatrix"}, latency_ms=12)
+    w.tool_call("run_python", {"code": "feature_table.shape"}, tool_use_id="u1")
+    w.tool_result_ok("u1", {"type": "FeatureTable"}, latency_ms=12)
     lines = [json.loads(l) for l in (tmp_path / "t.jsonl").read_text().splitlines()]
     assert lines[0]["type"] == "tool_call"
-    assert lines[0]["tool"] == "build_abundance_matrix"
+    assert lines[0]["tool"] == "run_python"
     assert lines[1]["type"] == "tool_result"
     assert lines[1]["is_error"] is False
     assert lines[1]["latency_ms"] == 12
