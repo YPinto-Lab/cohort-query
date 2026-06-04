@@ -9,7 +9,7 @@ A study lives in `Workspaces/<name>/` as phases handed off through files on disk
 
 - **Scaffold with the CLI, never by hand:** `askslm workspace new <name>`, `askslm transform add <ws> <exploration>`, `askslm analysis add <ws> <exploration> <name>`.
 - **Every phase script starts** `from askslm import workspace` then `ws = workspace.phase(__file__)`. No `sys.path` / `parents[N]`. Use `ws.inputs`, `ws.upstream()`, `ws.result`, `ws.data`, `ws.plots`, `ws.shared`.
-- **Promotion rule:** write a step inline first; lift it into that phase's `shared.py` only when a 2nd script in the same phase needs it.
+- **Promotion rule:** write a step inline first; lift it into the phase-level `shared.py` (one per `2_transform` / `3_analyze`, shared across all explorations/analyses) only when a 2nd script in that phase needs it.
 - **Two libraries:** general reusable logic lives in the `askslm` package; study-specific helpers live in `<phase>/shared.py`.
 - **Naming:** explorations are intent-named (`no-control_bacteria`); analyses are grouped under their exploration by method (`braycurtis`).
 - **Serialization:** communities are biom **JSON** (`to_json` / `load_table`) — HDF5 cannot round-trip the nested lineage metadata.
