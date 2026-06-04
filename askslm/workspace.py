@@ -5,6 +5,7 @@ the inputs dir, the result dir, the phase's shared module, and the upstream comm
 Docs/superpowers/specs/2026-06-03-workspace-tooling-design.html.
 """
 import importlib.util
+from functools import cached_property
 from pathlib import Path
 
 from biom import load_table
@@ -40,7 +41,7 @@ class _Phase:
     def plots(self) -> Path:
         return _made(self.result / "plots")
 
-    @property
+    @cached_property
     def shared(self):
         return _load_module(self.root / self._folder / "shared.py")
 
