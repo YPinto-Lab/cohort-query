@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ask-SLM · The community, the operations &amp; the library palette</title>
+<title>Ask-SLM · The feature table, the operations &amp; the library palette</title>
 <style>
   :root{
     --ink:#1b2330; --muted:#5b6473; --line:#e3e7ee; --bg:#ffffff; --soft:#f6f8fb;
@@ -88,7 +88,7 @@
 <header class="hero">
   <div class="wrap">
     <p class="kicker">Ask-SLM · Metagenomic analysis toolkit</p>
-    <h1>The <em>community</em>, the operations &amp; the library palette</h1>
+    <h1>The <em>feature table</em>, the operations &amp; the library palette</h1>
     <p>One structure — a <code>biom.Table</code> — five kinds of operation, and, for each, the real library calls
        underneath, each linked to its docs. The structure is biom’s, shared by every professional tool; Ask-SLM adds
        only the small logic the libraries lack.</p>
@@ -114,7 +114,8 @@
   <h2><span class="num">1</span>Glossary</h2>
   <p class="lead">The small, stable vocabulary the whole toolkit is written in.</p>
   <dl class="glossary">
-    <dt>community</dt><dd>The whole thing: a <a href="https://biom-format.org/documentation/table_objects.html" target="_blank" rel="noopener"><code>biom.Table</code></a> holding the three parts below. Not an Ask-SLM class — biom is the container.</dd>
+    <dt>feature table</dt><dd>The whole thing: a <a href="https://biom-format.org/documentation/table_objects.html" target="_blank" rel="noopener"><code>biom.Table</code></a> holding the three parts below. Not an Ask-SLM class — biom is the container. (QIIME 2's term for it; what every pro tool works on.)</dd>
+    <dt>community</dt><dd>The microbes in <em>one</em> sample — the biological sense. The whole multi-sample object is the feature table above.</dd>
     <dt>feature</dt><dd>One microbe in the table — an NCBI taxon. <em>This is the one word we use.</em> (biom's axis name is &ldquo;observation&rdquo;; &ldquo;OTU&rdquo; / &ldquo;ASV&rdquo; are synonyms.)</dd>
     <dt>sample</dt><dd>One sequencing run (its accession, <code>acc</code>).</dd>
     <dt>counts</dt><dd>The matrix of read counts — samples against features. <code>self_count</code> = reads assigned directly to a feature.</dd>
@@ -132,8 +133,9 @@
 
 <section id="object">
   <h2><span class="num">2</span>The structure: one <code>biom.Table</code></h2>
-  <p class="lead">A microbial community is <strong>one <a href="https://biom-format.org/documentation/table_objects.html" target="_blank" rel="noopener"><code>biom.Table</code></a></strong> — not an Ask-SLM
-     object — made of three id-aligned parts. This is the shape every professional tool works on.</p>
+  <p class="lead">A microbial community lives in <strong>one <a href="https://biom-format.org/documentation/table_objects.html" target="_blank" rel="noopener"><code>biom.Table</code></a></strong> — a
+     <strong>feature table</strong>, not an Ask-SLM object — made of three id-aligned parts. This is the shape every
+     professional tool works on.</p>
   <div class="grid3">
     <div class="part"><h4><span class="dot" style="background:var(--counts)"></span>Counts</h4>
       <p>The matrix — <strong>samples</strong> against <strong>features</strong>. Each cell is a read count.</p></div>
@@ -176,7 +178,7 @@ sub  = table.filter(keep, axis="sample")           # subset — counts AND metad
 
 <section id="ops">
   <h2><span class="num">3</span>The five kinds of operation</h2>
-  <p class="lead">Every operation is one of five kinds, classified by what it does to the community. (On disk these
+  <p class="lead">Every operation is one of five kinds, classified by what it does to the feature table. (On disk these
      collapse to fewer <em>phase folders</em> — see the note below.)</p>
   <table>
     <tr><th>Phase</th><th>In &rarr; Out</th><th>Output</th><th>Meaning</th></tr>
@@ -286,7 +288,7 @@ sub  = table.filter(keep, axis="sample")           # subset — counts AND metad
 
 <section id="analyze">
   <h2><span class="num">8</span><span class="pill analyze">analyze</span> &nbsp;Measure &amp; compare &mdash; the full palette</h2>
-  <p class="lead">The widest phase: take a community (or several groups) and return a <strong>measurement</strong>. Almost
+  <p class="lead">The widest phase: take a feature table (or several groups) and return a <strong>measurement</strong>. Almost
      entirely library territory — <a href="https://scikit.bio/" target="_blank" rel="noopener">scikit-bio</a> and
      <a href="https://docs.scipy.org/doc/scipy/reference/stats.html" target="_blank" rel="noopener">scipy</a> are deep
      here. Bray-Curtis is one cell in family C.</p>
@@ -433,7 +435,7 @@ sub  = table.filter(keep, axis="sample")           # subset — counts AND metad
 </main>
 
 <footer>
-  Ask-SLM · design source of truth: the <strong>community</strong> (a <code>biom.Table</code>), the five kinds of operation, the library palette, and the data contract.
+  Ask-SLM · design source of truth: the <strong>feature table</strong> (a <code>biom.Table</code>), the five kinds of operation, the library palette, and the data contract.
 </footer>
 
 </body>

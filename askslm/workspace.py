@@ -1,7 +1,7 @@
 """Resolve a phase script's paths from the numbered-folder workspace convention.
 
 `workspace.phase(__file__)` self-locates inside `Workspaces/<name>/<N_phase>/...` and hands back
-the inputs dir, the result dir, the phase's shared module, and the upstream community. Spec:
+the inputs dir, the result dir, the phase's shared module, and the upstream feature table. Spec:
 Docs/superpowers/specs/2026-06-03-workspace-tooling-design.html.
 """
 import importlib.util
@@ -50,10 +50,10 @@ class _Phase:
 
     def _upstream_path(self) -> Path:
         if self.name == "transform":
-            return self.root / "1_build" / "community.biom"
+            return self.root / "1_build" / "feature_table.biom"
         if self.name == "analyze":
             exploration = self._script.parent.parent.name
-            return self.root / "2_transform" / exploration / "result" / "community.biom"
+            return self.root / "2_transform" / exploration / "result" / "feature_table.biom"
         raise ValueError("build reads from ws.inputs; it has no upstream")
 
     def _result_dir(self) -> Path:

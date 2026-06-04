@@ -12,7 +12,7 @@ WORKSPACES = Path("Workspaces")
 SHARED_STUB = '''"""(workspace, {phase}) helpers — study-specific. Promote a step here only when a 2nd script needs it."""
 '''
 
-BUILD_PY = '''"""build (ingest + assemble): the atomic community -> community.biom. Run once."""
+BUILD_PY = '''"""build (ingest + assemble): the atomic feature table -> feature_table.biom. Run once."""
 from askslm import workspace
 
 ws = workspace.phase(__file__)
@@ -20,45 +20,45 @@ ws = workspace.phase(__file__)
 # read raw sources from ws.inputs (one Accessor each) and assemble ONE biom.Table:
 #   counts (atomic self_count) + feature metadata (lineage) + sample metadata.
 # then write biom JSON (HDF5 can't round-trip nested lineage metadata):
-# (ws.result / "community.biom").write_text(table.to_json("askslm-build"))
+# (ws.result / "feature_table.biom").write_text(table.to_json("askslm-build"))
 '''
 
 BUILD_MD = '''---
 kind: build
-intent: assemble the atomic community for this study
+intent: assemble the atomic feature table for this study
 input: 0_inputs/
-outputs: [community.biom]
+outputs: [feature_table.biom]
 ---
 The one run-once building block: counts + lineage feature metadata + sample metadata.
 '''
 
-EXPLORE_PY = '''"""transform · {exploration}: shape the community, write result/community.biom."""
+EXPLORE_PY = '''"""transform · {exploration}: shape the feature table, write result/feature_table.biom."""
 from askslm import workspace
 
 ws = workspace.phase(__file__)
-community = ws.upstream()                       # 1_build/community.biom
+feature_table = ws.upstream()                       # 1_build/feature_table.biom
 
 # shape it with biom calls + ws.shared helpers: restrict clade / roll up rank / cohort / norm.
-# community = ws.shared.<helper>(community)
+# feature_table = ws.shared.<helper>(feature_table)
 
-(ws.result / "community.biom").write_text(      # biom JSON — HDF5 can't round-trip lineage
-    community.to_json("askslm-{exploration}"))
+(ws.result / "feature_table.biom").write_text(      # biom JSON — HDF5 can't round-trip lineage
+    feature_table.to_json("askslm-{exploration}"))
 '''
 
 EXPLORE_MD = '''---
 kind: transform
 intent: one line — what this exploration shapes
-input: ../../1_build/community.biom
-outputs: [result/community.biom]
+input: ../../1_build/feature_table.biom
+outputs: [result/feature_table.biom]
 ---
 What this exploration keeps/rolls-up, and why.
 '''
 
-ANALYSIS_PY = '''"""analyze · {exploration} / {name}: measure the exploration's community."""
+ANALYSIS_PY = '''"""analyze · {exploration} / {name}: measure the exploration's feature table."""
 from askslm import workspace
 
 ws = workspace.phase(__file__)
-community = ws.upstream()                        # the exploration's result/community.biom
+feature_table = ws.upstream()                        # the exploration's result/feature_table.biom
 
 # measure with skbio / scipy + ws.shared, then write:
 # result.to_csv(ws.data / "{name}.csv", index=False)
@@ -68,7 +68,7 @@ community = ws.upstream()                        # the exploration's result/comm
 ANALYSIS_MD = '''---
 kind: analysis
 intent: one line — what this measures
-input: ../../../2_transform/{exploration}/result/community.biom
+input: ../../../2_transform/{exploration}/result/feature_table.biom
 outputs: [data/{name}.csv, plots/{name}.png]
 ---
 What this analysis measures and the headline finding.

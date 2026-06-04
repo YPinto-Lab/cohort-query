@@ -5,16 +5,16 @@ from biom import Table
 from askslm import workspace
 
 
-def _write_community(path):
+def _write_feature_table(path):
     table = Table(np.array([[1.0, 2.0], [3.0, 4.0]]),
                   observation_ids=["a", "b"], sample_ids=["s1", "s2"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(table.to_json("test"))
 
 
-def test_transform_upstream_is_build_community(tmp_path):
+def test_transform_upstream_is_build_feature_table(tmp_path):
     root = tmp_path / "Workspaces" / "ABX"
-    _write_community(root / "1_build" / "community.biom")
+    _write_feature_table(root / "1_build" / "feature_table.biom")
     script = root / "2_transform" / "no-control_bacteria" / "explore.py"
     script.parent.mkdir(parents=True)
 
@@ -25,7 +25,7 @@ def test_transform_upstream_is_build_community(tmp_path):
 
 def test_analyze_upstream_is_exploration_result(tmp_path):
     root = tmp_path / "Workspaces" / "ABX"
-    _write_community(root / "2_transform" / "no-control_bacteria" / "result" / "community.biom")
+    _write_feature_table(root / "2_transform" / "no-control_bacteria" / "result" / "feature_table.biom")
     script = root / "3_analyze" / "no-control_bacteria" / "braycurtis" / "analysis.py"
     script.parent.mkdir(parents=True)
 

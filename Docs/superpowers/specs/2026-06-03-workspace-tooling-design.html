@@ -100,7 +100,7 @@
     <tr>
       <td><strong>Uncodified conventions</strong></td>
       <td>The phase recipe (numbered folders, <code>result/</code>, <code>.md</code> frontmatter, the promotion rule)
-          lives in your head and in <code>Docs/community-and-library-palette.html</code>.</td>
+          lives in your head and in <code>Docs/feature-table-and-library-palette.html</code>.</td>
       <td>A fresh agent session re-derives it from prose — a missed folder, a wrong number, slightly different
           frontmatter each time. Drift.</td>
     </tr>
@@ -126,18 +126,18 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, <span class="s">str</span>(HERE.parents[1]))   <span class="c"># find shared</span>
 <span class="k">import</span> shared
 RESULT = HERE.parents[2] / <span class="s">"2_transform"</span> \
-    / <span class="s">"no-control_bacteria"</span> / <span class="s">"result"</span> / <span class="s">"community.biom"</span>
-community = load_table(<span class="s">str</span>(RESULT))</pre>
+    / <span class="s">"no-control_bacteria"</span> / <span class="s">"result"</span> / <span class="s">"feature_table.biom"</span>
+feature_table = load_table(<span class="s">str</span>(RESULT))</pre>
     </div>
     <div>
       <h4>After</h4>
 <pre><span class="k">from</span> askslm <span class="k">import</span> workspace
 ws = workspace.phase(__file__)
 
-community = ws.upstream()        <span class="c"># prev phase's .biom</span>
+feature_table = ws.upstream()   <span class="c"># prev phase's .biom</span>
 <span class="c"># … shape it …</span>
-(ws.result / <span class="s">"community.biom"</span>).write_text(   <span class="c"># biom JSON — HDF5 can't</span>
-    community.to_json(<span class="s">"askslm-no-control_bacteria"</span>))  <span class="c"># round-trip nested lineage</span></pre>
+(ws.result / <span class="s">"feature_table.biom"</span>).write_text(   <span class="c"># biom JSON — HDF5 can't</span>
+    feature_table.to_json(<span class="s">"askslm-no-control_bacteria"</span>))  <span class="c"># round-trip nested lineage</span></pre>
       <p style="margin:10px 0 0;font-size:13.5px;color:var(--muted)">Plain import, so the script still runs with
          <code>python explore.py</code>. No runner command.</p>
     </div>
@@ -167,24 +167,24 @@ community = ws.upstream()        <span class="c"># prev phase's .biom</span>
     <tr>
       <td><strong>build</strong></td>
       <td>— (none; build reads files from <code>ws.inputs</code>)</td>
-      <td><code>1_build/</code> — writes <code>community.biom</code></td>
+      <td><code>1_build/</code> — writes <code>feature_table.biom</code></td>
       <td>reads multiple input files itself</td>
     </tr>
     <tr>
       <td><strong>transform</strong></td>
-      <td><code>1_build/community.biom</code></td>
-      <td><code>&lt;exploration&gt;/result/</code> — writes <code>community.biom</code></td>
+      <td><code>1_build/feature_table.biom</code></td>
+      <td><code>&lt;exploration&gt;/result/</code> — writes <code>feature_table.biom</code></td>
       <td><code>ws.shared</code> = <code>2_transform/shared.py</code></td>
     </tr>
     <tr>
       <td><strong>analyze</strong></td>
-      <td><code>2_transform/&lt;exploration&gt;/result/community.biom</code><br>(matched by the parent folder name)</td>
+      <td><code>2_transform/&lt;exploration&gt;/result/feature_table.biom</code><br>(matched by the parent folder name)</td>
       <td><code>&lt;analysis&gt;/</code>; <code>ws.data</code> + <code>ws.plots</code> sub-dirs created — writes CSV/PNG</td>
       <td><code>ws.shared</code> = <code>3_analyze/shared.py</code></td>
     </tr>
   </table>
   <div class="why"><h4>Why this is sound — not magic</h4><p style="margin:0">The resolver only encodes conventions that are
-     <em>already locked and enforced by the scaffold</em>: numbered phase folders, <code>result/community.biom</code>, and
+     <em>already locked and enforced by the scaffold</em>: numbered phase folders, <code>result/feature_table.biom</code>, and
      analyses grouped under their exploration name. Nothing is inferred from data — only from the path. If a script sits in
      a non-conforming place, <code>workspace.phase</code> raises rather than guessing (trust-input / fail-fast).
      <span class="tag prop">PROPOSED</span></p></div>
@@ -211,7 +211,7 @@ community = ws.upstream()        <span class="c"># prev phase's .biom</span>
     <tr>
       <td><code>workspace new</code></td>
       <td>the four phase folders + empty <code>shared.py</code> per phase + a <code>build.py</code>/<code>build.md</code> stub</td>
-      <td><code>build.py</code> pre-wired to read <code>ws.inputs</code> and write <code>community.biom</code> into <code>ws.result</code></td>
+      <td><code>build.py</code> pre-wired to read <code>ws.inputs</code> and write <code>feature_table.biom</code> into <code>ws.result</code></td>
     </tr>
     <tr>
       <td><code>transform add</code></td>
@@ -251,7 +251,7 @@ community = ws.upstream()        <span class="c"># prev phase's .biom</span>
       <td>whoever edits the generated script</td>
     </tr>
     <tr>
-      <td><strong><code>Docs/community-and-library-palette.html</code></strong></td>
+      <td><strong><code>Docs/feature-table-and-library-palette.html</code></strong></td>
       <td>rationale — the "why", unchanged</td>
       <td>you, on review</td>
     </tr>
@@ -286,14 +286,14 @@ community = ws.upstream()        <span class="c"># prev phase's .biom</span>
     <tr><td>How a script gets paths + shared</td><td>a tiny <code>workspace.phase(__file__)</code> import</td><td>smallest change, most readable, scripts still run with plain <code>python</code>; chosen over a runner-execs-script (more magic) and real packages (the numbered folders aren't legal module names)</td></tr>
     <tr><td>Folder structure</td><td>created by <strong>ask-slm CLI code</strong>, not agent prose</td><td>deterministic structure belongs in deterministic code; serves the human too; prose drifts</td></tr>
     <tr><td>Scaffold surface</td><td><code>workspace new</code> · <code>transform add</code> · <code>analysis add</code>; <strong>no <code>run</code></strong></td><td>the import removes the need for a runner; one way to do a thing</td></tr>
-    <tr><td>Conventions home</td><td><code>AGENTS.md</code> → <code>Docs/community-and-library-palette.html</code>; template comments at point of use</td><td>agent-agnostic (no <code>CLAUDE.md</code> coupling); the agent is Gemini today</td></tr>
+    <tr><td>Conventions home</td><td><code>AGENTS.md</code> → <code>Docs/feature-table-and-library-palette.html</code>; template comments at point of use</td><td>agent-agnostic (no <code>CLAUDE.md</code> coupling); the agent is Gemini today</td></tr>
     <tr><td>CLI wiring</td><td>extend <code>Clients/cli.py</code>; expose <code>[project.scripts] askslm</code> in <code>pyproject.toml</code></td><td>wires the currently-unwired entry; works after <code>pip install -e .</code></td></tr>
     <tr><td>Acceptance test</td><td>migrate the four <code>ABX_new</code> scripts; numbers must match</td><td>proves the tooling against the real workspace before it's trusted</td></tr>
   </table>
   <h3>Carried over (already locked)</h3>
   <table>
     <tr><th>From the organization spec</th><th>Status</th></tr>
-    <tr><td>Numbered phase folders, <code>result/community.biom</code> handoff, analyses grouped by exploration</td><td>unchanged — the resolver depends on them</td></tr>
+    <tr><td>Numbered phase folders, <code>result/feature_table.biom</code> handoff, analyses grouped by exploration</td><td>unchanged — the resolver depends on them</td></tr>
     <tr><td>Promotion rule, two-library split, <code>.md</code> frontmatter lineage</td><td>unchanged — the scaffold stamps them</td></tr>
     <tr><td>Trust-input / fail-fast</td><td>unchanged — <code>workspace.phase</code> raises on a non-conforming path rather than guessing</td></tr>
   </table>

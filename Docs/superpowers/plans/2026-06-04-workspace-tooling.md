@@ -1,5 +1,11 @@
 # Workspace Tooling Implementation Plan
 
+> **Historical note (2026-06-04, after execution):** this plan was carried out as written, then the
+> object was renamed **community → feature table** and the artifact **`community.biom` → `feature_table.biom`**
+> (and the `community` variable → `feature_table`). The code blocks below preserve the original names as an
+> execution record; the live code, specs, and bible use the new names. See
+> `Docs/feature-table-and-library-palette.html`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the locked phase-workspace structure reproducible by any agent — a one-line `askslm.workspace` import that ends the path boilerplate, a scaffold CLI that stamps the tree, an agent-agnostic `AGENTS.md` section, proven by migrating the `ABX_new` scripts.
@@ -578,7 +584,7 @@ A study lives in `Workspaces/<name>/` as phases handed off through files on disk
 - **Two libraries:** general reusable logic lives in the `askslm` package; study-specific helpers live in `<phase>/shared.py`.
 - **Naming:** explorations are intent-named (`no-control_bacteria`); analyses are grouped under their exploration by method (`braycurtis`).
 - **Serialization:** communities are biom **JSON** (`to_json` / `load_table`) — HDF5 cannot round-trip the nested lineage metadata.
-- Rationale and full model: `Docs/community-and-library-palette.html` and `Docs/superpowers/specs/2026-06-03-workspace-tooling-design.html`.
+- Rationale and full model: `Docs/feature-table-and-library-palette.html` and `Docs/superpowers/specs/2026-06-03-workspace-tooling-design.html`.
 ```
 
 - [ ] **Step 2: Verify the section reads correctly**
