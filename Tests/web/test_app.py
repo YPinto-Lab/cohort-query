@@ -91,3 +91,24 @@ def test_session_id_path_traversal_is_rejected(tmp_path, monkeypatch):
     client = TestClient(app_mod.app)
     r = client.get("/w/ABX/sessions/%2E%2E%2Fsecret")
     assert r.status_code == 404
+
+
+def test_create_workspace_scaffolds_and_redirects(tmp_path, monkeypatch):
+    from web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    client = TestClient(app_mod.app)
+
+    r = client.post("/workspaces", data={"name": "NewStudy"}, follow_redirects=False)
+
+    assert r.status_code in (302, 303)
+    assert r.headers["location"] == "/w/NewStudy"
+    assert (tmp_path / "NewStudy" / "1_build" / "build.py").is_file()
+
+
+def test_create_workspace_rejects_unsafe_name(tmp_path, monkeypatch):
+    from web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    client = TestClient(app_mod.app)
+    r = client.post("/workspaces", data={"name": "../escape"})
+    assert r.status_code == 400
+    assert not (tmp_path.parent / "escape").exists()

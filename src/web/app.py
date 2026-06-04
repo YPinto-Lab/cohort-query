@@ -6,11 +6,12 @@ from pathlib import Path
 from typing import Iterator
 
 from fastapi import FastAPI, Form, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from agent.agent import Agent
+from askslm.cli import workspace_new
 from agent.workspace import Workspace
 from agent.llm_client import LLMClient, AnthropicClient
 from agent.events import Event
@@ -61,6 +62,15 @@ def index(request: Request):
     else:
         workspaces = sorted([p.name for p in WORKSPACES_ROOT.iterdir() if p.is_dir()])
     return templates.TemplateResponse(request, "index.html", {"workspaces": workspaces})
+
+
+@app.post("/workspaces")
+def create_workspace(name: str = Form(...)):
+    safe = name.strip()
+    if not safe or "/" in safe or "\\" in safe or safe.startswith("."):
+        raise HTTPException(status_code=400, detail="invalid workspace name")
+    workspace_new(safe, root=WORKSPACES_ROOT)
+    return RedirectResponse(url=f"/w/{safe}", status_code=303)
 
 
 @app.get("/w/{workspace}", response_class=HTMLResponse)
