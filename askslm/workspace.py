@@ -26,6 +26,7 @@ class _Phase:
 
     @property
     def result(self) -> Path:
+        """This script's output directory, created on first access."""
         return _made(self._result_dir())
 
     @property
