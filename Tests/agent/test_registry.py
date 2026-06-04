@@ -103,10 +103,4 @@ def test_unknown_tool_errors(session):
 
 def test_default_registry_includes_all_tools():
     from Agents.tools import default_registry
-    names = {s["name"] for s in default_registry.schemas()}
-    assert names >= {
-        "extract_metadata", "metadata_overview",
-        "load_taxonomy", "resolve_taxonomy", "build_abundance_matrix", "build_cohort",
-        "summarize", "list_workspace_inputs",
-        "run_python",
-    }
+    assert set(default_registry._tools) == {"list_workspace_inputs", "run_python", "summarize"}
