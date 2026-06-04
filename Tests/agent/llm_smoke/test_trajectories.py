@@ -20,14 +20,13 @@ def _trajectory(events) -> list[str]:
     return [e.payload["tool"] for e in events if e.type == "tool_call"]
 
 
-def test_metadata_summarization_calls_extract_and_overview(workspace):
+def test_metadata_summarization_runs_python(workspace):
     if not os.environ.get("ANTHROPIC_API_KEY"):
         pytest.skip("ANTHROPIC_API_KEY not set")
     agent = Agent(workspace=workspace, llm=AnthropicClient())
     events = list(agent.chat("Summarize the metadata in this workspace."))
     traj = _trajectory(events)
-    assert "extract_metadata" in traj
-    assert "metadata_overview" in traj
+    assert "run_python" in traj
     assert events[-1].type == "assistant_final"
 
 
