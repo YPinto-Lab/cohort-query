@@ -55,8 +55,5 @@ def _label(rel: Path) -> str:
 
 
 def _shape(path: Path) -> tuple[int, int]:
-    try:
-        shape = json.loads(path.read_text())["shape"]
-        return (int(shape[0]), int(shape[1]))
-    except Exception:
-        return (0, 0)
+    shape = json.loads(path.read_text())["shape"]
+    return (int(shape[0]), int(shape[1]))
