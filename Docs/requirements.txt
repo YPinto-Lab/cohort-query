@@ -2,9 +2,6 @@ pandas
 pandera
 rich
 numpy
-plotly
-ipywidgets
-nbformat
 seaborn
 pyarrow
 scikit-bio
