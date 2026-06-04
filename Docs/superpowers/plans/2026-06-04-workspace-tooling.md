@@ -578,7 +578,7 @@ A study lives in `Workspaces/<name>/` as phases handed off through files on disk
 - **Two libraries:** general reusable logic lives in the `askslm` package; study-specific helpers live in `<phase>/shared.py`.
 - **Naming:** explorations are intent-named (`no-control_bacteria`); analyses are grouped under their exploration by method (`braycurtis`).
 - **Serialization:** communities are biom **JSON** (`to_json` / `load_table`) — HDF5 cannot round-trip the nested lineage metadata.
-- Rationale and full model: `Docs/abundancetable.html` and `Docs/superpowers/specs/2026-06-03-workspace-tooling-design.html`.
+- Rationale and full model: `Docs/community-and-library-palette.html` and `Docs/superpowers/specs/2026-06-03-workspace-tooling-design.html`.
 ```
 
 - [ ] **Step 2: Verify the section reads correctly**

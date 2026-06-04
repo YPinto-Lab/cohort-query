@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ask-SLM · The AbundanceTable, the five phases &amp; the library palette</title>
+<title>Ask-SLM · The community, the operations &amp; the library palette</title>
 <style>
   :root{
     --ink:#1b2330; --muted:#5b6473; --line:#e3e7ee; --bg:#ffffff; --soft:#f6f8fb;
@@ -88,16 +88,17 @@
 <header class="hero">
   <div class="wrap">
     <p class="kicker">Ask-SLM · Metagenomic analysis toolkit</p>
-    <h1>The <em>AbundanceTable</em>, the five phases &amp; the library palette</h1>
-    <p>One object, five kinds of operation, and — for each — the real library calls underneath, each linked to its
-       docs. This page maps the raw material we build on; the Ask-SLM API is designed on top of it.</p>
+    <h1>The <em>community</em>, the operations &amp; the library palette</h1>
+    <p>One structure — a <code>biom.Table</code> — five kinds of operation, and, for each, the real library calls
+       underneath, each linked to its docs. The structure is biom’s, shared by every professional tool; Ask-SLM adds
+       only the small logic the libraries lack.</p>
   </div>
 </header>
 
 <nav><div class="wrap">
   <a href="#glossary">Glossary</a>
-  <a href="#object">The object</a>
-  <a href="#ops">Five phases</a>
+  <a href="#object">The structure</a>
+  <a href="#ops">Operations</a>
   <a href="#ingest">Ingest</a>
   <a href="#build">Build</a>
   <a href="#transform">Transform</a>
@@ -113,7 +114,7 @@
   <h2><span class="num">1</span>Glossary</h2>
   <p class="lead">The small, stable vocabulary the whole toolkit is written in.</p>
   <dl class="glossary">
-    <dt>AbundanceTable</dt><dd>The whole object: a thin wrapper over a <a href="https://biom-format.org/documentation/table_objects.html" target="_blank" rel="noopener"><code>biom.Table</code></a> holding the three parts below.</dd>
+    <dt>community</dt><dd>The whole thing: a <a href="https://biom-format.org/documentation/table_objects.html" target="_blank" rel="noopener"><code>biom.Table</code></a> holding the three parts below. Not an Ask-SLM class — biom is the container.</dd>
     <dt>feature</dt><dd>One microbe in the table — an NCBI taxon. <em>This is the one word we use.</em> (biom's axis name is &ldquo;observation&rdquo;; &ldquo;OTU&rdquo; / &ldquo;ASV&rdquo; are synonyms.)</dd>
     <dt>sample</dt><dd>One sequencing run (its accession, <code>acc</code>).</dd>
     <dt>counts</dt><dd>The matrix of read counts — samples against features. <code>self_count</code> = reads assigned directly to a feature.</dd>
@@ -130,9 +131,9 @@
 </section>
 
 <section id="object">
-  <h2><span class="num">2</span>The object: <code>AbundanceTable</code></h2>
-  <p class="lead">A microbial community is <strong>one object</strong> — a thin wrapper over a
-     <a href="https://biom-format.org/documentation/table_objects.html" target="_blank" rel="noopener"><code>biom.Table</code></a> — made of three aligned parts.</p>
+  <h2><span class="num">2</span>The structure: one <code>biom.Table</code></h2>
+  <p class="lead">A microbial community is <strong>one <a href="https://biom-format.org/documentation/table_objects.html" target="_blank" rel="noopener"><code>biom.Table</code></a></strong> — not an Ask-SLM
+     object — made of three id-aligned parts. This is the shape every professional tool works on.</p>
   <div class="grid3">
     <div class="part"><h4><span class="dot" style="background:var(--counts)"></span>Counts</h4>
       <p>The matrix — <strong>samples</strong> against <strong>features</strong>. Each cell is a read count.</p></div>
@@ -149,13 +150,14 @@
     <div class="meta samp">sample&nbsp;metadata<small>cluster · day · host</small></div>
     <div class="meta obs">feature metadata<small>full lineage / taxonomy</small></div>
   </figure>
-  <div class="why"><h4>Why one object, but the parts stay separate</h4>
-    <p style="margin:0">&ldquo;One object&rdquo; does <strong>not</strong> mean one merged spreadsheet. A
+  <div class="why"><h4>Why biom — and why the parts stay separate</h4>
+    <p style="margin:0">&ldquo;One structure&rdquo; does <strong>not</strong> mean one merged spreadsheet. A
        <a href="https://biom-format.org/" target="_blank" rel="noopener">biom.Table</a> — like
        <a href="https://joey711.github.io/phyloseq/" target="_blank" rel="noopener">phyloseq</a> and
        <a href="https://qiime2.org/" target="_blank" rel="noopener">QIIME&nbsp;2</a> — keeps the counts matrix, the
-       feature metadata and the sample metadata as <em>separate, id-aligned slots</em> in one container. biom does the
-       storage and heavy lifting; Ask-SLM only adds names and the few pieces of real logic libraries don't have.</p></div>
+       feature metadata and the sample metadata as <em>separate, id-aligned slots</em> in one container. Every pro tool
+       shares this shape; biom provides it and does the storage and heavy lifting. Ask-SLM adds no wrapper — only names
+       and the few pieces of real logic the libraries don’t have.</p></div>
 
   <h3>Querying — read the parts back</h3>
   <p>The attached metadata is queryable with one call per axis; the result is a plain pandas DataFrame you explore with pandas. No custom code needed.</p>
@@ -167,19 +169,21 @@ sub  = table.filter(keep, axis="sample")           # subset — counts AND metad
   <p><a href="https://biom-format.org/documentation/generated/biom.table.Table.metadata_to_dataframe.html" target="_blank" rel="noopener"><code>Table.metadata_to_dataframe(axis)</code></a> is the built-in for this.</p>
   <div class="why"><h4>Counts and metadata move together — for free</h4>
     <p style="margin:0">Metadata lives on the axis, so a filtered table already carries the subset metadata — nothing to re-sync.
-       <code>filter</code> even accepts the predicate directly, collapsing ask + subset into one call:
-       <code>table.filter(lambda v, i, md: md["day"] == 0, axis="sample")</code>.</p></div>
+       <code>filter</code> even accepts the predicate directly — a <strong>named</strong> function, never a lambda:
+       <code>def is_baseline(values, sample_id, md): return md["day"] == 0</code> then
+       <code>table.filter(is_baseline, axis="sample")</code>.</p></div>
 </section>
 
 <section id="ops">
-  <h2><span class="num">3</span>The five phases</h2>
-  <p class="lead">Every operation is one of five kinds, classified by what it does to the type.</p>
+  <h2><span class="num">3</span>The five kinds of operation</h2>
+  <p class="lead">Every operation is one of five kinds, classified by what it does to the community. (On disk these
+     collapse to fewer <em>phase folders</em> — see the note below.)</p>
   <table>
     <tr><th>Phase</th><th>In &rarr; Out</th><th>Output</th><th>Meaning</th></tr>
     <tr><td><span class="pill query">ingest</span></td><td>source &rarr; raw parts</td><td>standardised tables</td><td>Acquire raw data from any source into our schema.</td></tr>
-    <tr><td><span class="pill build">build</span></td><td>parts &rarr; 1</td><td><code>AbundanceTable</code></td><td>Assemble &amp; align the parts into one object.</td></tr>
-    <tr><td><span class="pill transform">transform</span></td><td>1 &rarr; 1</td><td><code>AbundanceTable</code></td><td>Reshape; same kind of thing. Chains.</td></tr>
-    <tr><td><span class="pill split">split</span></td><td>1 &rarr; <strong>N</strong></td><td><code>AbundanceTable</code>s</td><td>Partition into sub-tables (groups).</td></tr>
+    <tr><td><span class="pill build">build</span></td><td>parts &rarr; 1</td><td><code>biom.Table</code></td><td>Assemble &amp; align the parts into one table.</td></tr>
+    <tr><td><span class="pill transform">transform</span></td><td>1 &rarr; 1</td><td><code>biom.Table</code></td><td>Reshape; same kind of thing. Chains.</td></tr>
+    <tr><td><span class="pill split">split</span></td><td>1 &rarr; <strong>N</strong></td><td><code>biom.Table</code>s</td><td>Partition into sub-tables (groups).</td></tr>
     <tr><td><span class="pill analyze">analyze</span></td><td>1 (or N) &rarr; result</td><td>a measurement</td><td>The answer is no longer a table.</td></tr>
   </table>
   <div class="flow">
@@ -189,7 +193,11 @@ sub  = table.filter(keep, axis="sample")           # subset — counts AND metad
     <div class="stage s"><b>split</b><small>1 &rarr; N</small></div>
     <div class="stage a"><b>analyze</b><small>table &rarr; result</small></div>
   </div>
-  <p class="figcap">Each chapter lists the <strong>library calls</strong> for that phase (linked to docs), with what they do and
+  <div class="why"><h4>Operations vs. on-disk phases</h4><p style="margin:0">These five are <em>operation kinds</em>.
+     On disk a workspace has fewer <strong>phase folders</strong> — <code>0_inputs/ 1_build/ 2_transform/ 3_analyze/</code>:
+     <strong>ingest</strong> is folded into build, and <strong>split</strong> is a transform that returns many tables.
+     See the workspace organization spec.</p></div>
+  <p class="figcap">Each chapter lists the <strong>library calls</strong> for that operation (linked to docs), with what they do and
      their params. Purple <span style="color:var(--accent);font-weight:600">Ask-SLM logic</span> boxes mark the only
      places we write real code. We assume clean input and fail fast — see the <a href="#assumptions">data contract</a>.</p>
 </section>
@@ -272,8 +280,8 @@ sub  = table.filter(keep, axis="sample")           # subset — counts AND metad
     <tr><td class="goal">keep one value's samples</td><td><a href="https://biom-format.org/documentation/generated/biom.table.Table.filter.html" target="_blank" rel="noopener"><code>Table.filter(ids_to_keep, axis="sample")</code></a></td><td>the only library primitive here — keep the samples matching one value. No library call returns many tables at once.</td></tr>
   </table>
   <div class="ours"><span class="lbl">Ask-SLM logic</span><strong>split</strong> is genuinely ours: take a column, find its
-     distinct values, return a <code>dict[value → AbundanceTable]</code> by filtering once per value. The only 1&rarr;N
-     operation — disciplined, repeated filtering.</div>
+     distinct values, return a <code>dict[value → biom.Table]</code> by filtering once per value. A transform that returns
+     many — the only 1&rarr;N operation, disciplined repeated filtering.</div>
 </section>
 
 <section id="analyze">
@@ -425,7 +433,7 @@ sub  = table.filter(keep, axis="sample")           # subset — counts AND metad
 </main>
 
 <footer>
-  Ask-SLM · design source of truth: the <code>AbundanceTable</code>, the five phases, the library palette, and the data contract.
+  Ask-SLM · design source of truth: the <strong>community</strong> (a <code>biom.Table</code>), the five kinds of operation, the library palette, and the data contract.
 </footer>
 
 </body>

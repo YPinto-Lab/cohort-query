@@ -100,7 +100,7 @@
     <tr>
       <td><strong>Uncodified conventions</strong></td>
       <td>The phase recipe (numbered folders, <code>result/</code>, <code>.md</code> frontmatter, the promotion rule)
-          lives in your head and in <code>Docs/abundancetable.html</code>.</td>
+          lives in your head and in <code>Docs/community-and-library-palette.html</code>.</td>
       <td>A fresh agent session re-derives it from prose — a missed folder, a wrong number, slightly different
           frontmatter each time. Drift.</td>
     </tr>
@@ -251,7 +251,7 @@ community = ws.upstream()        <span class="c"># prev phase's .biom</span>
       <td>whoever edits the generated script</td>
     </tr>
     <tr>
-      <td><strong><code>Docs/abundancetable.html</code></strong></td>
+      <td><strong><code>Docs/community-and-library-palette.html</code></strong></td>
       <td>rationale — the "why", unchanged</td>
       <td>you, on review</td>
     </tr>
@@ -286,7 +286,7 @@ community = ws.upstream()        <span class="c"># prev phase's .biom</span>
     <tr><td>How a script gets paths + shared</td><td>a tiny <code>workspace.phase(__file__)</code> import</td><td>smallest change, most readable, scripts still run with plain <code>python</code>; chosen over a runner-execs-script (more magic) and real packages (the numbered folders aren't legal module names)</td></tr>
     <tr><td>Folder structure</td><td>created by <strong>ask-slm CLI code</strong>, not agent prose</td><td>deterministic structure belongs in deterministic code; serves the human too; prose drifts</td></tr>
     <tr><td>Scaffold surface</td><td><code>workspace new</code> · <code>transform add</code> · <code>analysis add</code>; <strong>no <code>run</code></strong></td><td>the import removes the need for a runner; one way to do a thing</td></tr>
-    <tr><td>Conventions home</td><td><code>AGENTS.md</code> → <code>Docs/abundancetable.html</code>; template comments at point of use</td><td>agent-agnostic (no <code>CLAUDE.md</code> coupling); the agent is Gemini today</td></tr>
+    <tr><td>Conventions home</td><td><code>AGENTS.md</code> → <code>Docs/community-and-library-palette.html</code>; template comments at point of use</td><td>agent-agnostic (no <code>CLAUDE.md</code> coupling); the agent is Gemini today</td></tr>
     <tr><td>CLI wiring</td><td>extend <code>Clients/cli.py</code>; expose <code>[project.scripts] askslm</code> in <code>pyproject.toml</code></td><td>wires the currently-unwired entry; works after <code>pip install -e .</code></td></tr>
     <tr><td>Acceptance test</td><td>migrate the four <code>ABX_new</code> scripts; numbers must match</td><td>proves the tooling against the real workspace before it's trusted</td></tr>
   </table>
