@@ -100,9 +100,18 @@ def test_create_workspace_scaffolds_and_redirects(tmp_path, monkeypatch):
 
     r = client.post("/workspaces", data={"name": "NewStudy"}, follow_redirects=False)
 
-    assert r.status_code in (302, 303)
+    assert r.status_code == 303
     assert r.headers["location"] == "/w/NewStudy"
     assert (tmp_path / "NewStudy" / "1_build" / "build.py").is_file()
+
+
+def test_create_workspace_rejects_existing(tmp_path, monkeypatch):
+    from web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    (tmp_path / "Existing").mkdir()
+    client = TestClient(app_mod.app)
+    r = client.post("/workspaces", data={"name": "Existing"})
+    assert r.status_code == 400
 
 
 def test_create_workspace_rejects_unsafe_name(tmp_path, monkeypatch):

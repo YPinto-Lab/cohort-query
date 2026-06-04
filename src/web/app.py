@@ -67,8 +67,10 @@ def index(request: Request):
 @app.post("/workspaces")
 def create_workspace(name: str = Form(...)):
     safe = name.strip()
-    if not safe or "/" in safe or "\\" in safe or safe.startswith("."):
+    if not safe or "/" in safe or "\\" in safe or "\x00" in safe or safe.startswith("."):
         raise HTTPException(status_code=400, detail="invalid workspace name")
+    if (WORKSPACES_ROOT / safe).exists():
+        raise HTTPException(status_code=400, detail="workspace already exists")
     workspace_new(safe, root=WORKSPACES_ROOT)
     return RedirectResponse(url=f"/w/{safe}", status_code=303)
 
