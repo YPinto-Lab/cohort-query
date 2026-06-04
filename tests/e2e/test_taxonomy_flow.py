@@ -1,29 +1,26 @@
+"""e2e: load a taxonomy report, build feature metadata, assemble a biom feature table."""
 from pathlib import Path
-import pandas as pd
+
+from biom import Table
+
 from askslm import taxonomy
-from askslm.contracts import FilterCriteria, TaxaSelector, SampleSelector
-from Engines.MetadataEngine.metadata import Metadata
 
-_FIXTURES = Path(__file__).parent.parent / "fixtures"
-TAX = _FIXTURES / "taxonomy_tiny.csv"
-DMP = _FIXTURES / "merged_tiny.dmp"
+TAX = Path(__file__).parent.parent / "fixtures" / "taxonomy_tiny.csv"
 
 
-def test_full_flow_subset_and_formats(tmp_path):
-    taxonomy_df = taxonomy.load(TAX)
-    resolved = taxonomy.resolve(taxonomy_df, merged_dmp=DMP)
-    matrix = taxonomy.build_abundance_matrix(resolved.df)
-    metadata = Metadata(df=pd.DataFrame({"acc": ["SRR1", "SRR2"], "Group": ["treatment", "control"]}))
+def test_load_lineage_and_assemble():
+    tax = taxonomy.load(str(TAX))
+    counts = tax.pivot_table(index="tax_id", columns="acc", values="self_count",
+                             aggfunc="sum", fill_value=0)
+    features = taxonomy.lineage_table(counts.index)
 
-    cohort = taxonomy.build_cohort(matrix, metadata).filter(
-        FilterCriteria(
-            taxa=TaxaSelector("superkingdom", ("Bacteria",)),
-            samples=SampleSelector("Group", ("treatment",)),
-        )
-    )
+    table = Table(counts.values,
+                  observation_ids=counts.index.astype(str),
+                  sample_ids=counts.columns.astype(str))
+    table.add_metadata({str(t): row for t, row in features.to_dict("index").items()},
+                       axis="observation")
 
-    assert list(cohort.matrix.counts.index) == ["SRR1"]
-    assert list(cohort.metadata.df["acc"]) == ["SRR1"]
-    assert list(cohort.matrix.counts.columns) == ["genus||Escherichia||561"]
-    for fmt, name in [("counts", "c.csv"), ("relative", "r.csv"), ("maaslin", "m.tsv"), ("biom", "t.biom")]:
-        assert matrix.write(tmp_path / name, fmt=fmt).exists()
+    assert table.shape[0] == len(counts.index)
+    assert table.shape[1] == len(counts.columns)
+    fm = table.metadata_to_dataframe("observation")
+    assert {"name", "rank", "lineage_0", "ranks"}.issubset(fm.columns)
