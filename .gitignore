@@ -63,3 +63,7 @@ Notebooks/*.zip
 
 # Agent session transcripts
 Workspaces/*/results/agent_log/
+.superpowers/
+
+# Secrets — never commit
+.env

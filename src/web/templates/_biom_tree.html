@@ -1,0 +1,20 @@
+<div class="rail" id="biom-tree">
+  <div class="pane-h"><span>biom outputs</span>
+    <span class="toggle" onclick="document.getElementById('data-pane').classList.toggle('tree-collapsed')">⟨</span>
+  </div>
+  <input class="filter" placeholder="🔍 filter…" oninput="filterTree(this.value)">
+  <div class="tree">
+    {% for group in tree %}
+    <div class="node l1">▾ {{ group.phase }}</div>
+    {% for entry in group.entries %}
+    <div class="node l2 biom {{ 'cur' if entry.rel_path == path else '' }}"
+         data-label="{{ entry.label|lower }}"
+         hx-get="/w/{{ workspace }}/biom/table?path={{ entry.rel_path|urlencode }}&tab={{ tab }}"
+         hx-target="#biom-table" hx-swap="outerHTML"
+         onclick="setCurrent(this)">
+      {{ entry.label }} <span class="shape">{{ entry.shape[0] }}×{{ entry.shape[1] }}</span>
+    </div>
+    {% endfor %}
+    {% endfor %}
+  </div>
+</div>

@@ -75,13 +75,13 @@ What this analysis measures and the headline finding.
 '''
 
 
-def workspace_new(name: str) -> None:
-    root = WORKSPACES / name
-    _write(root / "0_inputs" / ".keep", "")
-    _write(root / "1_build" / "build.py", BUILD_PY)
-    _write(root / "1_build" / "build.md", BUILD_MD)
-    _write(root / "2_transform" / "shared.py", SHARED_STUB.format(phase="transform"))
-    _write(root / "3_analyze" / "shared.py", SHARED_STUB.format(phase="analyze"))
+def workspace_new(name: str, root: Path = WORKSPACES) -> None:
+    base = root / name
+    _write(base / "0_inputs" / ".keep", "")
+    _write(base / "1_build" / "build.py", BUILD_PY)
+    _write(base / "1_build" / "build.md", BUILD_MD)
+    _write(base / "2_transform" / "shared.py", SHARED_STUB.format(phase="transform"))
+    _write(base / "3_analyze" / "shared.py", SHARED_STUB.format(phase="analyze"))
 
 
 def transform_add(name: str, exploration: str) -> None:

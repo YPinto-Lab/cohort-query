@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask-SLM · Thin web shell — design for review</title>
+<style>
+  :root{
+    --ink:#1b2330;--muted:#5b6473;--line:#e3e7ee;--bg:#fff;--soft:#f6f8fb;
+    --accent:#6d28d9;--code:#0f172a;--codebg:#f1f5f9;--link:#1d4ed8;
+    --lock:#059669;--prop:#d97706;--maxw:940px;
+  }
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+  a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+  header.hero{background:linear-gradient(135deg,#0d1117,#161b22 55%,#1f2933);color:#fff;padding:54px 24px 46px}
+  header.hero .wrap{max-width:var(--maxw);margin:0 auto}
+  header.hero .kicker{letter-spacing:.18em;text-transform:uppercase;font-size:12px;opacity:.85;margin:0 0 12px}
+  header.hero h1{font-size:32px;line-height:1.18;margin:0 0 12px;font-weight:700}
+  header.hero p{font-size:17px;opacity:.92;margin:0;max-width:720px}
+  .status{display:inline-block;margin-top:14px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);padding:3px 12px;border-radius:999px;font-size:13px}
+  nav{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+  nav .wrap{max-width:var(--maxw);margin:0 auto;padding:10px 24px;display:flex;gap:16px;flex-wrap:wrap;font-size:13.5px}
+  nav a{color:var(--muted)}nav a:hover{color:var(--accent);text-decoration:none}
+  main{max-width:var(--maxw);margin:0 auto;padding:8px 24px 80px}
+  section{padding:36px 0;border-bottom:1px solid var(--line)}section:last-child{border-bottom:0}
+  h2{font-size:25px;margin:0 0 6px;font-weight:700}
+  h2 .num{color:var(--accent);margin-right:10px}
+  h3{font-size:17px;margin:22px 0 6px}
+  .lead{color:var(--muted);margin:0 0 16px;font-size:17px}
+  p{margin:0 0 14px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--codebg);color:var(--code);padding:1px 6px;border-radius:5px;font-size:.86em}
+  pre{background:var(--code);color:#e2e8f0;padding:16px 18px;border-radius:12px;overflow:auto;font-size:13px;line-height:1.5;margin:14px 0}
+  pre .c{color:#7f8ea3}pre .d{color:#fcd34d}pre .f{color:#7dd3fc}pre .k{color:#c4b5fd}pre .s{color:#86efac}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--soft);font-weight:600}
+  td code{font-size:12px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:6px;letter-spacing:.03em}
+  .tag.lock{background:#d1fae5;color:#047857}.tag.prop{background:#fef3c7;color:#b45309}
+  .why{border:1px dashed var(--line);border-radius:12px;padding:14px 18px;margin:14px 0;background:#fcfdff}
+  .why h4{margin:0 0 6px;font-size:13.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .callout{border-left:4px solid var(--accent);background:var(--soft);border-radius:0 10px 10px 0;padding:13px 18px;margin:16px 0}
+  ul.tight{margin:8px 0;padding-left:20px}ul.tight li{margin:5px 0}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13.5px;color:var(--muted);margin:6px 0 0}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .cols h4{margin:0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  .build{background:#d1fae5;color:#065f46;font-weight:600}
+  .reuse{background:#eef0f2;color:#555}
+  footer{max-width:var(--maxw);margin:0 auto;padding:26px 24px 60px;color:var(--muted);font-size:13px}
+  @media(max-width:700px){table{font-size:12.5px}header.hero h1{font-size:25px}.cols{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header class="hero"><div class="wrap">
+  <p class="kicker">Ask-SLM · Design for review</p>
+  <h1>Thin web shell — chat&nbsp;+&nbsp;biom viewer</h1>
+  <p>The only two things no off-the-shelf app does well: talk to the agent, and read a <code>.biom</code> file.
+     Everything else — reading, editing, running, viewing plots — is handed to the apps the data scientist already
+     uses. A small surface on the existing FastAPI skeleton; usable and demoable.</p>
+  <span class="status">PROPOSED · 2026-06-05 · awaiting your review</span>
+</div></header>
+
+<nav><div class="wrap">
+  <a href="#goal">Goal</a>
+  <a href="#scope">Scope</a>
+  <a href="#arch">Architecture</a>
+  <a href="#layout">Layout</a>
+  <a href="#chat">Chat pane</a>
+  <a href="#data">Data pane</a>
+  <a href="#large">Large data</a>
+  <a href="#workspaces">Workspaces</a>
+  <a href="#routes">Routes</a>
+  <a href="#errors">Errors</a>
+  <a href="#testing">Testing</a>
+  <a href="#out">Out of scope</a>
+</div></nav>
+
+<main>
+
+<section id="goal">
+  <h2><span class="num">0</span>Goal &amp; philosophy <span class="tag lock">LOCKED</span></h2>
+  <p class="lead">A thin web shell that does only what has no good substitute, and delegates the rest.</p>
+  <p>Ask-SLM is an LLM agent that authors and runs <code>.py</code> phase scripts inside a workspace folder, where
+     <strong>the disk is the source of truth</strong>. Of the user's jobs — chat, read code, edit code, run phases,
+     view biom data, view results — four are already solved superbly by tools the data scientist owns (VS Code,
+     PyCharm, Jupyter, the terminal, the OS file browser, an image viewer). Rebuilding those would be reinventing the
+     wheel and would turn the UI into the "walled garden" <code>CLAUDE.md</code> warns against.</p>
+  <p>So the shell builds <strong>only the two irreducible surfaces</strong>: a <strong>chat</strong> to drive the
+     agent, and a <strong>biom viewer</strong> (no other app opens <code>.biom</code> well). Code reading/editing,
+     running, and results are reached by opening files/folders in the user's own apps.</p>
+  <div class="why"><h4>Why a web UI at all (vs. terminal-only)</h4>
+    A pure-terminal MVP was seriously considered and is cheaper, but two things break it: viewing a wide numeric
+    matrix in a terminal is genuinely bad, and a terminal demo undersells the product. The thin web shell keeps the
+    build small while staying demoable. A full SPA/React rebuild was rejected as unnecessary for an MVP.</div>
+</section>
+
+<section id="scope">
+  <h2><span class="num">1</span>Who owns each job <span class="tag lock">LOCKED</span></h2>
+  <table>
+    <tr><th>Job</th><th>Owner in the MVP</th></tr>
+    <tr><td>Chat with the agent</td><td class="build">we build (small shell over the existing agent)</td></tr>
+    <tr><td>Read code / files</td><td class="reuse">user's editor (open from chat)</td></tr>
+    <tr><td>Edit code</td><td class="reuse">user's editor</td></tr>
+    <tr><td>Run / re-run phases</td><td class="reuse">via chat, or the user's terminal / CLI</td></tr>
+    <tr><td>View raw biom data</td><td class="build">we build — the biom viewer ★</td></tr>
+    <tr><td>View plots / CSV results</td><td class="reuse">OS viewer / editor (open from chat)</td></tr>
+  </table>
+</section>
+
+<section id="arch">
+  <h2><span class="num">2</span>Architecture <span class="tag lock">LOCKED</span></h2>
+  <p class="lead">Extend the existing <code>src/web</code> skeleton. No new frontend framework.</p>
+  <p>Stack: <strong>FastAPI + Jinja templates + htmx + SSE</strong> — all already present in <code>app.py</code> —
+     plus a small amount of vanilla JS for tab switching, tree collapse, and table paging. Dependencies flow downward
+     as today: <code>web</code> calls <code>askslm</code> and the agent, never the reverse.</p>
+  <pre><span class="c"># new + changed files under src/web/</span>
+src/web/
+  app.py                      <span class="c"># + routes: biom view, biom table page, open-in-app, workspace create/switch</span>
+  biom_view.py        <span class="d">(new)</span>   <span class="c"># load a .biom -> windowed Counts / Samples / Lineage frames</span>
+  workspace_diff.py   <span class="d">(new)</span>   <span class="c"># snapshot workspace before/after a turn -> files-changed list</span>
+  biom_index.py       <span class="d">(new)</span>   <span class="c"># enumerate a workspace's .biom outputs as a phase tree</span>
+  os_open.py          <span class="d">(new)</span>   <span class="c"># open a path in the OS default app (open / xdg-open), with fallback</span>
+  templates/
+    home.html         <span class="d">(new)</span>   <span class="c"># workspace cards + New workspace</span>
+    chat.html      <span class="d">(rewrite)</span>  <span class="c"># dark, two-column split shell</span>
+    _files.html       <span class="d">(new)</span>   <span class="c"># files-changed list (open / view pills)</span>
+    _biom_tree.html   <span class="d">(new)</span>   <span class="c"># collapsible phase tree + filter</span>
+    _biom_table.html  <span class="d">(new)</span>   <span class="c"># one windowed table fragment + banner + pagers</span></pre>
+  <h3>Units &amp; responsibilities</h3>
+  <ul class="tight">
+    <li><strong>biom_view</strong> — the only genuinely new logic. Reuses <code>biom.load_table</code> + pandas; given a
+        <code>.biom</code> path, a tab, and a window (row/col offset+limit) returns a sliced frame. No custom math.</li>
+    <li><strong>workspace_diff</strong> — pure function: <code>{path: mtime}</code> snapshot before a turn, diff after →
+        changed paths tagged <code>py</code> / <code>biom</code> / <code>other</code>. Decoupled from <em>how</em> the
+        agent writes files.</li>
+    <li><strong>biom_index</strong> — walks the workspace, groups <code>.biom</code> files under their phase
+        (build / transform / analyze) with shape <code>(features×samples)</code> for labels.</li>
+    <li><strong>os_open</strong> — validates a path is inside the workspace, then launches the OS default app; on
+        failure returns the absolute path for manual opening.</li>
+    <li><strong>templates</strong> — dumb rendering of the above into the dark two-column shell.</li>
+  </ul>
+</section>
+
+<section id="layout">
+  <h2><span class="num">3</span>Layout <span class="tag lock">LOCKED</span></h2>
+  <p class="lead">Dark mode. Two columns: chat (left) | data (right).</p>
+  <pre>┌─ Ask-SLM · [ABX_new ▾]                     [📁 Open workspace folder] ─┐
+│ CHAT (≈40%)                │ DATA (≈60%)                              │
+│  • streamed agent prose    │  ┌ biom outputs [⟨] ┬ Counts Samples Lin │
+│  • ▸ show code (collapsed) │  │ 🔍 filter…       │  banner: shown/cut │
+│  • files changed:          │  │ ▾ ① build        │  ┌──────────────┐  │
+│      build.py     [open ↗] │  │   feature_table  │  │ sticky grid  │  │
+│      table.biom   [view →] │  │ ▾ ② transform    │  │ ↕ ↔ scroll   │  │
+│  ───────────────────────   │  │   no-control ●   │  └──────────────┘  │
+│  [ Ask the agent…   Send ] │  │ ▾ ③ analyze …    │  rows ‹›  cols ‹›  │
+└────────────────────────────┴──┴──────────────────┴───────────────────┘</pre>
+  <p>The data pane's tree is <strong>collapsible</strong> via a <code>⟨ / ⟩</code> toggle: collapsed, it folds to a
+     thin labeled rail and the table takes the full pane width for reading wide matrices.</p>
+</section>
+
+<section id="chat">
+  <h2><span class="num">4</span>Chat pane <span class="tag lock">LOCKED</span></h2>
+  <ul class="tight">
+    <li><strong>Streamed prose</strong> over the existing SSE stream (<code>POST /w/{ws}/messages</code>).</li>
+    <li><strong>Collapsed code</strong> — the Python/commands the agent ran are captured but hidden behind a
+        <em>"show code &amp; commands"</em> toggle (transparency without clutter).</li>
+    <li><strong>Files-changed list</strong> at the end of each turn, from <code>workspace_diff</code>:
+      <ul class="tight">
+        <li><code>.py</code> / other → <strong>open ↗</strong> pill → opens in the user's default editor.</li>
+        <li><code>.biom</code> → <strong>view →</strong> pill → loads in the data pane (and selects it in the tree).</li>
+      </ul></li>
+    <li><strong>Open workspace folder</strong> button in the top bar → opens the workspace dir in the OS file browser.</li>
+  </ul>
+</section>
+
+<section id="data">
+  <h2><span class="num">5</span>Data pane — biom viewer <span class="tag lock">LOCKED</span></h2>
+  <h3>Navigation: collapsible phase tree</h3>
+  <p>From <code>biom_index</code>: a tree grouping <code>.biom</code> outputs under <strong>① build → ② transform →
+     ③ analyze</strong>, leaves labeled by name + shape. A <strong>filter box</strong> narrows the tree by typing —
+     this is how "many many" files stay navigable. The tree <strong>collapses</strong> to a thin rail.</p>
+  <h3>Tabs (one selected <code>.biom</code>)</h3>
+  <table>
+    <tr><th>Tab</th><th>Shows</th></tr>
+    <tr><td>Counts</td><td>features (rows) × samples (columns) count matrix; zeros greyed.</td></tr>
+    <tr><td>Samples</td><td>per-sample metadata table (sample id × metadata columns).</td></tr>
+    <tr><td>Lineage</td><td>per-feature taxonomy (feature id × kingdom→species).</td></tr>
+  </table>
+  <div class="callout">Per memory: taxonomy and sample metadata are <strong>kept as separate views</strong> — the
+    viewer never joins them into one merged table.</div>
+</section>
+
+<section id="large">
+  <h2><span class="num">6</span>Large-data handling <span class="tag lock">LOCKED</span></h2>
+  <p class="lead">The matrix is never fully loaded into the DOM. The server sends a window; the UI states what's cut.</p>
+  <table>
+    <tr><th>Concern</th><th>Rule</th></tr>
+    <tr><td>Row window (features)</td><td>page size <strong>100</strong>; Prev/Next pager.</td></tr>
+    <tr><td>Column window (samples)</td><td>page size <strong>60</strong>; Prev/Next pager (Counts tab only).</td></tr>
+    <tr><td>Hard cap per fragment</td><td>≈ 100 × 60 = <strong>6,000 cells</strong>.</td></tr>
+    <tr><td>Disclosure</td><td>always-present banner: <em>"Showing features 1–100 of N and samples 1–60 of M…"</em> — no silent truncation.</td></tr>
+    <tr><td>Scroll UI</td><td>native vertical + horizontal scroll inside the window; <strong>sticky header row</strong> (sample ids) and <strong>sticky first column</strong> (feature labels).</td></tr>
+    <tr><td>Escape hatch</td><td>banner reminds the user they can open the <code>.biom</code> in their own tools for the full matrix.</td></tr>
+  </table>
+  <p>Samples and Lineage tabs are narrow (few columns) but can be long — they use the same row pager; no column window needed.</p>
+  <div class="why"><h4>Defaults, tunable</h4>100×60 are config constants in <code>biom_view</code>, easy to retune
+    (e.g. 200 rows) without touching templates.</div>
+</section>
+
+<section id="workspaces">
+  <h2><span class="num">7</span>Workspaces — open, switch, create <span class="tag lock">LOCKED</span></h2>
+  <ul class="tight">
+    <li><strong>Home page</strong> (<code>GET /</code>, rewritten <code>home.html</code>) — workspace cards (name +
+        quick stats) and a <strong>＋ New workspace</strong> card. Entry point.</li>
+    <li><strong>In-app switcher</strong> — the workspace name in the top bar is a dropdown: jump to another workspace,
+        or <strong>＋ New workspace…</strong>, without going home.</li>
+    <li><strong>Create</strong> — asks for a name → server runs the existing <code>askslm workspace new &lt;name&gt;</code>
+        CLI → opens the new (empty) workspace. Inputs are added via <strong>Open workspace folder</strong> or by asking
+        the agent. <strong>No upload widget in the MVP.</strong></li>
+  </ul>
+</section>
+
+<section id="routes">
+  <h2><span class="num">8</span>Routes <span class="tag lock">LOCKED</span></h2>
+  <table>
+    <tr><th>Method &amp; path</th><th>Purpose</th><th>Status</th></tr>
+    <tr><td><code>GET /</code></td><td>Home: workspace cards + create</td><td>rewrite</td></tr>
+    <tr><td><code>POST /workspaces</code></td><td>Create workspace (name → CLI), redirect to it</td><td>new</td></tr>
+    <tr><td><code>GET /w/{ws}</code></td><td>The two-column shell page</td><td>rewrite</td></tr>
+    <tr><td><code>POST /w/{ws}/messages</code></td><td>SSE chat stream; emits files-changed at turn end</td><td>extend</td></tr>
+    <tr><td><code>POST /w/{ws}/open</code></td><td>Open a path (file or folder) in the OS default app</td><td>new</td></tr>
+    <tr><td><code>GET /w/{ws}/biom</code></td><td>Viewer shell for a <code>.biom</code> (tree + tabs)</td><td>new</td></tr>
+    <tr><td><code>GET /w/{ws}/biom/table</code></td><td>One windowed table fragment: <code>?path&amp;tab&amp;row_off&amp;col_off</code></td><td>new</td></tr>
+    <tr><td><code>GET /w/{ws}/sessions…</code></td><td>Existing session list / replay</td><td>unchanged</td></tr>
+  </table>
+</section>
+
+<section id="errors">
+  <h2><span class="num">9</span>Error handling <span class="tag lock">LOCKED</span></h2>
+  <ul class="tight">
+    <li><strong>Path safety</strong> — <code>open</code> and biom routes resolve the path and reject anything outside
+        the workspace (reuse the existing <code>_safe_workspace_dir</code> guard pattern).</li>
+    <li><strong>Bad / unreadable <code>.biom</code></strong> — viewer fragment shows an inline error; page survives.</li>
+    <li><strong>open-in-app failure</strong> (headless / no handler) — fall back to returning the copyable absolute path.</li>
+    <li><strong>Agent errors</strong> — already surfaced by the existing event stream; unchanged.</li>
+    <li><strong>Create with duplicate name</strong> — surface the CLI's error inline on the home page.</li>
+  </ul>
+  <div class="callout">Consistent with project philosophy: trust input, fail fast. Validation lives only at the
+    boundary (route guards); no defensive checks scattered through the viewer.</div>
+</section>
+
+<section id="testing">
+  <h2><span class="num">10</span>Testing <span class="tag lock">LOCKED</span></h2>
+  <ul class="tight">
+    <li><strong>biom_view</strong> — unit tests against a small fixture <code>.biom</code>: correct rows/cols per tab,
+        window slicing math, banner counts, lineage as its own view (no merge).</li>
+    <li><strong>workspace_diff</strong> — create/modify/delete files in a temp dir; assert the tagged diff.</li>
+    <li><strong>biom_index</strong> — fixture workspace with several <code>.biom</code> across phases → expected tree.</li>
+    <li><strong>os_open / route guard</strong> — reject path traversal; OS call mocked.</li>
+    <li><strong>web smoke</strong> — load shell, post a message (mock LLM), assert files-changed + biom fragments render.
+        Fits existing <code>Tests/web/</code>.</li>
+  </ul>
+</section>
+
+<section id="out">
+  <h2><span class="num">11</span>Explicitly out of scope (MVP) <span class="tag lock">LOCKED</span></h2>
+  <ul class="tight">
+    <li>In-browser code editor or file browser — use the user's own apps.</li>
+    <li>Drag-and-drop input upload — add inputs via the folder or the agent.</li>
+    <li>In-browser plot/CSV rendering — opened in the OS viewer.</li>
+    <li>Auth / multi-user — single local user (existing cookie session is enough).</li>
+    <li>Charts / diversity plots in the viewer — it shows raw tables only.</li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  Ask-SLM · Thin web shell design · 2026-06-05 · branch <code>feature-web-ui</code>.
+  Source of truth for the model: <code>Docs/feature-table-and-library-palette.html</code>.
+</footer>
+
+</body>
+</html>

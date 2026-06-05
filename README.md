@@ -30,6 +30,18 @@ Every phase script starts `from askslm import workspace` then `ws = workspace.ph
 See `Workspaces/ABX_new` for a complete example and `Docs/feature-table-and-library-palette.html`
 for the model.
 
+## Web UI
+
+Run the thin web shell:
+
+```bash
+uvicorn web.app:app --app-dir src
+```
+
+Open `http://127.0.0.1:8000`: pick or create a workspace, chat with the agent
+(left), and view any `.biom` it produces (right). Code, plots, and CSVs open in
+your own apps via the open / Open-workspace-folder buttons.
+
 ## Tests
 
 ```bash

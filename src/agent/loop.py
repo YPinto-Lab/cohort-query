@@ -95,7 +95,12 @@ def _assistant_content(response) -> list[dict]:
     if response.text:
         blocks.append({"type": "text", "text": response.text})
     for tu in response.tool_uses:
-        blocks.append({"type": "tool_use", "id": tu.id, "name": tu.name, "input": tu.input})
+        block: dict = {"type": "tool_use", "id": tu.id, "name": tu.name, "input": tu.input}
+        # Echo Gemini's thought_signature back on the next request (thinking models
+        # 400 without it); AnthropicClient never sets this, so the key is absent there.
+        if getattr(tu, "thought_signature", None) is not None:
+            block["_gemini_thought_signature"] = tu.thought_signature
+        blocks.append(block)
     return blocks
 
 

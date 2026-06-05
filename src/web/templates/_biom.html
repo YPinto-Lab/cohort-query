@@ -1,0 +1,31 @@
+<div id="data-pane" class="data-pane">
+  {% include "_biom_tree.html" %}
+  <div class="gutter" data-resize="#biom-tree"></div>
+  <div class="viewer-main">
+    <div class="tabs">
+      {% for t in ["counts", "samples", "lineage"] %}
+      <div class="t {{ 'on' if t == tab else '' }}"
+           hx-get="/w/{{ workspace }}/biom/table?path={{ path|urlencode }}&tab={{ t }}"
+           hx-target="#biom-table" hx-swap="outerHTML"
+           onclick="setActiveTab(this)">{{ t|capitalize }}</div>
+      {% endfor %}
+    </div>
+    {% include "_biom_table.html" %}
+  </div>
+</div>
+<script>
+  function filterTree(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('#biom-tree .node.l2').forEach(function (n) {
+      n.style.display = n.dataset.label.indexOf(q) === -1 ? 'none' : '';
+    });
+  }
+  function setCurrent(el) {
+    document.querySelectorAll('#biom-tree .node.cur').forEach(function (n) { n.classList.remove('cur'); });
+    el.classList.add('cur');
+  }
+  function setActiveTab(el) {
+    document.querySelectorAll('.tabs .t.on').forEach(function (n) { n.classList.remove('on'); });
+    el.classList.add('on');
+  }
+</script>

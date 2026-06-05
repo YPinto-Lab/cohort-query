@@ -9,7 +9,7 @@ library palette to build and analyze studies as workspaces of phase scripts.
 
 - `src/askslm/` — the toolbox the agent calls (workspace phase tooling, metadata, taxonomy, accessors, cli).
 - `src/agent/` — the LLM agent (run_python, session, registry).
-- `src/web/` — the web UI; the only surface the user touches.
+- `src/web/` — the web UI; the only surface the user touches. The UI is a thin shell — chat + biom viewer; code/plots/results open in the user's own apps.
 
 Dependencies flow downward: agent and web call `askslm`, never the reverse.
 
