@@ -71,14 +71,17 @@
     e.preventDefault();
     const input=document.getElementById('msg'); const message=input.value.trim();
     if(!message) return;
-    append('<div class="you"><b>You:</b> '+message+'</div>'); input.value='';
+    const you=document.createElement('div'); you.className='you';
+    const lab=document.createElement('b'); lab.textContent='You: ';
+    you.appendChild(lab); you.appendChild(document.createTextNode(message));
+    log.appendChild(you); log.scrollTop=log.scrollHeight; input.value='';
     const res=await fetch('/w/{{ workspace }}/messages',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'message='+encodeURIComponent(message)});
     const reader=res.body.getReader(); const dec=new TextDecoder(); let buf='';
     while(true){ const {value,done}=await reader.read(); if(done) break; buf+=dec.decode(value,{stream:true});
       let i; while((i=buf.indexOf('\n\n'))>=0){ const block=buf.slice(0,i); buf=buf.slice(i+2);
         const lines=block.split('\n'); let ev='',data='';
-        for(const ln of lines){ if(ln.startsWith('event:')) ev=ln.slice(6).trim(); else if(ln.startsWith('data:')) data=ln.slice(5).trim(); }
-        if(ev==='html' && data) append(data);
+        for(const ln of lines){ if(ln.startsWith('event:')) ev=ln.slice(6).trim(); else if(ln.startsWith('data:')) data += ln.slice(5); }
+        if(ev==='html' && data) append(JSON.parse(data));
       }
     }
   }

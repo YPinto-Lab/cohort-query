@@ -119,12 +119,12 @@ def messages(workspace: str, request: Request, response: Response, message: str 
             data = json.dumps({"type": ev.type, **ev.payload})
             yield f"event: {ev.type}\ndata: {data}\n\n".encode()
             html = templates.get_template("_event.html").render(event=ev)
-            yield f"event: html\ndata: {html}\n\n".encode()
+            yield f"event: html\ndata: {json.dumps(html)}\n\n".encode()
         changed = diff(before, snapshot(ws_dir))
         if changed:
             files_html = templates.get_template("_files.html").render(
                 workspace=workspace, changed=changed)
-            yield f"event: html\ndata: {files_html}\n\n".encode()
+            yield f"event: html\ndata: {json.dumps(files_html)}\n\n".encode()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

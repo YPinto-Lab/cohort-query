@@ -236,6 +236,25 @@ def test_home_has_create_form_and_cards(tmp_path, monkeypatch):
     assert "ABX" in r.text                       # workspace card
 
 
+def test_messages_html_events_are_json_encoded(tmp_path, monkeypatch):
+    import json as _json
+    from web import app as app_mod
+    from agent.llm_client import FakeLLMClient, AssistantText
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    monkeypatch.setattr(app_mod, "build_llm",
+                        lambda: FakeLLMClient([[AssistantText(text="hi")]]))
+    _ws(tmp_path)
+    client = TestClient(app_mod.app)
+    client.get("/w/ABX")
+    r = client.post("/w/ABX/messages", data={"message": "hello"})
+    html_blocks = [b for b in r.text.split("\n\n") if "event: html" in b]
+    assert html_blocks  # at least one html fragment streamed
+    for block in html_blocks:
+        data_line = [l for l in block.splitlines() if l.startswith("data:")][0]
+        payload = _json.loads(data_line[len("data:"):])  # must be valid single-line JSON
+        assert isinstance(payload, str)
+
+
 def test_chat_page_has_two_panes(tmp_path, monkeypatch):
     from web import app as app_mod
     monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
