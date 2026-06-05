@@ -179,3 +179,47 @@ def test_biom_shell_shows_tabs_tree_and_initial_table(tmp_path, monkeypatch):
     assert "Counts" in r.text and "Samples" in r.text and "Lineage" in r.text
     assert "feature_table" in r.text          # tree entry
     assert "12" in r.text                       # initial counts table rendered inline
+
+
+def test_messages_appends_files_changed_block(tmp_path, monkeypatch):
+    from web import app as app_mod
+    from agent.llm_client import FakeLLMClient, AssistantText
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    monkeypatch.setattr(app_mod, "build_llm",
+                        lambda: FakeLLMClient([[AssistantText(text="done")]]))
+    _ws(tmp_path)
+
+    # Simulate a file appearing during the turn: snapshot() (bound in app via
+    # `from web.workspace_diff import snapshot`) returns empty before, one file after.
+    snapshots = iter([{}, {"1_build/build.py": 1.0}])
+    monkeypatch.setattr(app_mod, "snapshot", lambda _root: next(snapshots))
+
+    client = TestClient(app_mod.app)
+    client.get("/w/ABX")
+    r = client.post("/w/ABX/messages", data={"message": "build it"})
+    assert r.status_code == 200
+    assert "files changed" in r.text.lower()
+    assert "build.py" in r.text
+
+
+def test_open_route_rejects_path_outside_workspace(tmp_path, monkeypatch):
+    from web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    _ws(tmp_path)
+    client = TestClient(app_mod.app)
+    r = client.post("/w/ABX/open", data={"path": "../../etc/passwd"})
+    assert r.status_code == 404
+
+
+def test_open_route_opens_file_inside_workspace(tmp_path, monkeypatch):
+    from web import app as app_mod
+    from web import os_open
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    root = _ws(tmp_path)
+    (root / "1_build").mkdir(parents=True, exist_ok=True)
+    (root / "1_build" / "build.py").write_text("x")
+    monkeypatch.setattr(os_open, "_launch", lambda p: None)
+    client = TestClient(app_mod.app)
+    r = client.post("/w/ABX/open", data={"path": "1_build/build.py"})
+    assert r.status_code == 200
+    assert r.json()["ok"] is True

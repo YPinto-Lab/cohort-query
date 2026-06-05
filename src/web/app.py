@@ -18,6 +18,8 @@ from agent.events import Event
 from web.sessions_index import list_sessions, load_transcript
 from web import biom_view
 from web import biom_index
+from web import os_open
+from web.workspace_diff import snapshot, diff
 
 WORKSPACES_ROOT = Path(os.environ.get("ASKSLM_WORKSPACES", "./Workspaces"))
 
@@ -112,13 +114,28 @@ def messages(workspace: str, request: Request, response: Response, message: str 
         _AGENTS[key] = agent
 
     def event_stream() -> Iterator[bytes]:
+        before = snapshot(ws_dir)
         for ev in agent.chat(message):
             data = json.dumps({"type": ev.type, **ev.payload})
             yield f"event: {ev.type}\ndata: {data}\n\n".encode()
             html = templates.get_template("_event.html").render(event=ev)
             yield f"event: html\ndata: {html}\n\n".encode()
+        changed = diff(before, snapshot(ws_dir))
+        if changed:
+            files_html = templates.get_template("_files.html").render(
+                workspace=workspace, changed=changed)
+            yield f"event: html\ndata: {files_html}\n\n".encode()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/w/{workspace}/open")
+def open_in_app(workspace: str, path: str = Form(...)):
+    ws_dir = _safe_workspace_dir(workspace)
+    candidate = (ws_dir / path).resolve()
+    if not candidate.is_relative_to(ws_dir.resolve()) or not candidate.exists():
+        raise HTTPException(status_code=404, detail="path not found")
+    return os_open.open_path(candidate)
 
 
 @app.get("/w/{workspace}/sessions", response_class=HTMLResponse)
