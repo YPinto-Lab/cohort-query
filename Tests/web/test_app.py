@@ -223,3 +223,25 @@ def test_open_route_opens_file_inside_workspace(tmp_path, monkeypatch):
     r = client.post("/w/ABX/open", data={"path": "1_build/build.py"})
     assert r.status_code == 200
     assert r.json()["ok"] is True
+
+
+def test_home_has_create_form_and_cards(tmp_path, monkeypatch):
+    from web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    _ws(tmp_path)
+    client = TestClient(app_mod.app)
+    r = client.get("/")
+    assert r.status_code == 200
+    assert 'action="/workspaces"' in r.text   # create form
+    assert "ABX" in r.text                       # workspace card
+
+
+def test_chat_page_has_two_panes(tmp_path, monkeypatch):
+    from web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    _ws(tmp_path)
+    client = TestClient(app_mod.app)
+    r = client.get("/w/ABX")
+    assert r.status_code == 200
+    assert 'id="log"' in r.text and 'id="data-pane"' in r.text
+    assert "Open workspace folder" in r.text

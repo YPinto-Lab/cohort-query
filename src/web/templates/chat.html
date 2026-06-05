@@ -1,8 +1,86 @@
-<!doctype html><html><body>
-<h1>{{workspace}}</h1>
-<div id="log"></div>
-<form hx-post="/w/{{workspace}}/messages" hx-target="#log" hx-swap="beforeend">
-  <input name="message" placeholder="Ask..."><button>Send</button>
-</form>
+<!doctype html><html><head><meta charset="utf-8"><title>{{ workspace }} · Ask-SLM</title>
 <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+<style>
+  body{margin:0;background:#0d1117;color:#e6edf3;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+  .topbar{background:#161b22;border-bottom:1px solid #30363d;padding:9px 12px;display:flex;align-items:center;gap:8px}
+  .topbar .sp{flex:1}
+  .topbar a{color:#8b949e;text-decoration:none}
+  .ows{background:#21262d;border:1px solid #30363d;border-radius:6px;padding:4px 9px;cursor:pointer}
+  .body{display:flex;height:calc(100vh - 40px)}
+  .chat{width:40%;display:flex;flex-direction:column;border-right:1px solid #30363d}
+  #log{flex:1;overflow:auto;padding:12px}
+  .composer{border-top:1px solid #30363d;padding:10px;display:flex;gap:8px}
+  .composer input{flex:1;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:8px;padding:8px 10px}
+  .composer button{background:#238636;color:#fff;border:none;border-radius:8px;padding:8px 16px;cursor:pointer}
+  .data-pane{flex:1;display:flex}
+  .data-pane.tree-collapsed .rail{width:26px;overflow:hidden}
+  .rail{width:42%;background:#0b0e13;border-right:1px solid #30363d;overflow:auto}
+  .viewer-main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+  .pane-h{font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:#7d8590;padding:7px 10px;display:flex;justify-content:space-between}
+  .toggle{cursor:pointer;border:1px solid #30363d;border-radius:5px;padding:0 6px}
+  .filter{margin:6px 8px;width:calc(100% - 16px);background:#161b22;border:1px solid #30363d;border-radius:6px;padding:4px 7px;color:#e6edf3}
+  .tree{font:11px ui-monospace,Menlo,monospace;color:#c9d1d9}
+  .tree .node{padding:3px 8px;cursor:pointer;white-space:nowrap}
+  .tree .node:hover{background:#161b22}.tree .l1{color:#e6edf3;font-weight:600}.tree .l2{padding-left:16px}
+  .tree .biom{color:#e3a36a}.tree .cur{background:#1c2a1c}.tree .shape{color:#7d8590}
+  .tabs{display:flex;gap:2px;padding:7px 10px 0}
+  .t{font-size:11px;padding:5px 11px;border-radius:6px 6px 0 0;background:#161b22;color:#8b949e;border:1px solid #30363d;border-bottom:none;cursor:pointer}
+  .t.on{background:#e3a36a;color:#161b22;font-weight:600}
+  .banner{margin:8px 10px;background:#1a2230;border:1px solid #2c3a52;color:#9fb4d6;font-size:11px;border-radius:6px;padding:6px 9px}
+  .scrollbox{margin:0 10px;border:1px solid #30363d;border-radius:6px;overflow:auto;flex:1}
+  table.data{border-collapse:separate;border-spacing:0;font:11px ui-monospace,monospace;color:#c9d1d9}
+  table.data th,table.data td{border-right:1px solid #21262d;border-bottom:1px solid #21262d;padding:4px 9px;text-align:right;white-space:nowrap}
+  table.data thead th{position:sticky;top:0;background:#1b2129;color:#e3a36a;z-index:2}
+  table.data .lab{position:sticky;left:0;background:#161b22;color:#e6edf3;text-align:left;font-weight:600;z-index:1}
+  table.data thead th.lab{z-index:3}.zero{color:#484f58}
+  .pagers{display:flex;gap:18px;padding:9px 12px;font-size:11px;color:#8b949e}
+  .pagers button{border:1px solid #30363d;background:#161b22;color:#e6edf3;border-radius:5px;padding:2px 8px;cursor:pointer}
+  .you{text-align:right;margin-bottom:8px}.you b{color:#1f6feb}
+  .files{margin-top:8px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px 10px;font-size:11px}
+  .files .hd{font-size:9px;text-transform:uppercase;color:#7d8590;margin-bottom:4px}
+  .frow{display:flex;gap:6px;font-family:ui-monospace,monospace;padding:2px 0}.frow .p{flex:1}
+  .frow.py .p,.frow.other .p{color:#58a6ff}.frow.biom .p{color:#e3a36a;font-weight:600}
+  .pill{font-size:10px;padding:1px 7px;border-radius:9px;border:1px solid;cursor:pointer}
+  .pill.open{background:#11233f;color:#58a6ff;border-color:#1f4a86}
+  .pill.view{background:#3a2a14;color:#e3a36a;border-color:#6b4a22}
+</style></head><body>
+  <div class="topbar">
+    <b>Ask-SLM</b> · <a href="/">studies</a> · {{ workspace }}
+    <span class="sp"></span>
+    <span class="ows" hx-post="/w/{{ workspace }}/open" hx-vals='{"path": "."}' hx-swap="none">📁 Open workspace folder</span>
+  </div>
+  <div class="body">
+    <div class="chat">
+      <div id="log"></div>
+      <form class="composer" onsubmit="send(event)">
+        <input id="msg" placeholder="Ask the agent…" autocomplete="off">
+        <button>Send</button>
+      </form>
+    </div>
+    <div id="data-pane" class="data-pane">
+      <div class="rail"><div class="pane-h">biom outputs</div>
+        <div class="tree" style="padding:10px;color:#5a626b">Click a .biom in "files changed" to view it.</div>
+      </div>
+      <div class="viewer-main"></div>
+    </div>
+  </div>
+<script>
+  const log = document.getElementById('log');
+  function append(html){ const d=document.createElement('div'); d.innerHTML=html; log.appendChild(d); htmx.process(d); log.scrollTop=log.scrollHeight; }
+  async function send(e){
+    e.preventDefault();
+    const input=document.getElementById('msg'); const message=input.value.trim();
+    if(!message) return;
+    append('<div class="you"><b>You:</b> '+message+'</div>'); input.value='';
+    const res=await fetch('/w/{{ workspace }}/messages',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'message='+encodeURIComponent(message)});
+    const reader=res.body.getReader(); const dec=new TextDecoder(); let buf='';
+    while(true){ const {value,done}=await reader.read(); if(done) break; buf+=dec.decode(value,{stream:true});
+      let i; while((i=buf.indexOf('\n\n'))>=0){ const block=buf.slice(0,i); buf=buf.slice(i+2);
+        const lines=block.split('\n'); let ev='',data='';
+        for(const ln of lines){ if(ln.startsWith('event:')) ev=ln.slice(6).trim(); else if(ln.startsWith('data:')) data=ln.slice(5).trim(); }
+        if(ev==='html' && data) append(data);
+      }
+    }
+  }
+</script>
 </body></html>

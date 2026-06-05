@@ -81,7 +81,7 @@ def index(request: Request):
         workspaces = []
     else:
         workspaces = sorted([p.name for p in WORKSPACES_ROOT.iterdir() if p.is_dir()])
-    return templates.TemplateResponse(request, "index.html", {"workspaces": workspaces})
+    return templates.TemplateResponse(request, "home.html", {"workspaces": workspaces})
 
 
 @app.post("/workspaces")
