@@ -1,21 +1,24 @@
 <!doctype html><html><head><meta charset="utf-8"><title>{{ workspace }} · Ask-SLM</title>
 <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 <style>
+  html,body{overflow-x:hidden;max-width:100%}
   body{margin:0;background:#0d1117;color:#e6edf3;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
   .topbar{background:#161b22;border-bottom:1px solid #30363d;padding:9px 12px;display:flex;align-items:center;gap:8px}
   .topbar .sp{flex:1}
   .topbar a{color:#8b949e;text-decoration:none}
   .ows{background:#21262d;border:1px solid #30363d;border-radius:6px;padding:4px 9px;cursor:pointer}
-  .body{display:flex;height:calc(100vh - 40px)}
-  .chat{width:40%;display:flex;flex-direction:column;border-right:1px solid #30363d}
-  #log{flex:1;overflow:auto;padding:12px}
+  .body{display:flex;height:calc(100vh - 40px);max-width:100%;overflow:hidden}
+  .chat{width:30%;min-width:0;display:flex;flex-direction:column}
+  .gutter{flex:none;width:6px;cursor:col-resize;background:#161b22;border-left:1px solid #30363d;border-right:1px solid #30363d}
+  .gutter:hover{background:#388bfd}
+  #log{flex:1;min-width:0;overflow:auto;overflow-wrap:anywhere;padding:12px}
   .composer{border-top:1px solid #30363d;padding:10px;display:flex;gap:8px}
-  .composer input{flex:1;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:8px;padding:8px 10px}
+  .composer input{flex:1;min-width:0;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:8px;padding:8px 10px}
   .composer button{background:#238636;color:#fff;border:none;border-radius:8px;padding:8px 16px;cursor:pointer}
-  .data-pane{flex:1;display:flex}
-  .data-pane.tree-collapsed .rail{width:26px;overflow:hidden}
-  .rail{width:42%;background:#0b0e13;border-right:1px solid #30363d;overflow:auto}
-  .viewer-main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+  .data-pane{flex:1;min-width:0;display:flex}
+  .data-pane.tree-collapsed .rail{width:26px!important;overflow:hidden}
+  .rail{width:30%;flex:none;background:#0b0e13;overflow-y:auto;overflow-x:hidden}
+  .viewer-main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
   .pane-h{font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:#7d8590;padding:7px 10px;display:flex;justify-content:space-between}
   .toggle{cursor:pointer;border:1px solid #30363d;border-radius:5px;padding:0 6px}
   .filter{margin:6px 8px;width:calc(100% - 16px);background:#161b22;border:1px solid #30363d;border-radius:6px;padding:4px 7px;color:#e6edf3}
@@ -27,7 +30,8 @@
   .t{font-size:11px;padding:5px 11px;border-radius:6px 6px 0 0;background:#161b22;color:#8b949e;border:1px solid #30363d;border-bottom:none;cursor:pointer}
   .t.on{background:#e3a36a;color:#161b22;font-weight:600}
   .banner{margin:8px 10px;background:#1a2230;border:1px solid #2c3a52;color:#9fb4d6;font-size:11px;border-radius:6px;padding:6px 9px}
-  .scrollbox{margin:0 10px;border:1px solid #30363d;border-radius:6px;overflow:auto;flex:1}
+  #biom-table{flex:1;min-height:0;display:flex;flex-direction:column}
+  .scrollbox{margin:0 10px;border:1px solid #30363d;border-radius:6px;overflow:auto;flex:1;min-height:0}
   table.data{border-collapse:separate;border-spacing:0;font:11px ui-monospace,monospace;color:#c9d1d9}
   table.data th,table.data td{border-right:1px solid #21262d;border-bottom:1px solid #21262d;padding:4px 9px;text-align:right;white-space:nowrap}
   table.data thead th{position:sticky;top:0;background:#1b2129;color:#e3a36a;z-index:2}
@@ -57,6 +61,7 @@
         <button>Send</button>
       </form>
     </div>
+    <div class="gutter" data-resize=".chat"></div>
     <div id="data-pane" class="data-pane"
          {% if first_biom %}hx-get="/w/{{ workspace }}/biom?path={{ first_biom|urlencode }}" hx-trigger="load" hx-swap="outerHTML"{% endif %}>
       <div class="rail"><div class="pane-h">biom outputs</div>
@@ -88,5 +93,32 @@
       }
     }
   }
+
+  // Draggable pane splitters. Delegated so it keeps working after htmx swaps
+  // the data pane / viewer fragments. A .gutter resizes the element named by
+  // its data-resize selector; the neighbour (flex:1) reflows to fill the rest.
+  let drag = null;
+  document.addEventListener('mousedown', function(e){
+    const g = e.target.closest('.gutter');
+    if(!g) return;
+    const el = document.querySelector(g.dataset.resize);
+    if(!el) return;
+    e.preventDefault();
+    drag = { el, startX: e.clientX, startW: el.getBoundingClientRect().width };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+  });
+  document.addEventListener('mousemove', function(e){
+    if(!drag) return;
+    const w = Math.max(150, drag.startW + (e.clientX - drag.startX));
+    drag.el.style.flex = 'none';
+    drag.el.style.width = w + 'px';
+  });
+  document.addEventListener('mouseup', function(){
+    if(!drag) return;
+    drag = null;
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  });
 </script>
 </body></html>
