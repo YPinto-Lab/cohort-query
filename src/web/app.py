@@ -13,13 +13,20 @@ from fastapi.templating import Jinja2Templates
 from agent.agent import Agent
 from askslm.cli import workspace_new
 from agent.workspace import Workspace
-from agent.llm_client import LLMClient, AnthropicClient
+from agent.llm_client import LLMClient, AnthropicClient, GeminiClient
 from agent.events import Event
 from web.sessions_index import list_sessions, load_transcript
 from web import biom_view
 from web import biom_index
 from web import os_open
 from web.workspace_diff import snapshot, diff
+
+from dotenv import load_dotenv
+
+# Load GEMINI_API_KEY / GEMINI_MODEL (etc.) from a .env at the repo root if present,
+# so the key is configured once on disk rather than exported in every shell.
+# Does not override variables already set in the environment.
+load_dotenv()
 
 WORKSPACES_ROOT = Path(os.environ.get("ASKSLM_WORKSPACES", "./Workspaces"))
 
@@ -64,7 +71,12 @@ _AGENTS: dict[tuple[str, str], Agent] = {}
 
 
 def build_llm() -> LLMClient:
-    return AnthropicClient()
+    # Gemini is the default provider. Fall back to Anthropic only when its key is
+    # present and Gemini's is not. With no key set, GeminiClient still constructs and
+    # surfaces a clear "GEMINI_API_KEY" error on the first call.
+    if os.environ.get("ANTHROPIC_API_KEY") and not os.environ.get("GEMINI_API_KEY"):
+        return AnthropicClient()
+    return GeminiClient()
 
 
 def _cookie_session(request: Request, response: Response) -> str:
