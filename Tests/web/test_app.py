@@ -167,3 +167,15 @@ def test_biom_table_samples_tab_renders_metadata(tmp_path, monkeypatch):
                    params={"path": "1_build/feature_table.biom", "tab": "samples"})
     assert r.status_code == 200
     assert "subject" in r.text and "S1" in r.text
+
+
+def test_biom_shell_shows_tabs_tree_and_initial_table(tmp_path, monkeypatch):
+    from web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    _ws_with_biom(tmp_path)
+    client = TestClient(app_mod.app)
+    r = client.get("/w/ABX/biom", params={"path": "1_build/feature_table.biom"})
+    assert r.status_code == 200
+    assert "Counts" in r.text and "Samples" in r.text and "Lineage" in r.text
+    assert "feature_table" in r.text          # tree entry
+    assert "12" in r.text                       # initial counts table rendered inline

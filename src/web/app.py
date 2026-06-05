@@ -17,6 +17,7 @@ from agent.llm_client import LLMClient, AnthropicClient
 from agent.events import Event
 from web.sessions_index import list_sessions, load_transcript
 from web import biom_view
+from web import biom_index
 
 WORKSPACES_ROOT = Path(os.environ.get("ASKSLM_WORKSPACES", "./Workspaces"))
 
@@ -133,6 +134,17 @@ def replay(workspace: str, session_id: str, request: Request):
     path = _safe_session_path(ws.agent_log_dir, session_id)
     records = load_transcript(path)
     return templates.TemplateResponse(request, "replay.html", {"workspace": workspace, "records": records})
+
+
+@app.get("/w/{workspace}/biom", response_class=HTMLResponse)
+def biom_shell(workspace: str, request: Request, path: str, tab: str = "counts"):
+    ws_dir = _safe_workspace_dir(workspace)
+    biom_path = _safe_biom_path(ws_dir, path)
+    window = _table_window(biom_path, tab, 0, 0)
+    return templates.TemplateResponse(request, "_biom.html", {
+        "workspace": workspace, "path": path, "tab": tab, "w": window,
+        "tree": biom_index.biom_tree(ws_dir),
+    })
 
 
 @app.get("/w/{workspace}/biom/table", response_class=HTMLResponse)
