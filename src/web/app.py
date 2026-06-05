@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 from typing import Iterator
 
-from fastapi import FastAPI, Form, HTTPException, Request, Response
+from fastapi import FastAPI, Form, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -35,6 +35,7 @@ def _safe_session_path(agent_log_dir: Path, session_id: str) -> Path:
     if not candidate.is_relative_to(log_root) or not candidate.is_file():
         raise HTTPException(status_code=404, detail="session not found")
     return candidate
+
 
 def _safe_biom_path(ws_dir: Path, rel: str) -> Path:
     candidate = (ws_dir / rel).resolve()
@@ -136,7 +137,9 @@ def replay(workspace: str, session_id: str, request: Request):
 
 @app.get("/w/{workspace}/biom/table", response_class=HTMLResponse)
 def biom_table(workspace: str, request: Request, path: str,
-               tab: str = "counts", row_off: int = 0, col_off: int = 0):
+               tab: str = "counts",
+               row_off: int = Query(default=0, ge=0),
+               col_off: int = Query(default=0, ge=0)):
     ws_dir = _safe_workspace_dir(workspace)
     biom_path = _safe_biom_path(ws_dir, path)
     window = _table_window(biom_path, tab, row_off, col_off)

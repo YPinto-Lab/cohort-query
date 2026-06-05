@@ -1,10 +1,14 @@
 <div id="biom-table">
   <div class="banner">
+    {% if w.total_rows %}
     Showing <b>features {{ w.row_offset + 1 }}–{{ w.row_offset + w.index|length }}
     of {{ w.total_rows }}</b>{% if tab == "counts" %} and
     <b>samples {{ w.col_offset + 1 }}–{{ w.col_offset + w.columns|length }}
     of {{ w.total_cols }}</b>{% endif %}.
     Open the .biom in your own tools for the full matrix.
+    {% else %}
+    This table is empty.
+    {% endif %}
   </div>
   <div class="scrollbox">
     <table class="data">

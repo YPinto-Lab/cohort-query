@@ -156,3 +156,14 @@ def test_biom_table_rejects_path_outside_workspace(tmp_path, monkeypatch):
     r = client.get("/w/ABX/biom/table",
                    params={"path": "../secret.biom", "tab": "counts"})
     assert r.status_code == 404
+
+
+def test_biom_table_samples_tab_renders_metadata(tmp_path, monkeypatch):
+    from web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    _ws_with_biom(tmp_path)
+    client = TestClient(app_mod.app)
+    r = client.get("/w/ABX/biom/table",
+                   params={"path": "1_build/feature_table.biom", "tab": "samples"})
+    assert r.status_code == 200
+    assert "subject" in r.text and "S1" in r.text
