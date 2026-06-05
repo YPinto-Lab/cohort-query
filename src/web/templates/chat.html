@@ -57,9 +57,12 @@
         <button>Send</button>
       </form>
     </div>
-    <div id="data-pane" class="data-pane">
+    <div id="data-pane" class="data-pane"
+         {% if first_biom %}hx-get="/w/{{ workspace }}/biom?path={{ first_biom|urlencode }}" hx-trigger="load" hx-swap="outerHTML"{% endif %}>
       <div class="rail"><div class="pane-h">biom outputs</div>
-        <div class="tree" style="padding:10px;color:#5a626b">Click a .biom in "files changed" to view it.</div>
+        <div class="tree" style="padding:10px;color:#5a626b">
+          {% if first_biom %}Loading biom outputs…{% else %}No biom outputs yet — ask the agent to build a feature table and it will appear here.{% endif %}
+        </div>
       </div>
       <div class="viewer-main"></div>
     </div>

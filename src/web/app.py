@@ -97,9 +97,12 @@ def create_workspace(name: str = Form(...)):
 
 @app.get("/w/{workspace}", response_class=HTMLResponse)
 def chat_page(workspace: str, request: Request, response: Response):
-    _safe_workspace_dir(workspace)
+    ws_dir = _safe_workspace_dir(workspace)
     _cookie_session(request, response)
-    return templates.TemplateResponse(request, "chat.html", {"workspace": workspace})
+    tree = biom_index.biom_tree(ws_dir)
+    first_biom = tree[0].entries[0].rel_path if tree else None
+    return templates.TemplateResponse(
+        request, "chat.html", {"workspace": workspace, "first_biom": first_biom})
 
 
 @app.post("/w/{workspace}/messages")

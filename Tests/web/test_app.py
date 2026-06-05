@@ -28,6 +28,29 @@ def test_chat_page_renders(tmp_path, monkeypatch):
     assert "ABX" in r.text
 
 
+def test_chat_page_autoloads_viewer_when_biom_exists(tmp_path, monkeypatch):
+    from web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    _ws_with_biom(tmp_path)
+    client = TestClient(app_mod.app)
+    r = client.get("/w/ABX")
+    assert r.status_code == 200
+    # data pane auto-loads the viewer for the first biom via htmx on page load
+    assert 'hx-trigger="load"' in r.text
+    assert "feature_table.biom" in r.text
+
+
+def test_chat_page_shows_empty_state_when_no_biom(tmp_path, monkeypatch):
+    from web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    _ws(tmp_path)  # inputs only, no biom
+    client = TestClient(app_mod.app)
+    r = client.get("/w/ABX")
+    assert r.status_code == 200
+    assert 'hx-trigger="load"' not in r.text
+    assert "No biom outputs yet" in r.text
+
+
 def test_sse_streams_events_with_fake_llm(tmp_path, monkeypatch):
     from web import app as app_mod
     from agent.llm_client import FakeLLMClient, AssistantText
