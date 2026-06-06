@@ -287,3 +287,13 @@ def test_chat_page_has_two_panes(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert 'id="log"' in r.text and 'id="data-pane"' in r.text
     assert "Open workspace folder" in r.text
+
+
+from web.app import _streams_to_log
+from agent.events import Event
+
+
+def test_user_events_do_not_stream_to_log():
+    assert _streams_to_log(Event.user("hi")) is False
+    assert _streams_to_log(Event.assistant_final("yo")) is True
+    assert _streams_to_log(Event.tool_call("t", {})) is True
