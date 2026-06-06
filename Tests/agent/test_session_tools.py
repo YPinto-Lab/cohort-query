@@ -25,3 +25,40 @@ def test_list_workspace_inputs_lists_files(tmp_path):
     assert not r.is_error
     names = {f["name"] for f in r.summary["value"]}
     assert {"metadata.csv", "taxonomy.csv"} <= names
+
+
+def _session(tmp_path):
+    root = tmp_path / "ws"; root.mkdir()
+    return Session.start(Workspace.open(root))
+
+
+def test_read_file_reads_repo_file(tmp_path):
+    sess = _session(tmp_path)
+    r = session_registry.execute(sess, "read_file", {"path": "CLAUDE.md"})
+    assert not r.is_error
+    assert "Ask-SLM" in r.summary["value"]
+    assert r.summary["truncated"] is False
+
+
+def test_read_file_caps_size(tmp_path, monkeypatch):
+    monkeypatch.setattr("agent.tools.session_tools._READ_CAP_BYTES", 10)
+    sess = _session(tmp_path)
+    r = session_registry.execute(sess, "read_file", {"path": "CLAUDE.md"})
+    assert not r.is_error
+    assert len(r.summary["value"]) <= 10
+    assert r.summary["truncated"] is True
+
+
+def test_read_file_rejects_path_escape(tmp_path):
+    sess = _session(tmp_path)
+    r = session_registry.execute(sess, "read_file", {"path": "../../../../etc/passwd"})
+    assert r.is_error
+    assert "escapes" in r.error
+
+
+def test_list_dir_lists_entries(tmp_path):
+    sess = _session(tmp_path)
+    r = session_registry.execute(sess, "list_dir", {"path": "Docs"})
+    assert not r.is_error
+    names = {e["name"] for e in r.summary["value"]}
+    assert "feature-table-and-library-palette.html" in names
