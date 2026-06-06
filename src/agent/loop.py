@@ -18,17 +18,13 @@ IDENTITY_PREAMBLE = (
     "run them. When a tool returns a handle, pass that handle to subsequent tools. Be concise."
 )
 
-_MANUAL_PATH = Path(__file__).parent / "operating_manual.md"
-
-
-def _operating_manual() -> str:
-    return _MANUAL_PATH.read_text()
+_OPERATING_MANUAL = (Path(__file__).parent / "operating_manual.md").read_text()
 
 
 def build_system_prompt(session: Session) -> str:
     return "\n\n".join([
         IDENTITY_PREAMBLE,
-        _operating_manual(),
+        _OPERATING_MANUAL,
         WorkspaceSnapshot(session.workspace).render(),
     ])
 

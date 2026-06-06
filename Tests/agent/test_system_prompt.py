@@ -1,6 +1,6 @@
 from agent.workspace import Workspace
 from agent.session import Session
-from agent.loop import build_system_prompt
+from agent.loop import build_system_prompt, IDENTITY_PREAMBLE
 
 
 def test_build_system_prompt_has_all_three_layers(tmp_path):
@@ -11,7 +11,7 @@ def test_build_system_prompt_has_all_three_layers(tmp_path):
 
     prompt = build_system_prompt(sess)
 
-    assert "reuse" in prompt.lower()        # identity preamble
+    assert IDENTITY_PREAMBLE in prompt      # identity preamble (layer 1)
     assert "self_count" in prompt           # operating manual
     assert "ABC_study" in prompt            # workspace snapshot
     assert "assemble the table" in prompt   # intent .md inlined by the snapshot
