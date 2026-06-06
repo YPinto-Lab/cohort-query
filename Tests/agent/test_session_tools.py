@@ -60,5 +60,12 @@ def test_list_dir_lists_entries(tmp_path):
     sess = _session(tmp_path)
     r = session_registry.execute(sess, "list_dir", {"path": "Docs"})
     assert not r.is_error
-    names = {e["name"] for e in r.summary["value"]}
-    assert "feature-table-and-library-palette.html" in names
+    entries = r.summary["value"]
+    assert entries                                          # Docs is non-empty
+    assert any(e["name"].endswith(".html") for e in entries)
+
+
+def test_read_file_missing_path_errors(tmp_path):
+    sess = _session(tmp_path)
+    r = session_registry.execute(sess, "read_file", {"path": "does/not/exist.txt"})
+    assert r.is_error

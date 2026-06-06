@@ -27,6 +27,7 @@ def list_workspace_inputs(session: Session) -> dict:
     return {"value": out}
 
 
+# session_tools.py lives at src/agent/tools/ — three parents up is the repo root.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _READ_CAP_BYTES = 65536
 
@@ -42,7 +43,8 @@ def list_dir(session: Session, path: str) -> dict:
 def read_file(session: Session, path: str) -> dict:
     """Read a text file inside the repository, capped at 64 KB (read-only)."""
     target = _safe_repo_path(path)
-    raw = target.read_bytes()
+    with target.open("rb") as handle:
+        raw = handle.read(_READ_CAP_BYTES + 1)   # one byte past the cap reveals truncation
     return {
         "value": raw[:_READ_CAP_BYTES].decode("utf-8", errors="replace"),
         "truncated": len(raw) > _READ_CAP_BYTES,
