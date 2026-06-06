@@ -103,4 +103,5 @@ def test_unknown_tool_errors(session):
 
 def test_default_registry_includes_all_tools():
     from agent.tools import default_registry
-    assert set(default_registry._tools) == {"list_workspace_inputs", "run_python", "summarize"}
+    assert set(default_registry._tools) == {
+        "list_workspace_inputs", "run_python", "summarize", "read_file", "list_dir"}
