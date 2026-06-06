@@ -30,3 +30,25 @@ def test_snapshot_skips_results_and_pycache(tmp_path):
 
     assert "agent_log" not in out
     assert "x.pyc" not in out
+
+
+def test_snapshot_skips_dotfiles(tmp_path):
+    root = tmp_path / "study"
+    root.mkdir()
+    ws = Workspace.open(root)
+    (root / ".env").write_text("SECRET=abc\n")
+
+    out = WorkspaceSnapshot(ws).render()
+
+    assert ".env" not in out
+
+
+def test_snapshot_empty_workspace(tmp_path):
+    root = tmp_path / "empty_study"
+    root.mkdir()
+    ws = Workspace.open(root)
+
+    out = WorkspaceSnapshot(ws).render()
+
+    assert "# Workspace: empty_study" in out
+    assert "## Files" in out
