@@ -1,22 +1,36 @@
 from __future__ import annotations
 import json
+from pathlib import Path
 from typing import Iterator
 
 from agent.events import Event
 from agent.session import Session
 from agent.llm_client import LLMClient
 from agent.tools.registry import Registry
+from agent.workspace_snapshot import WorkspaceSnapshot
 
 MAX_STEPS = 20
 
-SYSTEM_PROMPT = (
-    "You are Ask-SLM, an agent that helps researchers analyze SRA microbiome data.\n"
-    "Workspace: {workspace}.\n"
-    "You drive a fixed set of Python tools that wrap the askslm API. Prefer named "
-    "tools; use run_python for novel analyses (third-party libs, ad-hoc dataframe "
-    "work). When a tool returns a handle, pass that handle to subsequent tools. "
-    "Be concise."
+IDENTITY_PREAMBLE = (
+    "You are Ask-SLM, an agent that builds and analyzes metagenomic studies with the user.\n"
+    "The disk is the source of truth. Reuse the askslm package and established libraries; "
+    "never hand-roll what the package already provides. Author your work as phase scripts and "
+    "run them. When a tool returns a handle, pass that handle to subsequent tools. Be concise."
 )
+
+_MANUAL_PATH = Path(__file__).parent / "operating_manual.md"
+
+
+def _operating_manual() -> str:
+    return _MANUAL_PATH.read_text()
+
+
+def build_system_prompt(session: Session) -> str:
+    return "\n\n".join([
+        IDENTITY_PREAMBLE,
+        _operating_manual(),
+        WorkspaceSnapshot(session.workspace).render(),
+    ])
 
 
 def run(
@@ -35,7 +49,7 @@ def run(
             response = llm.complete(
                 messages=session.messages,
                 tools=registry.schemas(),
-                system=SYSTEM_PROMPT.format(workspace=session.workspace.name),
+                system=build_system_prompt(session),
             )
         except Exception as e:
             session.transcript.error(f"LLM call failed: {e!r}")
