@@ -69,3 +69,10 @@ def test_read_file_missing_path_errors(tmp_path):
     sess = _session(tmp_path)
     r = session_registry.execute(sess, "read_file", {"path": "does/not/exist.txt"})
     assert r.is_error
+
+
+def test_read_file_rejects_hidden_path(tmp_path):
+    sess = _session(tmp_path)
+    r = session_registry.execute(sess, "read_file", {"path": ".git/config"})
+    assert r.is_error
+    assert "hidden" in r.error

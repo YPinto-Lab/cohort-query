@@ -55,6 +55,10 @@ def _safe_repo_path(path: str) -> Path:
     candidate = (_REPO_ROOT / path).resolve()
     if not candidate.is_relative_to(_REPO_ROOT):
         raise ValueError(f"path escapes repository root: {path}")
+    # Hidden files/dirs (.git, .venv, …) are repo plumbing, not study material — keep
+    # the tools consistent with the workspace snapshot, which excludes them too.
+    if any(part.startswith(".") for part in candidate.relative_to(_REPO_ROOT).parts):
+        raise ValueError(f"path is hidden (dotfile/dir): {path}")
     if not candidate.exists():
         raise FileNotFoundError(f"path not found: {path}")
     return candidate

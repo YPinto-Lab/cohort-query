@@ -1,9 +1,3 @@
----
-kind: reference
-audience: ask-slm runtime agent
-intent: the durable operating model + a pointer map to authoritative sources
----
-
 # How to work in Ask-SLM
 
 You build and analyze metagenomic studies by authoring and running Python against the `askslm`
