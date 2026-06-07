@@ -31,10 +31,13 @@ def _extract_imports(code: str) -> list[str]:
 
 @run_python_registry.tool
 def run_python(session: Session, code: str, timeout_s: int = DEFAULT_TIMEOUT_S) -> dict:
-    """Execute a Python snippet in a sandboxed subprocess. Existing handles
-    (variable names like meta_1, matrix_1) are pre-loaded into the namespace.
-    New top-level variables that are recognized domain objects
-    (biom.Table feature tables, MetadataOverview, DataFrame) become new handles."""
+    """Execute a one-shot Python snippet in a fresh sandboxed subprocess.
+    State does NOT persist between calls: imports and plain variables vanish
+    afterward. Only recognized domain objects created at top level (biom.Table
+    feature tables, MetadataOverview, DataFrame) survive as handles, pre-loaded
+    by name into later calls. pandas/numpy/scipy/skbio/askslm are pre-imported
+    each call. For multi-step or durable work, write a script with write_file
+    and run it with run_script instead."""
     timeout_s = max(1, min(int(timeout_s), MAX_TIMEOUT_S))
     imports_used = _extract_imports(code)
 
@@ -68,8 +71,16 @@ def run_python(session: Session, code: str, timeout_s: int = DEFAULT_TIMEOUT_S) 
         h = session.variables.put(obj, hint=var_name)
         new_handles.append(h)
 
+    stdout = response["stdout"][-4000:]  # cap for LLM context
+    dropped = response.get("dropped_handles") or []
+    if dropped:
+        stdout += (
+            "\n[note] not kept as handles (not picklable, e.g. biom.Table): "
+            + ", ".join(dropped)
+            + " — inspect such objects within a single run_python call, or write a script."
+        )
     return {
-        "stdout": response["stdout"][-4000:],  # cap for LLM context
+        "stdout": stdout,
         "new_handles": new_handles,
         "imports_used": imports_used,
     }

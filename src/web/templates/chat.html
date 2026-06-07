@@ -1,5 +1,7 @@
 <!doctype html><html><head><meta charset="utf-8"><title>{{ workspace }} · Ask-SLM</title>
-<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+<script src="/static/vendor/htmx.min.js"></script>
+<script src="/static/vendor/marked.min.js"></script>
+<script src="/static/vendor/purify.min.js"></script>
 <style>
   html,body{overflow-x:hidden;max-width:100%}
   body{margin:0;background:#0d1117;color:#e6edf3;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
@@ -12,8 +14,8 @@
   .gutter{flex:none;width:6px;cursor:col-resize;background:#161b22;border-left:1px solid #30363d;border-right:1px solid #30363d}
   .gutter:hover{background:#388bfd}
   #log{flex:1;min-width:0;overflow:auto;overflow-wrap:anywhere;padding:12px}
-  .composer{border-top:1px solid #30363d;padding:10px;display:flex;gap:8px}
-  .composer input{flex:1;min-width:0;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:8px;padding:8px 10px}
+  .composer{border-top:1px solid #30363d;padding:10px;display:flex;gap:8px;align-items:flex-end}
+  .composer textarea{flex:1;min-width:0;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:8px;padding:8px 10px;font:14px/1.4 inherit;resize:none;overflow-y:auto;max-height:160px}
   .composer button{background:#238636;color:#fff;border:none;border-radius:8px;padding:8px 16px;cursor:pointer}
   .data-pane{flex:1;min-width:0;display:flex}
   .data-pane.tree-collapsed .rail{width:26px!important;overflow:hidden}
@@ -39,8 +41,26 @@
   table.data thead th.lab{z-index:3}.zero{color:#484f58}
   .pagers{display:flex;gap:18px;padding:9px 12px;font-size:11px;color:#8b949e}
   .pagers button{border:1px solid #30363d;background:#161b22;color:#e6edf3;border-radius:5px;padding:2px 8px;cursor:pointer}
-  .you{text-align:right;margin-bottom:8px}.you b{color:#1f6feb}
-  .event pre,.event code{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
+  .you{text-align:right;margin-bottom:8px;white-space:pre-wrap;overflow-wrap:anywhere}.you b{color:#1f6feb}
+  .chip{margin:4px 0;font:12px ui-monospace,Menlo,monospace}
+  .chip>summary{color:#7d8590;cursor:pointer;list-style:none}
+  .chip>summary::-webkit-details-marker{display:none}
+  .chip>summary:hover{color:#c9d1d9}
+  .chip[open]>summary{color:#c9d1d9}
+  .chip pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px;margin:4px 0 0;color:#c9d1d9}
+  .chip.err>summary{color:#ff7b72}
+  .asst b{color:#3fb950}
+  .md{margin:6px 0 14px;border-left:2px solid #2f4030;padding-left:10px}
+  .md>:first-child{margin-top:0}.md>:last-child{margin-bottom:0}
+  .md h1{font-size:18px;margin:10px 0 4px}.md h2{font-size:16px;margin:9px 0 4px}.md h3{font-size:14px;margin:8px 0 4px;color:#adbac7}
+  .md p{margin:6px 0}.md ul,.md ol{margin:6px 0;padding-left:20px}.md li{margin:2px 0}
+  .md strong{color:#e6edf3;font-weight:600}.md em{color:#c9d1d9}
+  .md a{color:#58a6ff}
+  .md code{background:#161b22;border:1px solid #30363d;border-radius:4px;padding:0 4px;font:12px ui-monospace,Menlo,monospace}
+  .md pre{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px;overflow:auto}.md pre code{border:0;padding:0;background:none}
+  .md table{border-collapse:collapse;margin:6px 0}.md th,.md td{border:1px solid #30363d;padding:3px 9px;text-align:left}.md th{background:#161b22}
+  .md blockquote{margin:6px 0;padding-left:10px;border-left:3px solid #30363d;color:#8b949e}
+  .err-line{color:#ff7b72;margin:4px 0}.err-line b{color:#ff7b72}
   .pending{color:#7d8590;font-style:italic;margin-bottom:8px}
   .files{margin-top:8px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px 10px;font-size:11px}
   .files .hd{font-size:9px;text-transform:uppercase;color:#7d8590;margin-bottom:4px}
@@ -59,7 +79,8 @@
     <div class="chat">
       <div id="log"></div>
       <form class="composer" onsubmit="send(event)">
-        <input id="msg" placeholder="Ask the agent…" autocomplete="off">
+        <textarea id="msg" rows="1" placeholder="Ask the agent…  (Enter to send, Shift+Enter for a new line)"
+                  autocomplete="off" oninput="growComposer(this)" onkeydown="composerKey(event)"></textarea>
         <button>Send</button>
       </form>
     </div>
@@ -77,6 +98,89 @@
 <script>
   const log = document.getElementById('log');
   function append(html){ const d=document.createElement('div'); d.innerHTML=html; log.appendChild(d); htmx.process(d); log.scrollTop=log.scrollHeight; }
+  const VERB={ run_python:'ran code', write_file:'wrote', run_script:'ran',
+               read_file:'read', list_dir:'listed', summarize:'summarized',
+               list_workspace_inputs:'listed inputs' };
+  let lastCall=null;  // remembers the tool_call args so its tool_result chip can show them
+
+  function renderEvent(type, p){
+    if(type==='user') return;                                   // already shown locally
+    if(type==='tool_call'){ lastCall=p; return; }
+    if(type==='tool_result'){ renderToolChip(p); return; }
+    if(type==='assistant_final'){ appendMarkdown(p.content); return; }
+    if(type==='error'){ appendText('err-line','Error: ',p.message); return; }  // terminal errors stay visible, not collapsed
+  }
+
+  function renderToolChip(p){
+    const args=(lastCall && lastCall.tool===p.tool) ? lastCall.args : {};
+    const summary=p.summary||{};
+    // a non-zero script exit is a real failure even though the tool itself succeeded
+    const failed=p.is_error || !!summary.returncode;
+    let label=chipLabel(p.tool,args);
+    if(failed){
+      const exc=exceptionName(summary.error)||exceptionName(summary.stdout);
+      if(exc) label+=' — '+exc;                                    // name the failure, e.g. PicklingError
+      else if(p.tool==='run_script' && summary.returncode) label+=' (exit '+summary.returncode+')';
+    }
+    appendChip(label, chipDetail(p.tool,args,summary), failed);
+    lastCall=null;
+  }
+
+  function chipLabel(tool, args){
+    // run_python has no path/handle — use the snippet's leading comment as its intent
+    if(tool==='run_python'){ const i=shorten(leadingComment(args.code),52); return i?'ran '+i:'ran code'; }
+    if(tool==='write_file'||tool==='run_script'||tool==='read_file'||tool==='list_dir')
+      return VERB[tool]+' '+(args.path||'');
+    if(tool==='summarize') return 'summarized '+(args.handle||'');
+    return VERB[tool]||tool;
+  }
+
+  function leadingComment(code){
+    for(const raw of (code||'').split('\n')){
+      const line=raw.trim();
+      if(!line) continue;
+      return line.startsWith('#') ? line.replace(/^#+\s*/,'') : '';  // first real line is code, no intent comment
+    }
+    return '';
+  }
+  function shorten(s,n){ s=(s||'').trim(); return s.length>n ? s.slice(0,n-1)+'…' : s; }
+  function exceptionName(text){
+    const m=(text||'').match(/([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Warning))/);
+    return m ? m[1].split('.').pop() : '';
+  }
+
+  function chipDetail(tool, args, summary){
+    if(summary.error) return summary.error;
+    if(tool==='run_python') return (args.code||'')+'\n--- output ---\n'+(summary.stdout||'');
+    if(tool==='run_script') return summary.stdout||'';
+    return JSON.stringify(summary, null, 2);
+  }
+
+  function appendChip(label, detail, isError){
+    const d=document.createElement('details'); d.className='chip'+(isError?' err':'');
+    const s=document.createElement('summary'); s.textContent='· '+label; d.appendChild(s);
+    if(detail){ const pre=document.createElement('pre'); pre.textContent=detail; d.appendChild(pre); }
+    log.appendChild(d); log.scrollTop=log.scrollHeight;
+  }
+
+  function appendMarkdown(content){
+    const d=document.createElement('div'); d.className='asst md';
+    // marked renders the agent's markdown; DOMPurify strips any unsafe html before insertion.
+    if(window.marked && window.DOMPurify) d.innerHTML=DOMPurify.sanitize(marked.parse(content||''));
+    else d.textContent='Assistant: '+(content||'');   // fallback if the CDN libs didn't load
+    log.appendChild(d); log.scrollTop=log.scrollHeight;
+  }
+
+  function appendText(cls, label, text){
+    const d=document.createElement('div'); d.className=cls;
+    const b=document.createElement('b'); b.textContent=label;
+    d.appendChild(b); d.appendChild(document.createTextNode(text||''));
+    log.appendChild(d); log.scrollTop=log.scrollHeight;
+  }
+  // Enter sends; Shift+Enter inserts a newline (textarea default).
+  function composerKey(e){ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); send(e); } }
+  function growComposer(t){ t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,160)+'px'; }
+
   async function send(e){
     e.preventDefault();
     const input=document.getElementById('msg'); const message=input.value.trim();
@@ -84,7 +188,8 @@
     const you=document.createElement('div'); you.className='you';
     const lab=document.createElement('b'); lab.textContent='You: ';
     you.appendChild(lab); you.appendChild(document.createTextNode(message));
-    log.appendChild(you); log.scrollTop=log.scrollHeight; input.value='';
+    log.appendChild(you); log.scrollTop=log.scrollHeight;
+    input.value=''; growComposer(input);                 // clear and collapse back to one line
     const pending=document.createElement('div'); pending.className='pending';
     pending.textContent='⋯ agent is working…';
     log.appendChild(pending); log.scrollTop=log.scrollHeight;
@@ -96,7 +201,9 @@
         let i; while((i=buf.indexOf('\n\n'))>=0){ const block=buf.slice(0,i); buf=buf.slice(i+2);
           const lines=block.split('\n'); let ev='',data='';
           for(const ln of lines){ if(ln.startsWith('event:')) ev=ln.slice(6).trim(); else if(ln.startsWith('data:')) data += ln.slice(5); }
-          if(ev==='html' && data){ clearPending(); append(JSON.parse(data)); }
+          if(!data) continue;
+          if(ev==='html'){ clearPending(); append(JSON.parse(data)); }
+          else if(ev){ clearPending(); renderEvent(ev, JSON.parse(data)); }
         }
       }
     } finally {

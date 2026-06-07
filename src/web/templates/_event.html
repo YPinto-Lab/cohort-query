@@ -1,8 +1,0 @@
-<div class="event event-{{event.type}}">
-{% if event.type == "user" %}<b>You:</b> {{event.payload.content}}
-{% elif event.type == "assistant_final" %}<b>Assistant:</b> {{event.payload.content}}
-{% elif event.type == "tool_call" %}<code>{{event.payload.tool}}({{event.payload.args}})</code>
-{% elif event.type == "tool_result" %}<pre>{{event.payload.summary}}</pre>
-{% elif event.type == "error" %}<span style="color:red">{{event.payload.message}}</span>
-{% endif %}
-</div>

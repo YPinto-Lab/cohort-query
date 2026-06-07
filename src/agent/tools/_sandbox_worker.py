@@ -28,6 +28,14 @@ def _resolve_types() -> tuple[type, ...]:
     return tuple(out)
 
 
+def _picklable(value) -> bool:
+    try:
+        pickle.dumps(value)
+        return True
+    except Exception:
+        return False
+
+
 def _build_namespace(workspace_path: str, handles: dict) -> dict:
     ns: dict = {}
     import askslm  # noqa: F401
@@ -63,17 +71,26 @@ def main() -> None:
         tb = traceback.format_exc()
 
     new_handles: dict = {}
+    dropped: list = []
     if error is None:
         existing = set(handles)
         for name, val in ns.items():
             if name.startswith("_") or name in existing:
                 continue
-            if isinstance(val, recognized):
+            if not isinstance(val, recognized):
+                continue
+            # Some recognized objects (e.g. a biom.Table carrying metadata) hold a
+            # non-picklable closure; promoting them would crash the whole call when we
+            # pickle the response. Skip those so the snippet's stdout still returns.
+            if _picklable(val):
                 new_handles[name] = val
+            else:
+                dropped.append(name)
 
     response = {
         "stdout": stdout_buf.getvalue() + stderr_buf.getvalue(),
         "new_handles": new_handles,
+        "dropped_handles": dropped,
         "error": error,
         "traceback": tb,
     }
