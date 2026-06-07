@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask-SLM · Agent authoring &amp; legible chat — design for review</title>
+<style>
+  :root{
+    --ink:#1b2330;--muted:#5b6473;--line:#e3e7ee;--bg:#fff;--soft:#f6f8fb;
+    --accent:#6d28d9;--code:#0f172a;--codebg:#f1f5f9;--link:#1d4ed8;
+    --lock:#059669;--prop:#d97706;--maxw:940px;
+  }
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+  a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+  header.hero{background:linear-gradient(135deg,#0d1117,#161b22 55%,#1f2933);color:#fff;padding:54px 24px 46px}
+  header.hero .wrap{max-width:var(--maxw);margin:0 auto}
+  header.hero .kicker{letter-spacing:.18em;text-transform:uppercase;font-size:12px;opacity:.85;margin:0 0 12px}
+  header.hero h1{font-size:32px;line-height:1.18;margin:0 0 12px;font-weight:700}
+  header.hero p{font-size:17px;opacity:.92;margin:0;max-width:720px}
+  .status{display:inline-block;margin-top:14px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);padding:3px 12px;border-radius:999px;font-size:13px}
+  nav{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+  nav .wrap{max-width:var(--maxw);margin:0 auto;padding:10px 24px;display:flex;gap:16px;flex-wrap:wrap;font-size:13.5px}
+  nav a{color:var(--muted)}nav a:hover{color:var(--accent);text-decoration:none}
+  main{max-width:var(--maxw);margin:0 auto;padding:8px 24px 80px}
+  section{padding:36px 0;border-bottom:1px solid var(--line)}section:last-child{border-bottom:0}
+  h2{font-size:25px;margin:0 0 6px;font-weight:700}
+  h2 .num{color:var(--accent);margin-right:10px}
+  h3{font-size:17px;margin:22px 0 6px}
+  .lead{color:var(--muted);margin:0 0 16px;font-size:17px}
+  p{margin:0 0 14px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--codebg);color:var(--code);padding:1px 6px;border-radius:5px;font-size:.86em}
+  pre{background:var(--code);color:#e2e8f0;padding:16px 18px;border-radius:12px;overflow:auto;font-size:13px;line-height:1.5;margin:14px 0}
+  pre .c{color:#7f8ea3}pre .d{color:#fcd34d}pre .f{color:#7dd3fc}pre .k{color:#c4b5fd}pre .s{color:#86efac}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--soft);font-weight:600}
+  td code{font-size:12px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:6px;letter-spacing:.03em}
+  .tag.lock{background:#d1fae5;color:#047857}.tag.prop{background:#fef3c7;color:#b45309}
+  .why{border:1px dashed var(--line);border-radius:12px;padding:14px 18px;margin:14px 0;background:#fcfdff}
+  .why h4{margin:0 0 6px;font-size:13.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .callout{border-left:4px solid var(--accent);background:var(--soft);border-radius:0 10px 10px 0;padding:13px 18px;margin:16px 0}
+  ul.tight{margin:8px 0;padding-left:20px}ul.tight li{margin:5px 0}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13.5px;color:var(--muted);margin:6px 0 0}
+  .chip{display:inline-block;font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:7px;padding:3px 10px;margin:3px 0}
+  .chip .v{color:#7d8590}.chip .t{color:#e3a36a}.chip.err{border-color:#6b2222;color:#ff7b72}
+  footer{max-width:var(--maxw);margin:0 auto;padding:26px 24px 60px;color:var(--muted);font-size:13px}
+  @media(max-width:700px){table{font-size:12.5px}header.hero h1{font-size:25px}}
+</style>
+</head>
+<body>
+
+<header class="hero"><div class="wrap">
+  <p class="kicker">Ask-SLM · Design for review</p>
+  <h1>Agent authoring &amp; legible chat — let the agent write scripts, and quiet the chat</h1>
+  <p>On its second real conversation the agent thrashed to the step limit. It treated
+     <code>run_python</code> as a persistent notebook (it is not — every call is a fresh subprocess),
+     so it hit <code>NameError</code> after <code>NameError</code> and re-read a 271&nbsp;MB CSV six
+     times. It was told to "author and run phase scripts" but had no tool to write a file or run a
+     script. And every step it took dumped a wall of raw text into the chat. This fixes all three.</p>
+  <span class="status">Status: PROPOSED — for review</span>
+</div></header>
+
+<nav><div class="wrap">
+  <a href="#problem">Problem</a>
+  <a href="#decisions">Decisions</a>
+  <a href="#authoring">Authoring tools</a>
+  <a href="#execmodel">Execution model</a>
+  <a href="#chat">Legible chat</a>
+  <a href="#wiring">Wiring</a>
+  <a href="#testing">Testing</a>
+  <a href="#scope">Out of scope</a>
+</div></nav>
+
+<main>
+
+<section id="problem">
+  <h2><span class="num">0</span>The problem, precisely</h2>
+  <p class="lead">Three independent defects compounded into one thrash. They map to issues #1, #4, and
+     #3 from the transcript assessment.</p>
+
+  <h3>#1 — <code>run_python</code> is stateless, but the agent treats it as a REPL</h3>
+  <p>Each <code>run_python</code> call is a brand-new subprocess (<code>_sandbox_worker.py</code>): it
+     pre-imports <code>pandas/numpy/scipy/skbio/askslm</code> under their own names,
+     <code>os.chdir</code>s into the workspace, and injects existing <em>handles</em>. When the snippet
+     finishes, only new top-level variables whose type is recognized
+     (<code>biom.table.Table</code>, <code>MetadataOverview</code>, <code>DataFrame</code>) survive, as
+     handles. <strong>Nothing else persists</strong> — not <code>import pandas as pd</code>, not a plain
+     local. The agent assumed continuity, wrote <code>pd.read_csv(...)</code> in a later call, and got
+     <code>NameError: pd</code> three times; it lost an intermediate <code>df</code> and re-read the
+     giant <code>taxonomy.csv</code> to rebuild it, repeatedly.</p>
+
+  <h3>#4 — the agent is told to author scripts but has no tool to do it</h3>
+  <p>The operating manual says "author <code>1_build/build.py</code> and run it." The agent's only
+     execution tool is <code>run_python</code> (an ephemeral snippet) and two <em>read</em> tools.
+     There is no way to <em>write a file to the workspace</em> or <em>run a script on disk</em>. So the
+     agent tried to do a whole multi-step build inside one-off snippets — exactly the workflow
+     <code>run_python</code>'s statelessness punishes.</p>
+
+  <h3>#3 — the chat dumps a wall of text every step</h3>
+  <p>For every event, <code>app.py</code> renders <code>_event.html</code> server-side and streams it as
+     an <code>html</code> block; tool results render as <code>&lt;pre&gt;{{summary}}&lt;/pre&gt;</code> —
+     the entire stdout, full tracebacks, whole code blocks. Sixteen steps of that is unreadable. The
+     browser already receives a clean typed event for each step (<code>event: tool_call</code> etc.) but
+     ignores it, consuming only the pre-rendered html.</p>
+
+  <div class="callout">These are the same root cause wearing three hats: the agent has no durable place
+     to put work. Give it one (write a script, run a script), teach it that snippets are ephemeral, and
+     the chat stops being a dumping ground because the heavy work moves into named files surfaced as
+     tidy chips.</div>
+</section>
+
+<section id="decisions">
+  <h2><span class="num">1</span>Decisions locked in brainstorming</h2>
+  <table>
+    <tr><th>Decision</th><th>Choice</th><th>Status</th></tr>
+    <tr><td>How the agent authors work (#4)</td>
+        <td><strong>Two tools</strong>: <code>write_file(path, content)</code> writes a file into the
+            workspace; <code>run_script(path)</code> runs a <code>.py</code> file already on disk. Not a
+            single fused "write-and-run" tool — keep write and execute separable.</td>
+        <td><span class="tag lock">LOCKED</span></td></tr>
+    <tr><td>Fixing the REPL mistake (#1)</td>
+        <td><strong>Teach, don't re-architect</strong>: document the stateless execution model in the
+            operating manual and tighten the <code>run_python</code> docstring. Do <em>not</em> build a
+            persistent kernel — the authoring tools (#4) move durable work into scripts, which is where
+            it belongs.</td>
+        <td><span class="tag lock">LOCKED</span></td></tr>
+    <tr><td>Quieting the chat (#3)</td>
+        <td><strong>Aggressively minimal chips</strong>: each tool step renders as a one-line label
+            ("ran code", "wrote 1_build/build.py"); full code / stdout / error lives behind a collapsed
+            disclosure, opened on click. Built client-side from the typed events the server already
+            emits.</td>
+        <td><span class="tag lock">LOCKED</span></td></tr>
+  </table>
+</section>
+
+<section id="authoring">
+  <h2><span class="num">2</span>Part 1 — Authoring tools</h2>
+  <p class="lead">Two new tools in <code>src/agent/tools/session_tools.py</code>, alongside the existing
+     <code>read_file</code> / <code>list_dir</code>. Read tools are repo-scoped; <strong>write/run tools
+     are workspace-scoped</strong>.</p>
+  <table>
+    <tr><th>Tool</th><th>Signature</th><th>Does</th><th>Returns</th></tr>
+    <tr><td><code>write_file</code></td><td><code>write_file(path, content)</code></td>
+        <td>writes <code>content</code> to <code>path</code> under the active workspace; creates parent
+            directories</td>
+        <td><code>{path, bytes_written}</code></td></tr>
+    <tr><td><code>run_script</code></td><td><code>run_script(path)</code></td>
+        <td>runs a <code>.py</code> file on disk as a subprocess (<code>sys.executable</code>), captures
+            output</td>
+        <td><code>{path, returncode, stdout}</code> (stdout capped)</td></tr>
+  </table>
+
+  <h3>Safety contract</h3>
+  <ul class="tight">
+    <li><strong>Workspace scope</strong> — both resolve relative to <code>session.workspace.root</code>
+        and must stay inside it: <code>resolve()</code> then assert
+        <code>is_relative_to(workspace_root)</code>, mirroring the existing
+        <code>_safe_*</code> guards. The agent writes into <em>this study</em>, never the repo at large.</li>
+    <li><strong><code>write_file</code> auto-creates parents</strong> — so the agent can write
+        <code>2_transform/rarefy/transform.py</code> before the folder exists, matching the phase tree.</li>
+    <li><strong><code>run_script</code> only runs <code>.py</code> files inside the workspace</strong> —
+        reject anything else. Output is byte-capped for context (same spirit as
+        <code>run_python</code>'s <code>[-4000:]</code> cap).</li>
+    <li><strong>No handles from <code>run_script</code></strong> — a script's products are <em>files on
+        disk</em> (a <code>.biom</code>, CSVs, plots). They surface through the existing workspace-diff
+        file panel (<code>_files.html</code>), not as in-memory handles.</li>
+  </ul>
+
+  <div class="why"><h4>Why two tools, not one fused "write-and-run"</h4>
+    Separating write from run keeps each tool doing one thing (clean-code standard), lets the agent
+    inspect or re-read a script before running it, and lets it re-run an unchanged script without
+    rewriting it. The chat reads naturally too: "wrote build.py" then "ran build.py" are two honest
+    steps.</div>
+
+  <div class="why"><h4>Why <code>run_script</code> is a subprocess, not <code>exec</code> in-process</h4>
+    Phase scripts self-locate with <code>workspace.phase(__file__)</code> and import <code>askslm</code>;
+    a real subprocess (same interpreter, <code>askslm</code> already installed in the venv) runs them
+    exactly as the user would from a shell — the disk-is-source-of-truth promise. It also isolates
+    crashes and lets us enforce a timeout, like <code>run_python</code> already does.</div>
+</section>
+
+<section id="execmodel">
+  <h2><span class="num">3</span>Part 1b — Teaching the execution model (#1)</h2>
+  <p class="lead">No new code path — two documentation changes so the agent stops treating
+     <code>run_python</code> as a notebook.</p>
+  <ul class="tight">
+    <li><strong>Operating manual</strong> (<code>src/agent/operating_manual.md</code>) gains a short
+        "How execution works" section stating plainly: every <code>run_python</code> call is a fresh
+        process; <code>import</code>s and plain variables do <em>not</em> carry over; only recognized
+        domain objects survive as handles, which are pre-loaded into later calls by name. <em>For
+        multi-step work, write a phase script with <code>write_file</code> and run it with
+        <code>run_script</code></em> — that is the durable path. Use <code>run_python</code> only for
+        one-shot inspection (shapes, dtypes, a quick value).</li>
+    <li><strong><code>run_python</code> docstring</strong> (<code>run_python.py</code>) — extend it from
+        "handles are pre-loaded" to spell out the full stateless contract, so the model sees it in the
+        tool schema, not only in the manual.</li>
+  </ul>
+  <div class="callout">This is the cheap half of the fix and it depends on the expensive half: telling
+     the agent "write a script instead" only works once <code>write_file</code> / <code>run_script</code>
+     exist. Hence both ship together.</div>
+</section>
+
+<section id="chat">
+  <h2><span class="num">4</span>Part 2 — A legible chat (#3)</h2>
+  <p class="lead">Stop streaming pre-rendered walls of text. Render each step client-side as a one-line
+     chip from the typed event the server already emits, with detail one click away.</p>
+
+  <h3>The events the server emits (unchanged)</h3>
+  <p>The agent loop already yields a typed <code>Event</code> per step, and <code>app.py</code> already
+     streams each as an <code>event: &lt;type&gt;</code> SSE line with a JSON payload. The five types and
+     their payloads:</p>
+  <table>
+    <tr><th>Event</th><th>Payload</th><th>Chip</th></tr>
+    <tr><td><code>user</code></td><td><code>{content}</code></td><td>none — the browser already shows
+        your message locally</td></tr>
+    <tr><td><code>tool_call</code></td><td><code>{tool, args}</code></td><td>opens a chip (the verb +
+        target; args feed the detail)</td></tr>
+    <tr><td><code>tool_result</code></td><td><code>{tool, summary, is_error}</code></td><td>finalizes the
+        chip (fills detail with stdout/output; red if <code>is_error</code>)</td></tr>
+    <tr><td><code>assistant_final</code></td><td><code>{content}</code></td><td>the agent's prose reply
+        (not a chip)</td></tr>
+    <tr><td><code>error</code></td><td><code>{message}</code></td><td>a red error row</td></tr>
+  </table>
+
+  <h3>The verb map (client-side)</h3>
+  <p>A small <code>renderEvent(type, payload)</code> in <code>chat.html</code> maps each tool to a plain
+     verb and a target drawn from its args:</p>
+  <table>
+    <tr><th>Tool</th><th>Chip label</th><th>Behind the disclosure</th></tr>
+    <tr><td><code>run_python</code></td><td>ran code</td><td>the code (from <code>args.code</code>) + stdout</td></tr>
+    <tr><td><code>write_file</code></td><td>wrote <code>&lt;path&gt;</code></td><td>bytes written</td></tr>
+    <tr><td><code>run_script</code></td><td>ran <code>&lt;path&gt;</code></td><td>returncode + stdout</td></tr>
+    <tr><td><code>read_file</code></td><td>read <code>&lt;path&gt;</code></td><td>(none / truncation note)</td></tr>
+    <tr><td><code>list_dir</code></td><td>listed <code>&lt;path&gt;</code></td><td>entry count</td></tr>
+    <tr><td><code>summarize</code></td><td>summarized <code>&lt;handle&gt;</code></td><td>the summary</td></tr>
+    <tr><td><code>list_workspace_inputs</code></td><td>listed inputs</td><td>the file list</td></tr>
+    <tr><td><em>(unknown tool)</em></td><td>the tool name</td><td>raw args + summary</td></tr>
+  </table>
+
+  <h3>Before / after</h3>
+  <p>Today the same step is a multi-line <code>&lt;pre&gt;</code> dump of the whole code and output.
+     After:</p>
+  <p><span class="chip"><span class="v">·</span> ran code <span class="v">▸</span></span>
+     &nbsp;&nbsp;
+     <span class="chip"><span class="v">·</span> wrote <span class="t">1_build/build.py</span> <span class="v">▸</span></span>
+     &nbsp;&nbsp;
+     <span class="chip"><span class="v">·</span> ran <span class="t">1_build/build.py</span> <span class="v">▸</span></span>
+     &nbsp;&nbsp;
+     <span class="chip err"><span class="v">·</span> ran code — error ▸</span></p>
+  <p>Each chip is a native <code>&lt;details&gt;/&lt;summary&gt;</code>: the verb is the summary line, the
+     full code/output/error is the collapsed body, revealed on click. Nothing is discarded — the
+     complete trace remains in the session log (the "sessions" replay view).</p>
+
+  <h3>What changes in the plumbing</h3>
+  <ul class="tight">
+    <li><strong><code>app.py</code></strong> — stop rendering and streaming the per-event
+        <code>_event.html</code> block. Keep emitting the typed <code>event: &lt;type&gt;</code> lines
+        (already there). Keep the trailing <code>_files.html</code> panel as the one
+        <code>event: html</code> block (it is a richer htmx fragment). Retire <code>_streams_to_log</code>
+        and the <code>_event.html</code> template.</li>
+    <li><strong><code>chat.html</code></strong> — the SSE loop, today only acting on
+        <code>ev==='html'</code>, gains a branch: for a typed event, call
+        <code>renderEvent(type, JSON.parse(data))</code>; the <code>html</code> branch stays for the
+        files panel. <code>renderEvent</code> builds the chip DOM with <code>textContent</code> (no
+        innerHTML for model/tool output → no injection). The existing <code>.pending</code> indicator
+        and <code>clearPending()</code> stay; the first chip or final reply clears it.</li>
+  </ul>
+  <div class="why"><h4>Why client-side from typed events, not server-rendered html</h4>
+    The server already does the work twice — a typed event <em>and</em> a rendered html block per step.
+    Dropping the html block removes the duplication and the verbosity in one move, and puts presentation
+    where presentation belongs (the browser). The server goes back to emitting facts; the client decides
+    how loud to be.</div>
+</section>
+
+<section id="wiring">
+  <h2><span class="num">5</span>Wiring</h2>
+  <ul class="tight">
+    <li><code>write_file</code> / <code>run_script</code> register in the session registry next to
+        <code>read_file</code> / <code>list_dir</code>; the default-registry test gains both names
+        (same pattern as the read-tools addition).</li>
+    <li>No change to <code>loop.py</code> event flow — it already yields the typed events Part 2 needs.</li>
+    <li>Manual + docstring edits are text-only.</li>
+  </ul>
+</section>
+
+<section id="testing">
+  <h2><span class="num">6</span>Testing</h2>
+  <ul class="tight">
+    <li><strong><code>write_file</code></strong> — writes content under the workspace and creates
+        parents; rejects a path that escapes the workspace (traversal guard).</li>
+    <li><strong><code>run_script</code></strong> — runs a fixture <code>.py</code> that imports
+        <code>askslm</code> and writes a file, asserts <code>returncode == 0</code> and the file appears;
+        rejects a non-<code>.py</code> path and a path outside the workspace; caps oversized stdout.</li>
+    <li><strong>Registry</strong> — default registry includes <code>write_file</code> and
+        <code>run_script</code>.</li>
+    <li><strong>Chat (template/headless)</strong> — assert <code>app.py</code> no longer streams an
+        <code>html</code> block for <code>tool_call</code>/<code>tool_result</code> (only the typed
+        events + the trailing files panel). The chip rendering itself is verified manually in-browser
+        (label, click-to-expand, error styling).</li>
+    <li><strong>Keep green</strong> — the existing llm-smoke trajectory test and the read-tool tests.</li>
+  </ul>
+</section>
+
+<section id="scope">
+  <h2><span class="num">7</span>Out of scope (deferred follow-ups)</h2>
+  <ul class="tight">
+    <li><strong>#2 / #6 — step limit &amp; redundant re-reads.</strong> Raising <code>MAX_STEPS</code> or
+        caching reads is a separate tuning question; the authoring tools should sharply cut step count on
+        their own, so we measure first.</li>
+    <li><strong>#5 — non-canonical workspace trees</strong> (e.g. an <code>inputs/</code> instead of
+        <code>0_inputs/</code>). Reconciliation of legacy layouts is its own design.</li>
+    <li><strong>A persistent Python kernel.</strong> Explicitly rejected — scripts are the durable path.</li>
+    <li><strong>Token-by-token streaming of the agent's final prose.</strong> Unchanged from the prior
+        design.</li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  Ask-SLM · Agent authoring &amp; legible chat design · drafted 2026-06-06 ·
+  status PROPOSED, pending user review. Stacked on PR #9 (agent operating model).
+</footer>
+
+</body>
+</html>

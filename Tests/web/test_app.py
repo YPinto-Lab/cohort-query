@@ -266,15 +266,18 @@ def test_messages_html_events_are_json_encoded(tmp_path, monkeypatch):
     monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
     monkeypatch.setattr(app_mod, "build_llm",
                         lambda: FakeLLMClient([[AssistantText(text="hi")]]))
+    # one file appears during the turn -> the files-changed panel is the lone html block
+    snapshots = iter([{}, {"1_build/build.py": 1.0}])
+    monkeypatch.setattr(app_mod, "snapshot", lambda _root: next(snapshots))
     _ws(tmp_path)
     client = TestClient(app_mod.app)
     client.get("/w/ABX")
     r = client.post("/w/ABX/messages", data={"message": "hello"})
     html_blocks = [b for b in r.text.split("\n\n") if "event: html" in b]
-    assert html_blocks  # at least one html fragment streamed
+    assert html_blocks  # the files-changed panel
     for block in html_blocks:
         data_line = [l for l in block.splitlines() if l.startswith("data:")][0]
-        payload = _json.loads(data_line[len("data:"):])  # must be valid single-line JSON
+        payload = _json.loads(data_line[len("data:"):])  # valid single-line JSON
         assert isinstance(payload, str)
 
 
@@ -289,11 +292,46 @@ def test_chat_page_has_two_panes(tmp_path, monkeypatch):
     assert "Open workspace folder" in r.text
 
 
-from web.app import _streams_to_log
-from agent.events import Event
+def test_chat_page_loads_markdown_renderer(tmp_path, monkeypatch):
+    from web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    _ws(tmp_path)
+    client = TestClient(app_mod.app)
+    r = client.get("/w/ABX")
+    # assistant replies render as sanitized markdown, from locally-served (not CDN) assets
+    assert "DOMPurify.sanitize(marked.parse" in r.text
+    assert "/static/vendor/marked.min.js" in r.text
+    assert "unpkg" not in r.text and "jsdelivr" not in r.text
 
 
-def test_user_events_do_not_stream_to_log():
-    assert _streams_to_log(Event.user("hi")) is False
-    assert _streams_to_log(Event.assistant_final("yo")) is True
-    assert _streams_to_log(Event.tool_call("t", {})) is True
+def test_vendored_frontend_assets_are_served(tmp_path, monkeypatch):
+    from web import app as app_mod
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    client = TestClient(app_mod.app)
+    for name in ("htmx.min.js", "marked.min.js", "purify.min.js"):
+        r = client.get(f"/static/vendor/{name}")
+        assert r.status_code == 200, name
+        assert len(r.content) > 1000
+
+
+def test_tool_events_stream_typed_not_as_html(tmp_path, monkeypatch):
+    from web import app as app_mod
+    from agent.llm_client import FakeLLMClient, ToolUse, AssistantText
+    monkeypatch.setattr(app_mod, "WORKSPACES_ROOT", tmp_path)
+    monkeypatch.setattr(app_mod, "build_llm", lambda: FakeLLMClient([
+        [ToolUse(id="u1", name="list_workspace_inputs", input={})],
+        [AssistantText(text="done")],
+    ]))
+    # fix snapshots so no files-changed block is emitted
+    stable = {"inputs/metadata.csv": 1.0}
+    monkeypatch.setattr(app_mod, "snapshot", lambda _root: stable)
+    _ws(tmp_path)
+    client = TestClient(app_mod.app)
+    client.get("/w/ABX")
+    r = client.post("/w/ABX/messages", data={"message": "go"})
+    body = r.text
+    assert "event: tool_call" in body
+    assert "event: tool_result" in body
+    assert "event: assistant_final" in body
+    # per-event HTML is retired and no files changed -> no html block at all
+    assert "event: html" not in body
