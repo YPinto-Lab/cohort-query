@@ -40,6 +40,8 @@
   .pagers{display:flex;gap:18px;padding:9px 12px;font-size:11px;color:#8b949e}
   .pagers button{border:1px solid #30363d;background:#161b22;color:#e6edf3;border-radius:5px;padding:2px 8px;cursor:pointer}
   .you{text-align:right;margin-bottom:8px}.you b{color:#1f6feb}
+  .event pre,.event code{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
+  .pending{color:#7d8590;font-style:italic;margin-bottom:8px}
   .files{margin-top:8px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px 10px;font-size:11px}
   .files .hd{font-size:9px;text-transform:uppercase;color:#7d8590;margin-bottom:4px}
   .frow{display:flex;gap:6px;font-family:ui-monospace,monospace;padding:2px 0}.frow .p{flex:1}
@@ -83,14 +85,22 @@
     const lab=document.createElement('b'); lab.textContent='You: ';
     you.appendChild(lab); you.appendChild(document.createTextNode(message));
     log.appendChild(you); log.scrollTop=log.scrollHeight; input.value='';
-    const res=await fetch('/w/{{ workspace }}/messages',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'message='+encodeURIComponent(message)});
-    const reader=res.body.getReader(); const dec=new TextDecoder(); let buf='';
-    while(true){ const {value,done}=await reader.read(); if(done) break; buf+=dec.decode(value,{stream:true});
-      let i; while((i=buf.indexOf('\n\n'))>=0){ const block=buf.slice(0,i); buf=buf.slice(i+2);
-        const lines=block.split('\n'); let ev='',data='';
-        for(const ln of lines){ if(ln.startsWith('event:')) ev=ln.slice(6).trim(); else if(ln.startsWith('data:')) data += ln.slice(5); }
-        if(ev==='html' && data) append(JSON.parse(data));
+    const pending=document.createElement('div'); pending.className='pending';
+    pending.textContent='⋯ agent is working…';
+    log.appendChild(pending); log.scrollTop=log.scrollHeight;
+    const clearPending=()=>{ if(pending.parentNode) pending.remove(); };
+    try{
+      const res=await fetch('/w/{{ workspace }}/messages',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'message='+encodeURIComponent(message)});
+      const reader=res.body.getReader(); const dec=new TextDecoder(); let buf='';
+      while(true){ const {value,done}=await reader.read(); if(done) break; buf+=dec.decode(value,{stream:true});
+        let i; while((i=buf.indexOf('\n\n'))>=0){ const block=buf.slice(0,i); buf=buf.slice(i+2);
+          const lines=block.split('\n'); let ev='',data='';
+          for(const ln of lines){ if(ln.startsWith('event:')) ev=ln.slice(6).trim(); else if(ln.startsWith('data:')) data += ln.slice(5); }
+          if(ev==='html' && data){ clearPending(); append(JSON.parse(data)); }
+        }
       }
+    } finally {
+      clearPending();
     }
   }
 

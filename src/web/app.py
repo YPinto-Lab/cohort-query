@@ -117,6 +117,12 @@ def chat_page(workspace: str, request: Request, response: Response):
         request, "chat.html", {"workspace": workspace, "first_biom": first_biom})
 
 
+def _streams_to_log(ev: Event) -> bool:
+    # The browser appends the user's own message locally; re-rendering the server's
+    # user event would duplicate it in the chat log.
+    return ev.type != "user"
+
+
 @app.post("/w/{workspace}/messages")
 def messages(workspace: str, request: Request, response: Response, message: str = Form(...)):
     ws_dir = _safe_workspace_dir(workspace)
@@ -133,8 +139,9 @@ def messages(workspace: str, request: Request, response: Response, message: str 
         for ev in agent.chat(message):
             data = json.dumps({"type": ev.type, **ev.payload})
             yield f"event: {ev.type}\ndata: {data}\n\n".encode()
-            html = templates.get_template("_event.html").render(event=ev)
-            yield f"event: html\ndata: {json.dumps(html)}\n\n".encode()
+            if _streams_to_log(ev):
+                html = templates.get_template("_event.html").render(event=ev)
+                yield f"event: html\ndata: {json.dumps(html)}\n\n".encode()
         changed = diff(before, snapshot(ws_dir))
         if changed:
             files_html = templates.get_template("_files.html").render(
