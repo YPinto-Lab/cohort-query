@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>askslm — architecture (HLD / LLD)</title>
+<style>
+  :root{
+    --ink:#1b1f24; --muted:#5b6570; --line:#e2e6ea; --bg:#fbfcfd;
+    --locked-bg:#e7f6ec; --locked-ink:#1f7a3d;
+    --proposed-bg:#fef3e2; --proposed-ink:#9a5b00;
+    --code-bg:#0f141a; --code-ink:#e7edf3; --accent:#1457b8; --kw:#7fb2ff; --str:#9ad29a; --com:#7d8a99;
+  }
+  *{box-sizing:border-box}
+  body{font:16px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink); background:var(--bg); margin:0; padding:0 0 6rem}
+  .wrap{max-width:960px; margin:0 auto; padding:2.5rem 1.5rem}
+  header.doc{border-bottom:2px solid var(--line); padding-bottom:1.2rem; margin-bottom:2rem}
+  h1{font-size:1.7rem; margin:0 0 .3rem}
+  h2{font-size:1.3rem; margin:2.6rem 0 .8rem; padding-bottom:.25rem; border-bottom:1px solid var(--line)}
+  h3{font-size:1.05rem; margin:1.6rem 0 .4rem}
+  h4{font-size:.95rem; margin:1.1rem 0 .3rem; color:var(--muted); text-transform:uppercase; letter-spacing:.04em}
+  .sub{color:var(--muted); font-size:.95rem}
+  .badge{display:inline-block; font-size:.7rem; font-weight:700; letter-spacing:.04em;
+         text-transform:uppercase; padding:.15rem .5rem; border-radius:999px; vertical-align:middle; margin-left:.5rem}
+  .locked{background:var(--locked-bg); color:var(--locked-ink)}
+  .proposed{background:var(--proposed-bg); color:var(--proposed-ink)}
+  p{margin:.6rem 0}
+  ul,ol{margin:.5rem 0 .8rem; padding-left:1.4rem}
+  li{margin:.3rem 0}
+  code{background:#eef1f4; padding:.1rem .35rem; border-radius:4px; font-size:.88em;
+       font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+  pre{background:var(--code-bg); color:var(--code-ink); padding:1rem 1.1rem; border-radius:10px;
+      overflow:auto; font-size:.84rem; line-height:1.5; margin:.8rem 0}
+  pre code{background:none; padding:0; color:inherit}
+  pre .kw{color:var(--kw)} pre .str{color:var(--str)} pre .com{color:var(--com)}
+  table{border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem}
+  th,td{border:1px solid var(--line); padding:.55rem .7rem; text-align:left; vertical-align:top}
+  th{background:#eef2f6}
+  .note{border-left:3px solid var(--accent); background:#f0f5fc; padding:.7rem 1rem; border-radius:0 8px 8px 0; margin:1rem 0}
+  .meta{color:var(--muted); font-size:.85rem}
+  hr{border:none; border-top:1px solid var(--line); margin:2.4rem 0}
+  .ascii{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.8rem; white-space:pre; line-height:1.35}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <h1>askslm — architecture: HLD &amp; LLD</h1>
+  <p class="sub">Companion to the design spec. Layers, contracts, types, and the per-class low-level design.</p>
+  <p class="meta">2026-06-17 · audience: backend engineer · style: Clean Code / SOLID (see <code>.claude/skills/clean-code-style</code>).
+     Parent spec: <code>2026-06-17-askslm-sra-metalog-cohort-design.html</code>.</p>
+</header>
+
+<h2>A. High-Level Design</h2>
+
+<h3>A.1 Architectural style</h3>
+<p>A small <strong>layered / hexagonal</strong> package. The domain core knows nothing about DuckDB, Gemini,
+or the filesystem; those are adapters behind <code>Protocol</code> ports. A single composition root
+(<code>Runtime</code>) wires concretes to ports. The Jupyter-facing module functions
+(<code>config</code>, <code>ask</code>, <code>load_plan</code>) are a thin <strong>facade</strong> over the
+composition root — they hold no logic.</p>
+
+<h4>Dependency rule (inward only)</h4>
+<div class="ascii">  facade  ─▶  application services  ─▶  domain core
+    │               │                      ▲
+    │               ▼                      │
+    └────▶  composition root ──▶ adapters ─┘  (adapters implement domain ports)
+</div>
+<p>Domain depends on nothing. Services depend on domain + ports. Adapters implement ports. The composition
+root is the only place that names concretes. This is the seam that lets every service be unit-tested against
+fakes and lets the LLM provider or the database engine be swapped without touching the core.</p>
+
+<h3>A.2 Layers &amp; responsibilities</h3>
+<table>
+  <tr><th>Layer</th><th>Members</th><th>Knows about</th></tr>
+  <tr><td>Facade</td><td><code>config()</code>, <code>ask()</code>, <code>load_plan()</code>, re-exported <code>Profiler</code></td><td>composition root only</td></tr>
+  <tr><td>Composition root</td><td><code>Settings</code>, <code>Runtime</code></td><td>every concrete; wires ports</td></tr>
+  <tr><td>Application services</td><td><code>AskService</code>, <code>CohortEstimator</code>, <code>CohortBuilder</code></td><td>domain + ports</td></tr>
+  <tr><td>Domain core</td><td><code>Plan</code>, <code>Translation</code>, <code>ResearchQuestion</code>, <code>Cohort</code>, <code>ProfileMatrix</code>, <code>ReconciledMetadata</code>, <code>DropReport</code>, <code>CohortEstimate</code>, <code>Profiler</code></td><td>nothing</td></tr>
+  <tr><td>Ports (Protocols)</td><td><code>LlmBackend</code>, <code>Database</code></td><td>domain types only</td></tr>
+  <tr><td>Adapters</td><td><code>GeminiBackend</code>, <code>DuckDbConnection</code>, <code>PlanRepository</code>, <code>BiomFactory</code>, and the readers</td><td>third-party libs</td></tr>
+</table>
+
+<h3>A.3 The two ports</h3>
+<pre><code><span class="kw">class</span> LlmBackend(Protocol):                          <span class="com"># swap Gemini ↔ Anthropic ↔ fake</span>
+    <span class="kw">def</span> translate(self, prompt: TranslationPrompt) -> Translation: ...
+
+<span class="kw">class</span> Database(Protocol):                            <span class="com"># swap DuckDB ↔ in-memory fake</span>
+    <span class="kw">def</span> query(self, sql: str) -> pandas.DataFrame: ...
+</code></pre>
+<p>Everything that touches the network (the LLM) or the disk (the DuckDB file) lives behind one of these two
+single-method ports. The readers below are <em>composed</em> from <code>Database</code>, not new ports — they
+are domain logic expressed as SQL, not new I/O boundaries.</p>
+
+<h3>A.4 Control flow — three sequences</h3>
+<h4>ask() — translate, estimate, persist</h4>
+<div class="ascii">facade.ask(text, profiler, save)
+  └▶ AskService.ask(question, save)
+       ├▶ Translator.translate(question)         → Translation   (LlmBackend port → network)
+       │     └▶ SchemaCatalog supplies SRA+Metalog schemas as prompt context
+       ├▶ CohortEstimator.estimate(translation, profiler) → CohortEstimate   (Database port: COUNT only)
+       ├▶ Plan(question, translation, estimate)
+       └▶ PlanRepository.save(plan, path)         → plans/&lt;slug&gt;.json
+  ◀── Plan   (rich _repr_html_ = show-your-work)
+</div>
+<h4>plan.run(out) — discover, pull, reconcile, assemble</h4>
+<div class="ascii">Plan.run(out)
+  └▶ CohortBuilder.build(plan, out)
+       ├▶ CohortDiscovery.discover(sra_query, metalog_query) → Cohort   (Database: 2 SELECTs, union accessions)
+       ├▶ ProfileReader.read(profiler, cohort.union)         → ProfileMatrix   (chosen feature space)
+       ├▶ DropReport.between(cohort.union, matrix.accessions)→ DropReport      (samples lacking the profiler)
+       ├▶ MetadataReader.read × 2  +  MetadataReconciler.reconcile → ReconciledMetadata (Metalog wins)
+       ├▶ BiomFactory.build(matrix, metadata)                → biom.Table
+       └▶ write(table, out) ; warn(report)
+  ◀── biom.Table
+</div>
+<h4>load_plan(path).run(out) — reproduce without the LLM</h4>
+<div class="ascii">load_plan(path)  └▶ PlanRepository.load(path) → Plan      (no network; SQL already frozen in the file)
+  then identical to plan.run(out).   Plan.run() ≡ load_plan(path).run().
+</div>
+
+<h3>A.5 Module layout <span class="badge proposed">Proposed</span></h3>
+<p>One public class per file (clean-code rule 4). Packages mirror the layers.</p>
+<pre><code>src/askslm/
+  __init__.py            <span class="com"># facade: config, ask, load_plan; re-export Profiler</span>
+  runtime.py             <span class="com"># Runtime — composition root; builds wired services</span>
+  config/
+    settings.py          <span class="com"># Settings (frozen; validates on construction)</span>
+  profiling/
+    profiler.py          <span class="com"># Profiler enum + ProfilerSpec</span>
+    source.py            <span class="com"># Source enum (SRA | METALOG)</span>
+  translation/
+    research_question.py interpretation.py source_query.py translation.py
+    translation_prompt.py
+    translator.py        schema_catalog.py
+  llm/
+    backend.py           <span class="com"># LlmBackend Protocol</span>
+    gemini_backend.py
+  plan/
+    plan.py plan_view.py plan_repository.py cohort_estimate.py cohort_estimator.py
+  cohort/
+    cohort.py discovery.py profile_reader.py profile_matrix.py
+    metadata_reader.py metadata_reconciler.py reconciled_metadata.py
+    drop_report.py cohort_builder.py
+  biom/
+    biom_factory.py
+  db/
+    database.py          <span class="com"># Database Protocol</span>
+    duckdb_connection.py
+  errors.py
+</code></pre>
+
+<h3>A.6 Reuse from the existing codebase</h3>
+<ul>
+  <li><code>sra_schema.py</code> (<code>SRAMetadataSchema</code>, <code>SRATaxonomySchema</code>) feeds
+      <code>SchemaCatalog</code> — the column inventory the LLM is grounded on. No re-description.</li>
+  <li>The current biom build path (counts + lineage feature metadata + sample metadata) is wrapped by
+      <code>BiomFactory</code>; the assembly rules do not change.</li>
+  <li>Reconciliation keeps <strong>two DataFrames</strong> (per the standing rule): metadata and lineage never
+      merge into one frame. <code>ReconciledMetadata</code> is sample metadata only; lineage rides on the biom's
+      feature axis.</li>
+</ul>
+
+<hr>
+
+<h2>B. Low-Level Design</h2>
+
+<h3>B.1 Domain value objects (frozen dataclasses)</h3>
+<p>All inputs/outputs crossing a seam are typed domain objects, never bare <code>str</code>/<code>dict</code>/
+<code>DataFrame</code>. <code>Accession</code> is a <code>NewType(str)</code> for type clarity; the real object is
+<code>Cohort</code>, which owns the set semantics.</p>
+<pre><code>Accession = NewType(<span class="str">"Accession"</span>, str)
+
+<span class="kw">class</span> Source(Enum):
+    SRA = <span class="str">"sra"</span>
+    METALOG = <span class="str">"metalog"</span>
+
+<span class="kw">@dataclass</span>(frozen=True)
+<span class="kw">class</span> ResearchQuestion:
+    text: str
+    profiler: Profiler
+
+<span class="kw">@dataclass</span>(frozen=True)
+<span class="kw">class</span> SourceQuery:
+    source: Source
+    sql: str
+
+<span class="kw">@dataclass</span>(frozen=True)
+<span class="kw">class</span> QueryInterpretation:
+    restatement: str                 <span class="com"># one English line per understood filter</span>
+    filters: tuple[str, ...]
+
+<span class="kw">@dataclass</span>(frozen=True)
+<span class="kw">class</span> Translation:                    <span class="com"># the LlmBackend output, before any DB hit</span>
+    interpretation: QueryInterpretation
+    sra_query: SourceQuery
+    metalog_query: SourceQuery
+
+<span class="kw">@dataclass</span>(frozen=True)
+<span class="kw">class</span> CohortEstimate:
+    sra: int
+    metalog: int
+    union: int
+    with_profile: int
+    dropped: int
+</code></pre>
+
+<h3>B.2 <code>Profiler</code> — the closed set, single source of truth</h3>
+<p>The enum member carries its <code>ProfilerSpec</code>: which source, which DuckDB table, and the column that
+holds lineage. Nothing else in the system hard-codes a table name for a profiler.</p>
+<pre><code><span class="kw">@dataclass</span>(frozen=True)
+<span class="kw">class</span> ProfilerSpec:
+    source: Source
+    table: str
+    lineage_column: str
+
+<span class="kw">class</span> Profiler(Enum):
+    SRA_TAXONOMY       = ProfilerSpec(Source.SRA,     <span class="str">"sra_taxonomy"</span>,      <span class="str">"lineage"</span>)
+    MOTUS3             = ProfilerSpec(Source.METALOG, <span class="str">"motus3"</span>,            <span class="str">"clade"</span>)
+    SPIRE_MOTUS        = ProfilerSpec(Source.METALOG, <span class="str">"spire_motus"</span>,       <span class="str">"clade"</span>)
+    METAPHLAN4_ALL     = ProfilerSpec(Source.METALOG, <span class="str">"metaphlan4_all"</span>,    <span class="str">"clade"</span>)
+    METAPHLAN4_SPECIES = ProfilerSpec(Source.METALOG, <span class="str">"metaphlan4_species"</span>,<span class="str">"clade"</span>)
+
+    <span class="kw">def</span> spec(self) -> ProfilerSpec:
+        <span class="kw">return</span> self.value
+</code></pre>
+
+<h3>B.3 Composition root — <code>Settings</code> &amp; <code>Runtime</code></h3>
+<p><code>Settings</code> validates on construction (fail fast, rule from the spec). <code>Runtime</code> is the
+single place concretes are named; it builds wired services on demand. The facade reads one module-level
+<code>Runtime</code> set by <code>config()</code>.</p>
+<pre><code><span class="kw">@dataclass</span>(frozen=True)
+<span class="kw">class</span> Settings:
+    db_path: Path
+    llm: str
+    llm_key: str
+
+    <span class="kw">def</span> __post_init__(self):
+        self._require(self.db_path.exists(), <span class="str">"database file not found"</span>)   <span class="com"># fail fast at config()</span>
+        self._require(bool(self.llm_key), <span class="str">"missing LLM key"</span>)
+
+<span class="kw">class</span> Runtime:
+    <span class="kw">def</span> __init__(self, settings: Settings):
+        self._settings = settings
+
+    <span class="kw">def</span> ask_service(self) -> AskService:
+        <span class="kw">return</span> AskService(self._translator(), self._estimator(), self._repository())
+
+    <span class="kw">def</span> cohort_builder(self) -> CohortBuilder:
+        <span class="kw">return</span> CohortBuilder(self._discovery(), self._profiles(), self._metadata(), self._factory())
+</code></pre>
+<p class="meta">Private builders (<code>_translator</code>, <code>_database</code>, …) each return one wired concrete and
+stay one line. <code>_database()</code> opens the DuckDB file read-only and is shared by the readers.</p>
+
+<h3>B.4 Translation — <code>Translator</code> + <code>GeminiBackend</code></h3>
+<p><code>Translator</code> orchestrates; <code>GeminiBackend</code> is the only class that imports the Gemini SDK.
+The prompt is a typed DTO so the port stays at one parameter.</p>
+<pre><code><span class="kw">@dataclass</span>(frozen=True)
+<span class="kw">class</span> TranslationPrompt:
+    question: ResearchQuestion
+    sra_schema: str
+    metalog_schema: str
+
+<span class="kw">class</span> Translator:
+    <span class="kw">def</span> __init__(self, backend: LlmBackend, catalog: SchemaCatalog):
+        self._backend = backend
+        self._catalog = catalog
+
+    <span class="kw">def</span> translate(self, question: ResearchQuestion) -> Translation:
+        prompt = self._prompt_for(question)
+        <span class="kw">return</span> self._backend.translate(prompt)
+
+    <span class="kw">def</span> _prompt_for(self, question: ResearchQuestion) -> TranslationPrompt:
+        <span class="kw">return</span> TranslationPrompt(question=question,
+                                sra_schema=self._catalog.sra(),
+                                metalog_schema=self._catalog.metalog())
+</code></pre>
+<p>An invalid-SQL result is not caught here — it surfaces when <code>CohortEstimator</code> runs
+<code>EXPLAIN</code> against the DB (B.6). That keeps the network step pure and pushes the "is this SQL real?"
+question to the component that owns the DB.</p>
+
+<h3>B.5 <code>Plan</code>, <code>PlanView</code>, <code>PlanRepository</code></h3>
+<p><code>Plan</code> is a serializable document plus two thin behaviors: render (<code>_repr_html_</code>, delegated
+to <code>PlanView</code>) and <code>run</code> (sugar delegating to the active <code>Runtime</code>'s
+<code>CohortBuilder</code>). The on-disk form <em>is</em> the <code>Plan</code>: JSON via
+<code>asdict</code>, <code>Profiler</code> stored by name.</p>
+<pre><code><span class="kw">@dataclass</span>(frozen=True)
+<span class="kw">class</span> Plan:
+    question: ResearchQuestion
+    translation: Translation
+    estimate: CohortEstimate
+    error: str | None = None
+
+    <span class="kw">def</span> run(self, out: Path) -> biom.Table:
+        self._guard_runnable()                       <span class="com"># guard clause, no else</span>
+        <span class="kw">return</span> active_runtime().cohort_builder().build(self, out)
+
+    <span class="kw">def</span> _guard_runnable(self):
+        <span class="kw">if</span> self.error <span class="kw">is</span> <span class="kw">not</span> None:
+            <span class="kw">raise</span> TranslationError(self.error)
+
+    <span class="kw">def</span> _repr_html_(self) -> str:
+        <span class="kw">return</span> PlanView(self).render()
+</code></pre>
+<p class="meta">Tradeoff, stated honestly: <code>run()</code> reaches the module-level runtime (a service locator). That
+couples the DTO to global config. The alternative — a separate <code>RunnablePlan</code> bound to services on
+load — was rejected as ceremony: the plan file must be runnable from a bare <code>load_plan(path)</code>, so the
+runtime has to be ambient anyway. <code>CohortBuilder.build(plan, out)</code> remains the pure, injectable entry
+point; <code>run()</code> is only sugar over it.</p>
+<pre><code><span class="kw">class</span> PlanRepository:
+    <span class="kw">def</span> __init__(self, root: Path):
+        self._root = root
+
+    <span class="kw">def</span> save(self, plan: Plan, path: Path) -> Path:
+        target = self._resolve(path, plan.question)   <span class="com"># explicit save= or plans/&lt;slug&gt;.json</span>
+        target.write_text(self._encode(plan))
+        <span class="kw">return</span> target
+
+    <span class="kw">def</span> load(self, path: Path) -> Plan:
+        <span class="kw">return</span> self._decode(path.read_text())
+</code></pre>
+
+<h3>B.6 <code>AskService</code> &amp; <code>CohortEstimator</code></h3>
+<pre><code><span class="kw">class</span> AskService:
+    <span class="kw">def</span> __init__(self, translator: Translator, estimator: CohortEstimator, repository: PlanRepository):
+        self._translator = translator
+        self._estimator = estimator
+        self._repository = repository
+
+    <span class="kw">def</span> ask(self, question: ResearchQuestion, save: Path | None) -> Plan:
+        translation = self._translator.translate(question)
+        plan = self._planned(question, translation)
+        self._repository.save(plan, save)
+        <span class="kw">return</span> plan
+
+    <span class="kw">def</span> _planned(self, question: ResearchQuestion, translation: Translation) -> Plan:
+        estimate = self._estimator.estimate(translation, question.profiler)
+        <span class="kw">return</span> Plan(question=question, translation=translation, estimate=estimate)
+</code></pre>
+<p><code>CohortEstimator</code> runs only cheap aggregates: a <code>COUNT</code> per source query and a
+coverage count for the chosen profiler. It is also where invalid SQL is detected (the count fails) and turned
+into a <code>Plan</code> carrying <code>error</code> instead of an estimate — so review still renders, and
+<code>run()</code> refuses.</p>
+
+<h3>B.7 The cohort engine — <code>CohortBuilder</code> and its collaborators</h3>
+<pre><code><span class="kw">class</span> CohortBuilder:
+    <span class="kw">def</span> __init__(self, discovery: CohortDiscovery, profiles: ProfileReader,
+                 metadata: MetadataReader, factory: BiomFactory):
+        self._discovery = discovery
+        self._profiles = profiles
+        self._metadata = metadata
+        self._factory = factory
+
+    <span class="kw">def</span> build(self, plan: Plan, out: Path) -> biom.Table:
+        cohort = self._discovery.discover(plan.translation.sra_query, plan.translation.metalog_query)
+        matrix = self._profiles.read(plan.question.profiler, cohort.union())
+        metadata = self._metadata.reconciled(cohort)
+        table = self._factory.build(matrix, metadata.restricted_to(matrix.accessions()))
+        <span class="kw">return</span> self._written(table, out, DropReport.between(cohort.union(), matrix.accessions()))
+</code></pre>
+<p>Each collaborator is single-purpose and independently testable:</p>
+<table>
+  <tr><th>Class</th><th>Signature</th><th>Domain effect</th></tr>
+  <tr><td><code>CohortDiscovery</code></td><td><code>discover(sra_query, metalog_query) -> Cohort</code></td><td>run both SELECTs via <code>Database</code>; union accessions into a <code>Cohort</code> (keeps the two source sets distinct internally).</td></tr>
+  <tr><td><code>ProfileReader</code></td><td><code>read(profiler, accessions) -> ProfileMatrix</code></td><td>pull the chosen profiler's table for those accessions; the matrix's columns define which samples actually have the profile.</td></tr>
+  <tr><td><code>MetadataReader</code></td><td><code>reconciled(cohort) -> ReconciledMetadata</code></td><td>read SRA + Metalog metadata for the cohort and hand both frames to <code>MetadataReconciler</code>.</td></tr>
+  <tr><td><code>MetadataReconciler</code></td><td><code>reconcile(sra, metalog) -> ReconciledMetadata</code></td><td>Metalog wins per accession; SRA fills gaps and SRA-only samples.</td></tr>
+  <tr><td><code>BiomFactory</code></td><td><code>build(matrix, metadata) -> biom.Table</code></td><td>assemble the single-feature-space table; lineage rides the feature axis.</td></tr>
+  <tr><td><code>DropReport</code></td><td><code>between(requested, present) -> DropReport</code></td><td>set difference: cohort accessions with no profile, reported never silently kept.</td></tr>
+</table>
+
+<h3>B.8 The Metalog-wins merge (the one subtle line)</h3>
+<p>Reconciliation is a single domain operation with an opaque library call, so it gets an extracted method and a
+<em>why</em>-comment on the cryptic call (clean-code rule 5):</p>
+<pre><code><span class="kw">class</span> MetadataReconciler:
+    <span class="kw">def</span> reconcile(self, sra: pandas.DataFrame, metalog: pandas.DataFrame) -> ReconciledMetadata:
+        merged = metalog.combine_first(sra)          <span class="com"># Metalog row wins; SRA fills gaps + SRA-only samples</span>
+        <span class="kw">return</span> ReconciledMetadata(merged)
+</code></pre>
+<p class="meta">Both frames are indexed by <code>Accession</code>. <code>combine_first</code> is precisely "left wins,
+right fills" — no hand-rolled column-by-column logic, no <code>else</code>.</p>
+
+<h3>B.9 <code>ProfileMatrix</code> / <code>ReconciledMetadata</code> — owning their invariants</h3>
+<pre><code><span class="kw">@dataclass</span>(frozen=True)
+<span class="kw">class</span> ProfileMatrix:
+    counts: pandas.DataFrame          <span class="com"># features × accessions, one feature space</span>
+    lineage: pandas.DataFrame         <span class="com"># feature → lineage; the biom feature axis</span>
+
+    <span class="kw">def</span> accessions(self) -> frozenset[Accession]:
+        <span class="kw">return</span> frozenset(self.counts.columns)
+
+<span class="kw">@dataclass</span>(frozen=True)
+<span class="kw">class</span> ReconciledMetadata:
+    frame: pandas.DataFrame           <span class="com"># indexed by Accession</span>
+
+    <span class="kw">def</span> restricted_to(self, accessions: frozenset[Accession]) -> ReconciledMetadata:
+        <span class="kw">return</span> ReconciledMetadata(self.frame.loc[sorted(accessions)])
+</code></pre>
+<p>Callers never see <code>.columns</code> or <code>.loc</code>; the matrix answers "which samples do I cover?" and
+the metadata answers "restrict yourself to these." The DataFrame is an implementation detail behind the type.</p>
+
+<h3>B.10 Error model</h3>
+<table>
+  <tr><th>Condition</th><th>Where</th><th>Behavior</th></tr>
+  <tr><td>Missing DB file / LLM key</td><td><code>Settings.__post_init__</code></td><td><code>ConfigError</code> at <code>config()</code> — fail fast, nothing else constructed.</td></tr>
+  <tr><td>Invalid generated SQL</td><td><code>CohortEstimator</code> (EXPLAIN/COUNT)</td><td><code>Plan</code> returned with <code>error</code> set; review renders the error; <code>run()</code> raises <code>TranslationError</code>.</td></tr>
+  <tr><td>Profiler absent for whole cohort</td><td><code>CohortBuilder</code></td><td><code>warning</code> + empty <code>biom.Table</code> written — explicit, never silent success.</td></tr>
+  <tr><td>Genuinely bad data in DB</td><td>adapters</td><td>let DuckDB / biom raise. No defensive validation past the config boundary (trust input, fail fast).</td></tr>
+</table>
+
+<h3>B.11 Testing strategy</h3>
+<ul>
+  <li><strong>Ports get fakes.</strong> <code>FakeLlmBackend</code> returns a canned <code>Translation</code>;
+      <code>FakeDatabase</code> returns canned frames. Every service is unit-tested with zero network and zero
+      disk. AAA, blank-line-separated.</li>
+  <li><strong>Domain objects are pure</strong> — <code>DropReport.between</code>, <code>combine_first</code> merge,
+      <code>restricted_to</code> tested directly on small fixtures.</li>
+  <li><strong>One e2e</strong> wires real <code>DuckDbConnection</code> against a tiny fixture DuckDB (a handful of
+      accessions across both sources, two profilers) and asserts the biom's feature space, dropped set, and
+      Metalog-wins metadata. Mirrors the existing <code>Tests/e2e</code> shape.</li>
+  <li><strong>Plan round-trip</strong>: <code>save</code> → <code>load</code> → equal <code>Plan</code>;
+      <code>load_plan(path).run()</code> never touches <code>LlmBackend</code>.</li>
+</ul>
+
+<hr>
+<p class="meta">Open knobs unchanged from the parent spec's §9, now all confirmed: explicit <code>save=</code> with
+<code>plans/&lt;slug&gt;.json</code> default; JSON plan files; samples lacking the profiler are dropped.
+Next: writing-plans skill → implementation plan.</p>
+
+</div>
+</body>
+</html>
