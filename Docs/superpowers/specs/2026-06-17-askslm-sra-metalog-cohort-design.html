@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>askslm — SRA × Metalog cohort tool — design</title>
+<style>
+  :root{
+    --ink:#1b1f24; --muted:#5b6570; --line:#e2e6ea; --bg:#fbfcfd;
+    --locked-bg:#e7f6ec; --locked-ink:#1f7a3d;
+    --proposed-bg:#fef3e2; --proposed-ink:#9a5b00;
+    --code-bg:#0f141a; --code-ink:#e7edf3; --accent:#1457b8;
+  }
+  *{box-sizing:border-box}
+  body{font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink); background:var(--bg); margin:0; padding:0 0 6rem}
+  .wrap{max-width:880px; margin:0 auto; padding:2.5rem 1.5rem}
+  header.doc{border-bottom:2px solid var(--line); padding-bottom:1.2rem; margin-bottom:2rem}
+  h1{font-size:1.7rem; margin:0 0 .3rem}
+  h2{font-size:1.25rem; margin:2.4rem 0 .8rem; padding-top:.4rem}
+  h3{font-size:1.02rem; margin:1.4rem 0 .4rem}
+  .sub{color:var(--muted); font-size:.95rem}
+  .badge{display:inline-block; font-size:.7rem; font-weight:700; letter-spacing:.04em;
+         text-transform:uppercase; padding:.15rem .5rem; border-radius:999px; vertical-align:middle; margin-left:.5rem}
+  .locked{background:var(--locked-bg); color:var(--locked-ink)}
+  .proposed{background:var(--proposed-bg); color:var(--proposed-ink)}
+  p{margin:.6rem 0}
+  ul,ol{margin:.5rem 0 .8rem; padding-left:1.4rem}
+  li{margin:.3rem 0}
+  code{background:#eef1f4; padding:.1rem .35rem; border-radius:4px; font-size:.88em;
+       font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+  pre{background:var(--code-bg); color:var(--code-ink); padding:1rem 1.1rem; border-radius:10px;
+      overflow:auto; font-size:.85rem; line-height:1.5}
+  pre code{background:none; padding:0; color:inherit}
+  table{border-collapse:collapse; width:100%; margin:1rem 0; font-size:.92rem}
+  th,td{border:1px solid var(--line); padding:.55rem .7rem; text-align:left; vertical-align:top}
+  th{background:#eef2f6}
+  .note{border-left:3px solid var(--accent); background:#f0f5fc; padding:.7rem 1rem; border-radius:0 8px 8px 0; margin:1rem 0}
+  .meta{color:var(--muted); font-size:.85rem; margin-top:.4rem}
+  hr{border:none; border-top:1px solid var(--line); margin:2.4rem 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <h1>askslm — from research question to analysis-ready cohort</h1>
+  <p class="sub">Connecting SRA and Metalog into one biom for valid metagenomic meta-analysis.</p>
+  <p class="meta">Design spec · 2026-06-17 · <span class="badge locked">Locked</span> = settled in brainstorming ·
+     <span class="badge proposed">Proposed</span> = open / assumption to confirm</p>
+</header>
+
+<h2>1. Purpose &amp; primary user <span class="badge locked">Locked</span></h2>
+<p><strong>Noam</strong>, a bioinformatician working in Jupyter notebooks. He has a research question
+("fecal metagenomes from adults with IBD in Western countries") and wants the set of public
+metagenome samples that answer it — with metadata and taxonomic profiles that are
+<em>comparable across studies</em>, so a meta-analysis is actually valid.</p>
+<p>The product is <strong>neither a query tool nor an analysis tool</strong>. It is the bridge that takes a
+researcher from <em>research question → analysis-ready cohort of metagenome samples</em>, by connecting
+<strong>SRA</strong> and <strong>Metalog</strong>. SRA alone is insufficient: its metadata is messy free-text and
+its counts are not comparable across studies. Metalog adds curated metadata and uniformly-produced
+taxonomic profiles. The connective tissue between the two is the <strong>sample/run accession</strong>.</p>
+
+<h2>2. Scope &amp; boundary <span class="badge locked">Locked</span></h2>
+<p><code>askslm</code> is a <strong>read-only</strong> Python package (<code>pip install askslm</code>). It reads one
+shared, prebuilt DuckDB that already contains both SRA and Metalog (metadata + every profiler table),
+and emits one <code>.biom</code>.</p>
+<ul>
+  <li><strong>In scope:</strong> natural-language → structured query, show-your-work + confirm, the SRA∪Metalog
+      merge and reconciliation, building the biom, the Jupyter-facing API.</li>
+  <li><strong>Out of scope:</strong> building or refreshing the mirror. The lab does that separately
+      (the SRA→DuckDB side already exists; the Metalog ETL is a distinct, future effort). The package
+      never writes to the shared DB.</li>
+</ul>
+
+<h2>3. Key decisions <span class="badge locked">Locked</span></h2>
+<table>
+  <tr><th>Decision</th><th>Resolution</th></tr>
+  <tr><td>Query spine</td><td><strong>Both, then merge.</strong> Run the query against SRA and Metalog
+      independently; union results on accession. A sample may match in one or both.</td></tr>
+  <tr><td>Metalog access</td><td><strong>Everything mirrored into DuckDB</strong> (metadata + all profiler
+      tables), alongside SRA. Queried locally; no live API.</td></tr>
+  <tr><td>Where the DB lives</td><td><strong>Shared prebuilt DuckDB.</strong> Lab builds/refreshes it;
+      Noam points config at it and only reads.</td></tr>
+  <tr><td>Output feature space</td><td>One biom = <strong>one profiler.</strong> Noam picks the profiler
+      <strong>per query</strong> via an enum. Different profilers are incompatible feature spaces and are
+      never mixed in one table.</td></tr>
+  <tr><td>Metadata conflict</td><td><strong>Metalog wins.</strong> SRA fills gaps and contributes
+      SRA-only samples.</td></tr>
+  <tr><td>Count conflict</td><td>Resolved by the per-query profiler choice — the chosen profiler defines
+      all counts. No row-level mixing.</td></tr>
+  <tr><td>Notebook UX</td><td><strong>Two-step Plan object</strong> that is also persisted to disk.</td></tr>
+  <tr><td>LLM provider</td><td>Provider-agnostic behind a small interface; <strong>v1 ships a Gemini
+      backend</strong> (free API). Swapping providers is a new backend class.</td></tr>
+  <tr><td>Microbial-load predictions</td><td><strong>Not in v1.</strong> A per-sample scalar, not a profiler;
+      revisit as a relative→absolute modifier later.</td></tr>
+</table>
+
+<h2>4. The profilers <span class="badge locked">Locked</span></h2>
+<p>Each is a <em>taxonomic profiler</em> Metalog (or the SRA pipeline) ran on the same samples. Each produces a
+<strong>distinct, non-interchangeable feature space</strong> — which is why one biom holds exactly one.</p>
+<table>
+  <tr><th>Enum member</th><th>Feature space</th><th>Notes</th></tr>
+  <tr><td><code>SRA_TAXONOMY</code></td><td>NCBI tax_id (nested-set)</td><td>From the SRA-side pipeline; <code>self_count</code>/<code>total_count</code>.</td></tr>
+  <tr><td><code>MOTUS3</code></td><td>mOTUs 3.0 OTUs</td><td>Marker-gene; includes uncultivated species. Relative abundance.</td></tr>
+  <tr><td><code>SPIRE_MOTUS</code></td><td>mOTUs OTUs (SPIRE)</td><td>Same feature space as mOTUs3, different provenance/coverage.</td></tr>
+  <tr><td><code>METAPHLAN4_ALL</code></td><td>Named taxa, all ranks</td><td>Clade markers; full lineage phylum→strain.</td></tr>
+  <tr><td><code>METAPHLAN4_SPECIES</code></td><td>Named species</td><td>Species-only; common meta-analysis choice.</td></tr>
+</table>
+<p class="meta">mOTUs and MetaPhlAn IDs do not map to each other without a translation step; the SRA tax_id
+space is a third world. Hence one profiler per biom.</p>
+
+<h2>5. End-to-end flow <span class="badge locked">Locked</span></h2>
+<pre><code>1. pip install askslm
+
+2. Configure once (path + provider/key resolved here, fail fast if missing):
+   askslm.config(db="/mnt/lab/metalog_sra.duckdb", llm="gemini", llm_key=os.environ["..."])
+
+3. Build a plan (the LLM reads both schemas, writes ONE SQL per source).
+   The plan is WRITTEN TO DISK on creation — the full object, self-contained:
+   plan = askslm.ask(
+       "fecal metagenomes from adults with IBD, Western countries",
+       profiler=askslm.Profiler.METAPHLAN4_SPECIES,
+       save="plans/ibd_western.json",
+   )
+
+4. Review — `plan` renders "show your work":
+     • English restatement of the filters understood
+     • the SRA SQL and the Metalog SQL, side by side
+     • estimated cohort: 412 samples (SRA 380 ∪ Metalog 207)
+     • chosen profiler + coverage: 207 of 412 carry metaphlan4_species
+     • policy: metadata → Metalog wins; 205 samples will be dropped (no profile)
+
+5. Execute:
+   table = plan.run(out="cohort.biom")        # returns a biom.Table, writes the file
+
+   # equivalent, later / elsewhere — full reproducibility:
+   askslm.load_plan("plans/ibd_western.json").run(out="cohort.biom")
+</code></pre>
+
+<div class="note"><strong>The plan file is the reproducible artifact.</strong> <code>ask()</code> persists everything
+(question, interpretation, both SQL strings, chosen profiler, estimates, db reference). Commit it next to the
+notebook; <code>load_plan(...).run()</code> reproduces the cohort without re-invoking the LLM. <code>plan.run()</code>
+and <code>load_plan(path).run()</code> are equivalent.</div>
+
+<h2>6. What <code>plan.run()</code> does — the merge <span class="badge locked">Locked</span></h2>
+<ol>
+  <li><strong>Discovery.</strong> Run both SQL strings on the DuckDB → accession set <em>A</em> (SRA) and
+      <em>B</em> (Metalog). Cohort = <em>A ∪ B</em>.</li>
+  <li><strong>Counts.</strong> Pull the chosen profiler's matrix for the cohort accessions. Samples lacking that
+      profiler are <strong>dropped and reported</strong> — never silently included. This defines the biom's single
+      feature space.</li>
+  <li><strong>Sample metadata.</strong> Per accession, the Metalog row wins; SRA fills gaps and supplies
+      SRA-only samples.</li>
+  <li><strong>Feature metadata.</strong> Lineage taken from the chosen profiler.</li>
+  <li><strong>Assemble.</strong> Build a <code>biom.Table</code>: counts × samples, reconciled sample metadata,
+      profiler lineage as feature metadata. Reuses the existing biom build path.</li>
+</ol>
+
+<h2>7. Components <span class="badge locked">Locked</span></h2>
+<p>Small, single-purpose units with explicit interfaces.</p>
+<table>
+  <tr><th>Unit</th><th>Responsibility</th><th>Depends on</th></tr>
+  <tr><td><code>config</code></td><td>Resolve DuckDB path + LLM provider/key; fail fast if missing.</td><td>env, filesystem</td></tr>
+  <tr><td><code>Profiler</code> (enum)</td><td>Closed set of profilers; single source of truth mapping each member to its DuckDB table / feature space.</td><td>—</td></tr>
+  <tr><td><code>translator</code></td><td>Question + both schemas → structured interpretation + two SQL strings. Provider-agnostic interface; v1 = Gemini backend.</td><td>LLM backend, schemas</td></tr>
+  <tr><td><code>Plan</code></td><td>Hold interpretation / SQL / estimates / profiler. Rich repr = show-your-work. Serialize to / from disk. <code>.run()</code>.</td><td>translator output</td></tr>
+  <tr><td><code>executor</code></td><td>Run SQL on DuckDB; union accessions; compute cohort estimates.</td><td>DuckDB, config</td></tr>
+  <tr><td><code>reconciler</code></td><td>Metadata merge (Metalog-wins); assemble chosen-profiler counts; produce the drop report.</td><td>executor output, Profiler</td></tr>
+  <tr><td><code>biom_builder</code></td><td>Assemble the <code>biom.Table</code> (reuses existing build path).</td><td>reconciler output</td></tr>
+  <tr><td><code>load_plan</code></td><td>Reconstruct a Plan from its file.</td><td>Plan</td></tr>
+</table>
+
+<h2>8. Error handling <span class="badge locked">Locked</span></h2>
+<ul>
+  <li><strong>Missing config</strong> (no DB path / no key): fail fast at <code>config()</code> / first <code>ask()</code>
+      with a clear message.</li>
+  <li><strong>Invalid LLM SQL:</strong> surfaced on the Plan as an error; Noam can refine the question (or hand-edit
+      SQL on the plan) and re-run. Nothing executes until <code>run()</code>.</li>
+  <li><strong>Chosen profiler missing for the whole cohort:</strong> explicit warning; resulting biom is empty —
+      no silent success.</li>
+  <li><strong>Trust input, fail fast:</strong> no defensive validation beyond the config boundary; let the
+      libraries (DuckDB, biom) raise on genuinely bad data.</li>
+</ul>
+
+<h2>9. Assumptions to confirm <span class="badge proposed">Proposed</span></h2>
+<ul>
+  <li><code>save=</code> path on <code>ask()</code>: required, or default to an auto path (e.g. <code>plans/&lt;slug&gt;.json</code>)?
+      Current spec: explicit <code>save=</code>, with an auto-default if omitted.</li>
+  <li>Plan file format: JSON (human-diffable, commit-friendly) — assumed.</li>
+  <li>Behaviour when a sample lacks the chosen profiler: <strong>drop</strong> (assumed) vs keep as an all-zero column.</li>
+</ul>
+
+<hr>
+<p class="meta">Next: writing-plans skill → implementation plan. Sources of truth this spec inherits:
+<code>CLAUDE.md</code>, <code>Docs/feature-table-and-library-palette.html</code>.</p>
+
+</div>
+</body>
+</html>
