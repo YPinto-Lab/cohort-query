@@ -82,9 +82,10 @@ and emits one <code>.biom</code>.</p>
       tables), alongside SRA. Queried locally; no live API.</td></tr>
   <tr><td>Where the DB lives</td><td><strong>Shared prebuilt DuckDB.</strong> Lab builds/refreshes it;
       Noam points config at it and only reads.</td></tr>
-  <tr><td>Output feature space</td><td>One biom = <strong>one profiler.</strong> Noam picks the profiler
-      <strong>per query</strong> via an enum. Different profilers are incompatible feature spaces and are
-      never mixed in one table.</td></tr>
+  <tr><td>Output feature space</td><td>One biom = <strong>one profiler.</strong> Noam picks the profiler (enum)
+      at <strong><code>plan.run()</code></strong> — materialization, not part of <code>ask()</code>. Different
+      profilers are incompatible feature spaces and are never mixed in one table. One plan can be materialized
+      in several feature spaces.</td></tr>
   <tr><td>Metadata conflict</td><td><strong>Metalog wins.</strong> SRA fills gaps and contributes
       SRA-only samples.</td></tr>
   <tr><td>Count conflict</td><td>Resolved by the per-query profiler choice — the chosen profiler defines
@@ -116,32 +117,33 @@ space is a third world. Hence one profiler per biom.</p>
 2. Configure once (path + provider/key resolved here, fail fast if missing):
    askslm.config(db="/mnt/lab/metalog_sra.duckdb", llm="gemini", llm_key=os.environ["..."])
 
-3. Build a plan (the LLM reads both schemas, writes ONE SQL per source).
-   The plan is WRITTEN TO DISK on creation — the full object, self-contained:
+3. Build a plan (the LLM reads every source's schema, writes ONE SQL per source).
+   The plan is WRITTEN TO DISK on creation — the full object, self-contained.
+   NOTE: no profiler here — ask() is the research question only.
    plan = askslm.ask(
        "fecal metagenomes from adults with IBD, Western countries",
-       profiler=askslm.Profiler.METAPHLAN4_SPECIES,
        save="plans/ibd_western.json",
    )
 
 4. Review — `plan` renders "show your work":
      • English restatement of the filters understood
-     • the SRA SQL and the Metalog SQL, side by side
-     • estimated cohort: 412 samples (SRA 380 ∪ Metalog 207)
-     • chosen profiler + coverage: 207 of 412 carry metaphlan4_species
-     • policy: metadata → Metalog wins; 205 samples will be dropped (no profile)
+     • the per-source SQL (SRA, Metalog, …)
+     • cohort: 412 samples (SRA 380 ∪ Metalog 207)
+     • per-profiler coverage so you can pick: metaphlan4_species 207, motus3 207, sra_taxonomy 380
+     • policy: metadata → Metalog wins
+   (Stats only? Stop here — you never needed a profiler.)
 
-5. Execute:
-   table = plan.run(out="cohort.biom")        # returns a biom.Table, writes the file
+5. Execute — the feature space (profiler) is chosen HERE, at materialization:
+   table = plan.run(profiler=askslm.Profiler.METAPHLAN4_SPECIES, out="cohort.biom")
 
-   # equivalent, later / elsewhere — full reproducibility:
-   askslm.load_plan("plans/ibd_western.json").run(out="cohort.biom")
+   # reproduce later — same cohort, even a different profiler, no LLM call:
+   askslm.load_plan("plans/ibd_western.json").run(profiler=askslm.Profiler.MOTUS3, out="cohort_motus.biom")
 </code></pre>
 
-<div class="note"><strong>The plan file is the reproducible artifact.</strong> <code>ask()</code> persists everything
-(question, interpretation, both SQL strings, chosen profiler, estimates, db reference). Commit it next to the
-notebook; <code>load_plan(...).run()</code> reproduces the cohort without re-invoking the LLM. <code>plan.run()</code>
-and <code>load_plan(path).run()</code> are equivalent.</div>
+<div class="note"><strong>The plan file is the reproducible artifact.</strong> <code>ask()</code> persists the question,
+interpretation, per-source SQL, cohort preview, and db reference — but <em>not</em> a profiler, since that is a
+<code>run()</code> argument. Commit the plan next to the notebook; <code>load_plan(...).run(profiler, out)</code>
+reproduces the cohort in any feature space without re-invoking the LLM.</div>
 
 <h2>6. What <code>plan.run()</code> does — the merge <span class="badge locked">Locked</span></h2>
 <ol>
@@ -163,10 +165,10 @@ and <code>load_plan(path).run()</code> are equivalent.</div>
   <tr><th>Unit</th><th>Responsibility</th><th>Depends on</th></tr>
   <tr><td><code>config</code></td><td>Resolve DuckDB path + LLM provider/key; fail fast if missing.</td><td>env, filesystem</td></tr>
   <tr><td><code>Profiler</code> (enum)</td><td>Closed set of profilers; single source of truth mapping each member to its DuckDB table / feature space.</td><td>—</td></tr>
-  <tr><td><code>translator</code></td><td>Question + both schemas → structured interpretation + two SQL strings. Provider-agnostic interface; v1 = Gemini backend.</td><td>LLM backend, schemas</td></tr>
-  <tr><td><code>Plan</code></td><td>Hold interpretation / SQL / estimates / profiler. Rich repr = show-your-work. Serialize to / from disk. <code>.run()</code>.</td><td>translator output</td></tr>
-  <tr><td><code>executor</code></td><td>Run SQL on DuckDB; union accessions; compute cohort estimates.</td><td>DuckDB, config</td></tr>
-  <tr><td><code>reconciler</code></td><td>Metadata merge (Metalog-wins); assemble chosen-profiler counts; produce the drop report.</td><td>executor output, Profiler</td></tr>
+  <tr><td><code>translator</code></td><td>Question + every source's schema → structured interpretation + one SQL per source. Provider-agnostic interface; v1 = Gemini backend.</td><td>LLM backend, schemas</td></tr>
+  <tr><td><code>Plan</code></td><td>Hold interpretation / per-source SQL / cohort preview. Rich repr = show-your-work. Serialize to / from disk. <code>.run(profiler, out)</code>.</td><td>translator output</td></tr>
+  <tr><td><code>executor</code></td><td>Run SQL on DuckDB; union accessions; count cohort + per-profiler coverage.</td><td>DuckDB, config</td></tr>
+  <tr><td><code>reconciler</code></td><td>Metadata merge by source precedence (Metalog-wins); assemble chosen-profiler counts; produce the drop report.</td><td>executor output, Profiler</td></tr>
   <tr><td><code>biom_builder</code></td><td>Assemble the <code>biom.Table</code> (reuses existing build path).</td><td>reconciler output</td></tr>
   <tr><td><code>load_plan</code></td><td>Reconstruct a Plan from its file.</td><td>Plan</td></tr>
 </table>
