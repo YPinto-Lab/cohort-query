@@ -34,13 +34,14 @@
       overflow:auto; font-size:.84rem; line-height:1.5; margin:.8rem 0}
   pre code{background:none; padding:0; color:inherit}
   pre .kw{color:var(--kw)} pre .str{color:var(--str)} pre .com{color:var(--com)}
+  pre.mermaid{background:#fff; border:1px solid var(--line); text-align:center; color:var(--ink)}
   table{border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem}
   th,td{border:1px solid var(--line); padding:.55rem .7rem; text-align:left; vertical-align:top}
   th{background:#eef2f6}
   .note{border-left:3px solid var(--accent); background:#f0f5fc; padding:.7rem 1rem; border-radius:0 8px 8px 0; margin:1rem 0}
   .meta{color:var(--muted); font-size:.85rem}
   hr{border:none; border-top:1px solid var(--line); margin:2.4rem 0}
-  .ascii{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.8rem; white-space:pre; line-height:1.35}
+  figcaption{color:var(--muted); font-size:.8rem; text-align:center; margin-top:.3rem}
 </style>
 </head>
 <body>
@@ -50,7 +51,7 @@
   <h1>askslm — architecture: HLD &amp; LLD</h1>
   <p class="sub">Companion to the design spec. Layers, contracts, types, and the per-class low-level design.</p>
   <p class="meta">2026-06-17 · audience: backend engineer · style: Clean Code / SOLID (see <code>.claude/skills/clean-code-style</code>).
-     Parent spec: <code>2026-06-17-askslm-sra-metalog-cohort-design.html</code>.</p>
+     Parent spec: <code>2026-06-17-askslm-sra-metalog-cohort-design.html</code>. Diagrams: Mermaid.</p>
 </header>
 
 <h2>A. High-Level Design</h2>
@@ -62,15 +63,29 @@ or the filesystem; those are adapters behind <code>Protocol</code> ports. A sing
 (<code>config</code>, <code>ask</code>, <code>load_plan</code>) are a thin <strong>facade</strong> over the
 composition root — they hold no logic.</p>
 
-<h4>Dependency rule (inward only)</h4>
-<div class="ascii">  facade  ─▶  application services  ─▶  domain core
-    │               │                      ▲
-    │               ▼                      │
-    └────▶  composition root ──▶ adapters ─┘  (adapters implement domain ports)
-</div>
-<p>Domain depends on nothing. Services depend on domain + ports. Adapters implement ports. The composition
-root is the only place that names concretes. This is the seam that lets every service be unit-tested against
-fakes and lets the LLM provider or the database engine be swapped without touching the core.</p>
+<figure>
+<pre class="mermaid">
+flowchart LR
+  F["Facade<br/>config · ask · load_plan"]
+  R["Composition root<br/>Runtime · Settings"]
+  S["Application services<br/>AskService · CohortBuilder"]
+  D["Domain core<br/>Plan · Cohort · Profiler · DTOs"]
+  P["Ports<br/>LlmBackend · Database"]
+  A["Adapters<br/>GeminiBackend · DuckDbConnection · readers"]
+
+  F --> R
+  F --> S
+  S --> D
+  S --> P
+  R --> A
+  A -. implements .-> P
+  P --> D
+</pre>
+<figcaption>Dependencies point inward. Only the composition root names concretes.</figcaption>
+</figure>
+<p>Domain depends on nothing. Services depend on domain + ports. Adapters implement ports. This is the seam that
+lets every service be unit-tested against fakes and lets the LLM provider or the database engine be swapped
+without touching the core.</p>
 
 <h3>A.2 Layers &amp; responsibilities</h3>
 <table>
@@ -84,42 +99,108 @@ fakes and lets the LLM provider or the database engine be swapped without touchi
 </table>
 
 <h3>A.3 The two ports</h3>
-<pre><code><span class="kw">class</span> LlmBackend(Protocol):                          <span class="com"># swap Gemini ↔ Anthropic ↔ fake</span>
-    <span class="kw">def</span> translate(self, prompt: TranslationPrompt) -> Translation: ...
+<p>Everything that touches the network (the LLM) or the disk (the DuckDB file) lives behind one of two
+single-method ports. The readers are <em>composed</em> from <code>Database</code> — they are domain logic
+expressed as SQL, not new I/O boundaries.</p>
 
-<span class="kw">class</span> Database(Protocol):                            <span class="com"># swap DuckDB ↔ in-memory fake</span>
-    <span class="kw">def</span> query(self, sql: str) -> pandas.DataFrame: ...
-</code></pre>
-<p>Everything that touches the network (the LLM) or the disk (the DuckDB file) lives behind one of these two
-single-method ports. The readers below are <em>composed</em> from <code>Database</code>, not new ports — they
-are domain logic expressed as SQL, not new I/O boundaries.</p>
+<figure>
+<pre class="mermaid">
+classDiagram
+  class LlmBackend {
+    &lt;&lt;Protocol&gt;&gt;
+    +translate(prompt) Translation
+  }
+  class Database {
+    &lt;&lt;Protocol&gt;&gt;
+    +query(sql) DataFrame
+  }
+  class GeminiBackend
+  class DuckDbConnection
+  class Translator
+  class CohortDiscovery
+  class ProfileReader
+  class MetadataReader
+
+  LlmBackend &lt;|.. GeminiBackend
+  Database &lt;|.. DuckDbConnection
+  Translator --&gt; LlmBackend
+  CohortDiscovery --&gt; Database
+  ProfileReader --&gt; Database
+  MetadataReader --&gt; Database
+</pre>
+<figcaption>Two ports, one concrete each in v1; readers depend on the <code>Database</code> port, not new ones.</figcaption>
+</figure>
 
 <h3>A.4 Control flow — three sequences</h3>
+
 <h4>ask() — translate, estimate, persist</h4>
-<div class="ascii">facade.ask(text, profiler, save)
-  └▶ AskService.ask(question, save)
-       ├▶ Translator.translate(question)         → Translation   (LlmBackend port → network)
-       │     └▶ SchemaCatalog supplies SRA+Metalog schemas as prompt context
-       ├▶ CohortEstimator.estimate(translation, profiler) → CohortEstimate   (Database port: COUNT only)
-       ├▶ Plan(question, translation, estimate)
-       └▶ PlanRepository.save(plan, path)         → plans/&lt;slug&gt;.json
-  ◀── Plan   (rich _repr_html_ = show-your-work)
-</div>
+<figure>
+<pre class="mermaid">
+sequenceDiagram
+  actor U as Noam
+  participant F as facade.ask
+  participant AS as AskService
+  participant T as Translator
+  participant L as LlmBackend
+  participant E as CohortEstimator
+  participant DB as Database
+  participant R as PlanRepository
+  U->>F: ask(text, profiler, save)
+  F->>AS: ask(question, save)
+  AS->>T: translate(question)
+  T->>L: translate(prompt)
+  L-->>T: Translation
+  T-->>AS: Translation
+  AS->>E: estimate(translation, profiler)
+  E->>DB: COUNT per source query
+  DB-->>E: counts
+  E-->>AS: CohortEstimate
+  AS->>R: save(plan, path)
+  R-->>AS: plans/&lt;slug&gt;.json
+  AS-->>U: Plan (rich _repr_html_)
+</pre>
+<figcaption>One network hop (translate) and cheap COUNTs only. The full pull is deferred to run().</figcaption>
+</figure>
+
 <h4>plan.run(out) — discover, pull, reconcile, assemble</h4>
-<div class="ascii">Plan.run(out)
-  └▶ CohortBuilder.build(plan, out)
-       ├▶ CohortDiscovery.discover(sra_query, metalog_query) → Cohort   (Database: 2 SELECTs, union accessions)
-       ├▶ ProfileReader.read(profiler, cohort.union)         → ProfileMatrix   (chosen feature space)
-       ├▶ DropReport.between(cohort.union, matrix.accessions)→ DropReport      (samples lacking the profiler)
-       ├▶ MetadataReader.read × 2  +  MetadataReconciler.reconcile → ReconciledMetadata (Metalog wins)
-       ├▶ BiomFactory.build(matrix, metadata)                → biom.Table
-       └▶ write(table, out) ; warn(report)
-  ◀── biom.Table
-</div>
+<figure>
+<pre class="mermaid">
+sequenceDiagram
+  participant P as Plan.run
+  participant CB as CohortBuilder
+  participant CD as CohortDiscovery
+  participant PR as ProfileReader
+  participant MR as MetadataReader
+  participant BF as BiomFactory
+  P->>CB: build(plan, out)
+  CB->>CD: discover(sra_query, metalog_query)
+  CD-->>CB: Cohort (A ∪ B)
+  CB->>PR: read(profiler, cohort.union)
+  PR-->>CB: ProfileMatrix (single feature space)
+  CB->>MR: reconciled(cohort)
+  MR-->>CB: ReconciledMetadata (Metalog wins)
+  CB->>BF: build(matrix, metadata)
+  BF-->>CB: biom.Table
+  CB-->>P: biom.Table + DropReport warning
+</pre>
+<figcaption>Discovery unions accessions; the chosen profiler defines the feature space; missing samples are dropped and reported.</figcaption>
+</figure>
+
 <h4>load_plan(path).run(out) — reproduce without the LLM</h4>
-<div class="ascii">load_plan(path)  └▶ PlanRepository.load(path) → Plan      (no network; SQL already frozen in the file)
-  then identical to plan.run(out).   Plan.run() ≡ load_plan(path).run().
-</div>
+<figure>
+<pre class="mermaid">
+sequenceDiagram
+  actor U as Noam
+  participant LP as load_plan
+  participant R as PlanRepository
+  U->>LP: load_plan(path)
+  LP->>R: load(path)
+  R-->>LP: Plan (SQL frozen, no network)
+  LP-->>U: Plan
+  Note over U,R: then identical to plan.run(out) — Plan.run() ≡ load_plan(path).run()
+</pre>
+<figcaption>The plan file holds the frozen SQL, so reproduction never re-invokes the LLM.</figcaption>
+</figure>
 
 <h3>A.5 Module layout <span class="badge proposed">Proposed</span></h3>
 <p>One public class per file (clean-code rule 4). Packages mirror the layers.</p>
@@ -430,5 +511,10 @@ the metadata answers "restrict yourself to these." The DataFrame is an implement
 Next: writing-plans skill → implementation plan.</p>
 
 </div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+</script>
 </body>
 </html>
