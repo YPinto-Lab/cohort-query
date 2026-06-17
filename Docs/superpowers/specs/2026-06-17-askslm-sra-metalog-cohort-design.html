@@ -183,13 +183,13 @@ and <code>load_plan(path).run()</code> are equivalent.</div>
       libraries (DuckDB, biom) raise on genuinely bad data.</li>
 </ul>
 
-<h2>9. Assumptions to confirm <span class="badge proposed">Proposed</span></h2>
+<h2>9. Confirmed knobs <span class="badge locked">Locked</span></h2>
 <ul>
-  <li><code>save=</code> path on <code>ask()</code>: required, or default to an auto path (e.g. <code>plans/&lt;slug&gt;.json</code>)?
-      Current spec: explicit <code>save=</code>, with an auto-default if omitted.</li>
-  <li>Plan file format: JSON (human-diffable, commit-friendly) — assumed.</li>
-  <li>Behaviour when a sample lacks the chosen profiler: <strong>drop</strong> (assumed) vs keep as an all-zero column.</li>
+  <li><code>save=</code> on <code>ask()</code>: explicit path, defaulting to <code>plans/&lt;slug&gt;.json</code> when omitted.</li>
+  <li>Plan file format: JSON (human-diffable, commit-friendly).</li>
+  <li>Sample lacking the chosen profiler: <strong>dropped</strong> and reported (not kept as an all-zero column).</li>
 </ul>
+<p class="meta">Deep design: see <code>2026-06-17-askslm-architecture-hld-lld.html</code> (HLD + LLD).</p>
 
 <hr>
 <p class="meta">Next: writing-plans skill → implementation plan. Sources of truth this spec inherits:
