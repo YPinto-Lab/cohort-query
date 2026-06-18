@@ -190,44 +190,57 @@ classDiagram
 <figcaption>Two single-method ports; one concrete each in v1. The readers depend on the <code>Database</code> port.</figcaption>
 </figure>
 
-<h3>A.4 Sources, identity &amp; overlap <span class="badge locked">core model</span></h3>
-<p>One <strong>source = one DuckDB table</strong>. A <em>database</em> (SRA, Metalog) contributes several sources, and
-each source has a <strong>kind</strong>:</p>
-<ul>
-  <li><strong><code>METADATA</code> sources</strong> (<code>SRA_METADATA</code>, <code>METALOG_METADATA</code>) describe
-      samples and are <strong>reconcilable</strong> — many are merged by precedence.</li>
-  <li><strong><code>PROFILE</code> sources</strong> (<code>SRA_TAXONOMY</code>, <code>METALOG_MOTUS3</code>,
-      <code>METALOG_SPIRE_MOTUS</code>, <code>METALOG_METAPHLAN4_ALL</code>, <code>METALOG_METAPHLAN4_SPECIES</code>) feed
-      the biom's counts. Each belongs to a <strong><code>FeatureUniverse</code></strong> — the feature-ID namespace
-      it speaks:
-      <ul>
-        <li><code>NCBI_TAXONOMY</code> — addressed by NCBI <code>tax_id</code>: <code>SRA_TAXONOMY</code> (STAT) and
-            both MetaPhlAn4 variants. The shared key is the <code>tax_id</code>: an NCBI <code>tax_id</code> maps to a
-            MetaPhlAn clade (<code>tax_id → clade</code>), not the reverse, so alignment goes from STAT's tax_ids onto
-            MetaPhlAn's clades.</li>
-        <li><code>MOTUS</code> — addressed by mOTU IDs: <code>METALOG_MOTUS3</code>, <code>METALOG_SPIRE_MOTUS</code>.</li>
-      </ul></li>
-</ul>
-<p><strong>One biom = one universe.</strong> Within a universe, profile sources <em>combine</em>: you name a
-<code>profile_winning_source</code>, and the other sources of that universe fill samples it lacks — at
-<strong>whole-column (per-sample) granularity</strong>, so a sample is never half-STAT/half-MetaPhlAn. Because the
-universe is derived from the winner, <strong>cross-universe mixing is structurally impossible</strong> (mOTUs IDs and
-NCBI tax_ids never share a biom). All sources are <strong>normalized to relative abundance</strong> on
-materialization, so columns are comparable even when their native units differ (STAT counts vs MetaPhlAn %).</p>
-<p>This flat list mirrors how the data ships (one table per metadata set and per profiler) and gives one extension
-path: a new database, metadata set, or profiler is just a new <code>Source</code> (with its <code>universe</code>).</p>
-<p><strong>Identity <span class="badge locked">confirmed against the data</span>.</strong> The canonical key is the
-<strong>NCBI BioSample accession</strong> (<code>SAMN…</code>); the biom's columns are biosamples. The join is two
-hops, because Metalog profiles use a study-internal name, not an external accession:</p>
-<pre><code>profile.sample_alias            ⋈  metalog_metadata.sample_alias       <span class="com"># Metalog-internal, e.g. Cait_2019_infant.sample_AC114</span>
-metalog_metadata.spire_sample_name  ==  sra_metadata.biosample          <span class="com"># SAMN… — the canonical key</span>
-</code></pre>
-<p><code>AccessionNormalizer</code> therefore resolves each source <em>to a biosample</em>: SRA exposes
-<code>biosample</code> directly; Metalog profiles are bridged through <code>METALOG_METADATA</code>
-(<code>sample_alias → spire_sample_name</code>). Metalog deliberately keeps its own ids because one external
-accession can map to several biological samples and vice-versa — so the metadata/mapping bridge is mandatory, not a
-shortcut.</p>
+<h3>A.4 Sources &amp; feature universes <span class="badge locked">core model</span></h3>
+<p>One <strong>source = one DuckDB table</strong>. A database (SRA, Metalog) contributes several. Every source has a
+<strong>kind</strong> that decides how multiples of it combine:</p>
+<table>
+  <tr><th>Kind</th><th>Sources</th><th>Role in the biom</th><th>How multiples combine</th></tr>
+  <tr><td><code>METADATA</code></td><td><code>SRA_METADATA</code>, <code>METALOG_METADATA</code></td><td>describe the samples (sample axis)</td><td>reconciled <strong>per field</strong> by precedence (A.6)</td></tr>
+  <tr><td><code>PROFILE</code></td><td><code>SRA_TAXONOMY</code>, <code>METALOG_METAPHLAN4_ALL</code>, <code>METALOG_METAPHLAN4_SPECIES</code>, <code>METALOG_MOTUS3</code>, <code>METALOG_SPIRE_MOTUS</code></td><td>feed the counts (feature axis)</td><td>within one <strong>feature universe</strong>, <strong>per sample</strong> (whole-column), normalized to relative abundance</td></tr>
+</table>
+<p>A <code>PROFILE</code> source also carries a <strong><code>FeatureUniverse</code></strong> — the feature-ID namespace
+it speaks. Two sources can only share a biom if they share a universe:</p>
+<table>
+  <tr><th>FeatureUniverse</th><th>Feature ID</th><th>Member sources</th><th>How they align</th></tr>
+  <tr><td><code>NCBI_TAXONOMY</code></td><td>NCBI <code>tax_id</code></td><td><code>SRA_TAXONOMY</code> (STAT) · <code>METALOG_METAPHLAN4_ALL</code> · <code>METALOG_METAPHLAN4_SPECIES</code></td><td>an NCBI <code>tax_id</code> maps to a MetaPhlAn clade (<code>tax_id → clade</code>, not the reverse) — STAT's tax_ids align onto MetaPhlAn's clades</td></tr>
+  <tr><td><code>MOTUS</code></td><td>mOTU ID</td><td><code>METALOG_MOTUS3</code> · <code>METALOG_SPIRE_MOTUS</code></td><td>shared mOTU IDs, directly</td></tr>
+</table>
+<div class="note"><strong>One biom = one universe.</strong> The <code>profile_winning_source</code> names the universe;
+the other sources of <em>that</em> universe fill the samples it lacks (whole-column, never half-STAT/half-MetaPhlAn).
+Counts are <strong>normalized to relative abundance</strong> so columns compare even across native units (STAT counts
+vs MetaPhlAn %). Because the universe is derived from the winner, <strong>cross-universe mixing is structurally
+impossible</strong> — mOTU IDs and NCBI tax_ids never share a biom.</div>
+<p class="meta">The flat list mirrors how the data ships (one table per metadata set and per profiler). Extension is one
+row: a new database, metadata set, or profiler is just a new <code>Source</code> (with its <code>universe</code>).</p>
 
+<h3>A.5 Sample identity <span class="badge locked">confirmed against the data</span></h3>
+<p>The canonical key is the <strong>NCBI BioSample</strong> (<code>SAMN…</code>) — the biom's columns <em>are</em>
+biosamples. SRA exposes it directly; Metalog profiles use a study-internal name, so they reach it in two hops:</p>
+<table>
+  <tr><th>Hop</th><th>From → to</th><th>Join key</th></tr>
+  <tr><td>1</td><td>Metalog profile → <code>METALOG_METADATA</code></td><td><code>sample_alias</code> <span class="meta">(e.g. <code>Cait_2019_infant.sample_AC114</code>)</span></td></tr>
+  <tr><td>2</td><td><code>METALOG_METADATA</code> → <code>SRA_METADATA</code></td><td><code>spire_sample_name</code> == <code>sra_metadata.biosample</code> <span class="meta">(<code>SAMN…</code>)</span></td></tr>
+</table>
+<p><code>AccessionNormalizer</code> resolves every source <em>to a biosample</em> on this basis:</p>
+<table>
+  <tr><th>Source</th><th>Reaches the biosample by</th></tr>
+  <tr><td>SRA (all sources)</td><td>the <code>biosample</code> column, directly</td></tr>
+  <tr><td>Metalog profiles</td><td>bridged through <code>METALOG_METADATA</code> (<code>sample_alias → spire_sample_name</code>)</td></tr>
+</table>
+<div class="note">The metadata bridge is <strong>mandatory, not a shortcut</strong>: Metalog keeps its own ids because
+one external accession can map to several biological samples and vice-versa, so a profile can only be placed on a
+biosample <em>through</em> <code>METALOG_METADATA</code>.</div>
+
+<h3>A.6 Overlap &amp; the cohort partition <span class="badge locked">core model</span></h3>
+<p>Discovery runs each source's query, normalizes results to the biosample key, and partitions the cohort by
+<strong>where each biosample appears</strong>. That partition is what <code>plan</code> shows and what
+<code>run()</code> resolves:</p>
+<table>
+  <tr><th>Partition</th><th>Biosample appears in</th><th>Metadata comes from</th><th>Counts come from</th></tr>
+  <tr><td><strong>SRA-only</strong></td><td>SRA query only</td><td>SRA</td><td>the universe's SRA source</td></tr>
+  <tr><td><strong>Metalog-only</strong></td><td>Metalog query only</td><td>Metalog</td><td>the universe's Metalog source(s)</td></tr>
+  <tr><td><strong>shared</strong></td><td>both</td><td><code>metadata_winning_source</code> decides</td><td><code>profile_winning_source</code>'s column wins</td></tr>
+</table>
 <figure>
 <pre class="mermaid">
 flowchart LR
@@ -253,13 +266,12 @@ flowchart LR
   style only1 fill:#f4f7fb,stroke:#c7d0da
   style only2 fill:#f4f7fb,stroke:#c7d0da
 </pre>
-<figcaption>The join key is the NCBI BioSample (<code>SAMN…</code>). SRA exposes it directly; Metalog reaches it through
-the two-hop bridge (<code>sample_alias → spire_sample_name</code>). Discovery partitions the cohort by biosample
-membership across the METADATA sources; the metadata winner resolves the shared biosamples, and counts come from the
-chosen universe — the profile winner plus same-universe fill, normalized to relative abundance.</figcaption>
+<figcaption>Membership across the two METADATA sources gives the SRA-only / Metalog-only / shared partition. The
+metadata winner resolves the shared biosamples; counts come from the chosen universe — the profile winner plus
+same-universe fill, normalized to relative abundance.</figcaption>
 </figure>
 
-<h3>A.5 The public API <span class="badge locked">revised</span></h3>
+<h3>A.7 The public API <span class="badge locked">revised</span></h3>
 <p>Two verbs. <code>ask()</code> understands the question and previews the cohort — <strong>no source choices,
 no biom presupposed.</strong> <code>run()</code> materializes a biom and is the only place the two winning sources
 (which PROFILE source heads the counts universe, which METADATA source wins ties) are named.</p>
@@ -330,7 +342,7 @@ must be a <code>PROFILE</code> source (it derives the universe and heads its pre
 a <code>METADATA</code> source — both checked on construction (B.2). One <code>plan</code> materializes many ways;
 adding a database, profiler, or universe never moves <code>ask()</code>'s signature.</div>
 
-<h3>A.6 Control flow — three sequences</h3>
+<h3>A.8 Control flow — three sequences</h3>
 
 <h4>ask — translate, preview, persist</h4>
 <figure>
@@ -401,7 +413,7 @@ sequenceDiagram
 <figcaption>The plan file holds the frozen per-source SQL, so reproduction never re-invokes the LLM — and can pick different sources.</figcaption>
 </figure>
 
-<h3>A.7 Module layout <span class="badge proposed">Proposed</span></h3>
+<h3>A.9 Module layout <span class="badge proposed">Proposed</span></h3>
 <p>One package per architectural concern. The <strong>layer</strong> column ties each package back to the rings in
 A.1, so the folder tree and the architecture read as the same picture.</p>
 <table>
@@ -420,7 +432,7 @@ A.1, so the folder tree and the architecture read as the same picture.</p>
 <p class="meta">Extension stays local: a new database, metadata set, or profiler adds one member to <code>sources/</code>
 (and a table to the mirror) — the engine, ports, and facade never move.</p>
 
-<h3>A.8 Reuse from the existing codebase</h3>
+<h3>A.10 Reuse from the existing codebase</h3>
 <ul>
   <li><code>sra_schema.py</code> already splits <code>SRAMetadataSchema</code> / <code>SRATaxonomySchema</code> — the
       same metadata/profile split as the source model. Feeds <code>SchemaCatalog</code>.</li>
