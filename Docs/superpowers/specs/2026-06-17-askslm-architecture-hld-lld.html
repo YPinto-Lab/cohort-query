@@ -949,6 +949,26 @@ genuinely different numbers.</p>
 MetaPhlAn, never blended, so each column is internally consistent (one estimator). Comparing columns across the cohort
 accepts the estimator difference as the price of breadth — stated in the build overview, never hidden.</div>
 
+<h4>Worked example — same reads, two answers</h4>
+<p><strong>Both tools start from the same raw reads.</strong> What differs is what they count. STAT assigns reads
+across the <em>whole genome</em> (k-mer matching), so its counts scale with genome length. MetaPhlAn maps reads only to
+a clade's <em>marker genes</em> and divides by marker length — which cancels genome size. So STAT measures
+<strong>sequence</strong> abundance; MetaPhlAn measures <strong>cell</strong> abundance.</p>
+<p>One sample, species A and B present in <strong>equal cell abundance</strong> — but A has a 6&nbsp;Mb genome and B a
+2&nbsp;Mb genome (3× smaller). Same sequencing, so reads scale with genome length:</p>
+<table>
+  <tr><th>Step</th><th>Species A (6 Mb)</th><th>Species B (2 Mb)</th></tr>
+  <tr><td>reads (∝ cells × genome length)</td><td>6,000</td><td>2,000</td></tr>
+  <tr><td><strong>STAT</strong> = reads ÷ classified total (8,000)</td><td>6000 ⁄ 8000 = <strong>75%</strong></td><td>2000 ⁄ 8000 = <strong>25%</strong></td></tr>
+  <tr><td>marker coverage = reads ÷ length (∝ genome)</td><td>6000 ⁄ 6 = 1000×</td><td>2000 ⁄ 2 = 1000×</td></tr>
+  <tr><td><strong>MetaPhlAn</strong> = coverage ÷ Σcoverage (2000)</td><td>1000 ⁄ 2000 = <strong>50%</strong></td><td>1000 ⁄ 2000 = <strong>50%</strong></td></tr>
+</table>
+<div class="note"><strong>Same sample, same reads — STAT says 75/25, MetaPhlAn says 50/50.</strong> A's larger genome
+soaks up proportionally more reads; MetaPhlAn's division by marker length removes that, recovering the true 50/50 cell
+ratio. When STAT heads <code>NCBI_TAXONOMY</code> we normalize its counts to per-sample proportions (the 75/25) so the
+column sums to 1 and is internally consistent — but it stays a genome-size-weighted estimate, <em>not</em>
+interchangeable with a MetaPhlAn column. Hence: a sample's column comes entirely from one source.</div>
+
 <h4>Putting both on one feature id — the crosswalk</h4>
 <p>The canonical feature id is the <strong>MetaPhlAn clade</strong>. MetaPhlAn rows are untouched; STAT's tax_ids are
 <strong>rewritten to clades</strong> (the direction is <code>tax_id → clade</code>, never the reverse). The crosswalk is
