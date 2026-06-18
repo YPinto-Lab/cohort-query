@@ -56,39 +56,42 @@
      Parent spec: <code>2026-06-17-askslm-sra-metalog-cohort-design.html</code>. Diagrams: Mermaid.</p>
 </header>
 
-<div class="fix"><strong>Revision 2026-06-18 — API fix.</strong> <code>profiler</code> moved off <code>ask()</code> onto
-<code>plan.run()</code>: choosing a feature space is a <em>materialization</em> detail, not part of the research
-question. <code>ask()</code> is now source-agnostic and never presupposes a biom. <code>Translation</code> holds
-<code>queries: tuple[SourceQuery, …]</code> (N sources, not a hardcoded two) so adding a database never touches the
-API or the core. <code>CohortEstimator</code> → <code>CohortSizer</code> (it just counts).</div>
+<div class="fix"><strong>Revision 2026-06-18.</strong>
+(1) <code>profiler</code> and the metadata <code>winner</code> are <code>plan.run()</code> arguments, not part of
+<code>ask()</code> — both are <em>materialization</em> choices. (2) New <strong>Sample identity &amp; overlap</strong>
+model: accession is the join key; <code>Cohort</code> exposes the per-source partition (SRA-only / Metalog-only /
+shared) and the preview shows it. (3) <code>Translation</code> holds <code>queries: tuple[SourceQuery, …]</code>
+(N sources). (4) Renames: <code>CohortEstimator</code> → <code>CohortPreviewBuilder</code>.</div>
 
 <h2>0. Vocabulary <span class="badge locked">read this first</span></h2>
-<p>The doc uses a few architecture terms. Plain definitions, with the C# equivalent you already know.</p>
+<p>Architecture terms used below — all are <strong>industry-standard, language-agnostic</strong> names (the C#
+world uses the same words). Only <code>Protocol</code> is Python-specific; it means "interface."</p>
 <table class="gloss">
   <tr><th>Term</th><th>What it means here</th><th>C# you know</th></tr>
   <tr><td><strong>Domain core</strong></td><td>The pure logic and nouns of the problem (<code>Plan</code>, <code>Cohort</code>, <code>Profiler</code>). No network, no disk, no DuckDB/Gemini imports.</td><td>your POCO domain model</td></tr>
-  <tr><td><strong>Facade</strong></td><td>The tiny public surface Noam calls — <code>ask</code>, <code>config</code>, <code>load_plan</code>. Holds no logic; forwards to the wiring point.</td><td>a thin static API class</td></tr>
-  <tr><td><strong>Port</strong></td><td>An interface the core defines for something it needs from <em>outside</em> (the LLM over the network, the DB on disk). The core depends on the interface, never the concrete.</td><td><code>interface ILlmBackend</code></td></tr>
-  <tr><td><strong>Protocol</strong></td><td>Python's way to write that interface. Structural / duck-typed: any class with the right method satisfies it — no <code>implements</code> keyword.</td><td>an interface, but you don't declare you implement it</td></tr>
+  <tr><td><strong>Facade</strong></td><td>The tiny public surface Noam calls — <code>ask</code>, <code>config</code>, <code>load_plan</code>. Holds no logic.</td><td>a thin static API class</td></tr>
+  <tr><td><strong>Port</strong></td><td>An interface the core defines for something it needs from <em>outside</em> (LLM over the network, DB on disk). The core depends on the interface, never the concrete.</td><td><code>interface ILlmBackend</code></td></tr>
+  <tr><td><strong>Protocol</strong></td><td>Python's way to write that interface. Structural / duck-typed: any class with the right method satisfies it — no <code>implements</code> keyword. <em>(The one Python-specific term.)</em></td><td>an interface you don't declare you implement</td></tr>
   <tr><td><strong>Adapter</strong></td><td>The concrete class that fulfills a port: <code>GeminiBackend</code>, <code>DuckDbConnection</code>.</td><td><code>class GeminiBackend : ILlmBackend</code></td></tr>
-  <tr><td><strong>Wiring point</strong><br>(<code>Runtime</code>)</td><td>The one place that constructs the real objects and connects them, so nothing else knows concretes. Formally "composition root" — we don't use that phrase again.</td><td><code>Program.cs</code> / <code>Startup.cs</code> / DI registration</td></tr>
+  <tr><td><strong>Composition Root</strong><br>(<code>Runtime</code>)</td><td>The one place that constructs the real objects and connects them, so nothing else knows concretes. (Term coined in a .NET DI book — it <em>is</em> the C# word.)</td><td><code>Program.cs</code> / <code>Startup.cs</code> / DI registration</td></tr>
   <tr><td><strong>DTO / value object</strong></td><td>A small immutable data holder with a domain name (<code>Translation</code>, <code>CohortPreview</code>). Frozen dataclass.</td><td>a <code>record</code></td></tr>
-  <tr><td><strong>CohortSizer</strong><br>→ <code>CohortPreview</code></td><td>Before pulling gigabytes, run cheap <code>COUNT(*)</code> so the show-your-work can say "412 samples; 207 have metaphlan4_species." Just a size preview.</td><td>a read-only count query for a summary card</td></tr>
+  <tr><td><strong>Accession</strong></td><td>The public ID of a sample (e.g. an ENA/SRA <code>ERS…</code>). <strong>The join key</strong>: the same accession in two sources = the same biological sample.</td><td>a natural key / external Id</td></tr>
+  <tr><td><strong>CohortPreviewBuilder</strong><br>→ <code>CohortPreview</code></td><td>Before pulling gigabytes, run cheap <code>COUNT</code>s to build the show-your-work: per-source partition + per-profiler coverage.</td><td>read-only queries for a summary card</td></tr>
 </table>
 
 <h2>A. High-Level Design</h2>
 
 <h3>A.1 Architectural style</h3>
 <p>A small <strong>layered / hexagonal</strong> package. The <strong>domain core</strong> knows nothing about DuckDB,
-Gemini, or the filesystem; those are <strong>adapters</strong> behind <strong>ports</strong>. One <strong>wiring
-point</strong> (<code>Runtime</code>) connects concretes to ports. The Jupyter-facing functions
+Gemini, or the filesystem; those are <strong>adapters</strong> behind <strong>ports</strong>. The
+<strong>composition root</strong> (<code>Runtime</code>) connects concretes to ports. The Jupyter-facing functions
 (<code>config</code>, <code>ask</code>, <code>load_plan</code>) are a thin <strong>facade</strong> — no logic.</p>
 
 <figure>
 <pre class="mermaid">
 flowchart LR
   F["Facade<br/>config · ask · load_plan"]
-  R["Wiring point<br/>Runtime · Settings"]
+  R["Composition Root<br/>Runtime · Settings"]
   S["Application services<br/>AskService · CohortBuilder"]
   D["Domain core<br/>Plan · Cohort · Profiler · DTOs"]
   P["Ports<br/>LlmBackend · Database"]
@@ -102,28 +105,24 @@ flowchart LR
   A -. implements .-> P
   P --> D
 </pre>
-<figcaption>Dependencies point inward. Only the wiring point names concretes.</figcaption>
+<figcaption>Dependencies point inward. Only the composition root names concretes.</figcaption>
 </figure>
-<p>Domain depends on nothing. Services depend on domain + ports. Adapters implement ports. This is the seam that
-lets every service be unit-tested against fakes, and lets the LLM provider or the database engine be swapped — or a
-new database be added — without touching the core.</p>
+<p>Domain depends on nothing. Services depend on domain + ports. Adapters implement ports. This seam lets every
+service be unit-tested against fakes, and lets the LLM provider, the database engine, or a whole new source be
+swapped/added without touching the core.</p>
 
 <h3>A.2 Layers &amp; responsibilities</h3>
 <table>
   <tr><th>Layer</th><th>Members</th><th>Knows about</th></tr>
-  <tr><td>Facade</td><td><code>config()</code>, <code>ask()</code>, <code>load_plan()</code>, re-exported <code>Profiler</code></td><td>wiring point only</td></tr>
-  <tr><td>Wiring point</td><td><code>Settings</code>, <code>Runtime</code></td><td>every concrete; connects ports</td></tr>
-  <tr><td>Application services</td><td><code>AskService</code>, <code>CohortSizer</code>, <code>CohortBuilder</code></td><td>domain + ports</td></tr>
-  <tr><td>Domain core</td><td><code>Plan</code>, <code>Translation</code>, <code>ResearchQuestion</code>, <code>Cohort</code>, <code>ProfileMatrix</code>, <code>ReconciledMetadata</code>, <code>DropReport</code>, <code>CohortPreview</code>, <code>Profiler</code></td><td>nothing</td></tr>
+  <tr><td>Facade</td><td><code>config()</code>, <code>ask()</code>, <code>load_plan()</code>, re-exported <code>Profiler</code>, <code>Source</code></td><td>composition root only</td></tr>
+  <tr><td>Composition root</td><td><code>Settings</code>, <code>Runtime</code></td><td>every concrete; connects ports</td></tr>
+  <tr><td>Application services</td><td><code>AskService</code>, <code>CohortPreviewBuilder</code>, <code>CohortBuilder</code></td><td>domain + ports</td></tr>
+  <tr><td>Domain core</td><td><code>Plan</code>, <code>Translation</code>, <code>ResearchQuestion</code>, <code>Cohort</code>, <code>Materialization</code>, <code>ProfileMatrix</code>, <code>ReconciledMetadata</code>, <code>DropReport</code>, <code>CohortPreview</code>, <code>Profiler</code></td><td>nothing</td></tr>
   <tr><td>Ports (Protocols)</td><td><code>LlmBackend</code>, <code>Database</code></td><td>domain types only</td></tr>
   <tr><td>Adapters</td><td><code>GeminiBackend</code>, <code>DuckDbConnection</code>, <code>PlanRepository</code>, <code>BiomFactory</code>, readers</td><td>third-party libs</td></tr>
 </table>
 
 <h3>A.3 The two ports</h3>
-<p>Everything that touches the network (the LLM) or the disk (the DuckDB file) lives behind one of two
-single-method ports. The readers are <em>composed</em> from <code>Database</code> — they are domain logic
-expressed as SQL, not new I/O boundaries.</p>
-
 <figure>
 <pre class="mermaid">
 classDiagram
@@ -149,39 +148,81 @@ classDiagram
   ProfileReader --&gt; Database
   MetadataReader --&gt; Database
 </pre>
-<figcaption>Two ports, one concrete each in v1; the readers depend on the <code>Database</code> port, not new ones.</figcaption>
+<figcaption>Two single-method ports; one concrete each in v1. The readers depend on the <code>Database</code> port.</figcaption>
 </figure>
 
-<h3>A.4 The public API <span class="badge locked">revised</span></h3>
-<p>Two verbs. <code>ask()</code> understands the question and previews the cohort — <strong>no profiler, source-
-agnostic, no biom presupposed</strong>. <code>run()</code> materializes a biom and is the only place a feature
-space (profiler) is chosen.</p>
+<h3>A.4 Sample identity &amp; overlap <span class="badge locked">core model</span></h3>
+<p>The whole product rests on one idea: <strong>the same biological sample can appear in more than one source, and we
+recognize it by its accession.</strong> Metalog records each sample's ENA/SRA accession; equality on the canonical
+accession is how SRA and Metalog rows are matched.</p>
+<ul>
+  <li><strong>Join key = canonical accession.</strong> Sources are matched by accession, not by re-sequencing or
+      fuzzy metadata. <code>AccessionNormalizer</code> maps each source's raw identifier to one canonical level
+      (ENA/NCBI prefix and run-vs-sample differences are normalized first).</li>
+  <li><strong>Identity level <span class="badge proposed">confirm</span>:</strong> "a sample" = the
+      <strong>biosample-level</strong> accession (a biological sample), not the run — one biosample may have several
+      runs, and meta-analysis compares samples. The biom's columns are biosamples.</li>
+  <li><strong>Profiler ≠ source, but a profiler is source-bound.</strong> A <em>source</em> is provenance (SRA,
+      Metalog); a <em>profiler</em> is the method that produced counts. Each profiler already names its source
+      (<code>ProfilerSpec.source</code>), so <strong>choosing a profiler chooses the count provenance</strong> —
+      counts have a single axis. Metadata is the only thing with an independent source axis (both sources describe
+      the same sample), which is why the metadata <em>winner</em> is the one reconciliation choice.</li>
+</ul>
+
+<figure>
+<pre class="mermaid">
+flowchart LR
+  subgraph SRA["SRA query → accessions"]
+    a1[ERS-A]
+    a2[ERS-B]
+    a3[ERS-C]
+  end
+  subgraph MET["Metalog query → accessions"]
+    b2[ERS-B]
+    b3[ERS-C]
+    b4[ERS-D]
+  end
+  a1 --- only1["SRA-only: A"]
+  b4 --- only2["Metalog-only: D"]
+  a2 --- both["shared: B, C<br/>(same sample, both sources)"]
+  a3 --- both
+  b2 --- both
+  b3 --- both
+</pre>
+<figcaption>Discovery partitions the cohort by accession membership. "Shared" samples are the overlaps where the metadata winner matters; counts always come from the one chosen profiler.</figcaption>
+</figure>
+
+<h3>A.5 The public API <span class="badge locked">revised</span></h3>
+<p>Two verbs. <code>ask()</code> understands the question and previews the cohort — <strong>no profiler, no
+winner, source-agnostic.</strong> <code>run()</code> materializes a biom and is the only place the two
+materialization choices (which feature space, which source wins metadata) are made.</p>
 <pre><code><span class="com"># configure once</span>
 askslm.config(db=<span class="str">"/mnt/lab/metalog_sra.duckdb"</span>, llm=<span class="str">"gemini"</span>, llm_key=os.environ[<span class="str">"..."</span>])
 
 <span class="com"># understand + preview (one LLM hop + cheap COUNTs). Persists the plan to disk.</span>
 plan = askslm.ask(<span class="str">"fecal metagenomes from adults with IBD, Western countries"</span>, save=<span class="str">"plans/ibd.json"</span>)
 
-plan        <span class="com"># show-your-work: interpretation, the per-source SQL, cohort size,</span>
-            <span class="com"># and per-profiler coverage so Noam can pick — e.g.</span>
-            <span class="com"># cohort 412 (SRA 380 ∪ Metalog 207); metaphlan4_species 207, motus3 207, sra_taxonomy 380</span>
+plan        <span class="com"># show-your-work: interpretation, per-source SQL, AND the overlap partition + coverage:</span>
+            <span class="com">#   cohort 412 — SRA-only 205, Metalog-only 32, shared 175</span>
+            <span class="com">#   profiler coverage: metaphlan4_species 207, motus3 207, sra_taxonomy 380</span>
 
-<span class="com"># stats only? stop here — never needed a profiler.</span>
+<span class="com"># stats only? stop here — no profiler, no materialization needed.</span>
 
-<span class="com"># materialize: feature space chosen HERE, at the build step.</span>
-table = plan.run(profiler=askslm.Profiler.METAPHLAN4_SPECIES, out=<span class="str">"cohort.biom"</span>)
+<span class="com"># materialize: feature space + metadata winner chosen HERE.</span>
+table = plan.run(profiler=askslm.Profiler.METAPHLAN4_SPECIES,
+                 metadata_winner=askslm.Source.METALOG,   <span class="com"># default; resolves the 175 shared samples</span>
+                 out=<span class="str">"cohort.biom"</span>)
 
-<span class="com"># reproduce later without the LLM:</span>
+<span class="com"># reproduce later — same cohort, different choices, no LLM call:</span>
 askslm.load_plan(<span class="str">"plans/ibd.json"</span>).run(profiler=askslm.Profiler.MOTUS3, out=<span class="str">"cohort_motus.biom"</span>)
 </code></pre>
-<div class="note"><strong>Why this is better.</strong> The research question is independent of how you render counts.
-One <code>plan</code> can be materialized in several feature spaces (try mOTUs and MetaPhlAn from the same cohort)
-without re-asking. A future database adds <code>Source</code>s and <code>Profiler</code>s; <code>ask()</code>'s
-signature never moves.</div>
+<div class="note"><strong>Why this shape.</strong> The research question is independent of how counts are rendered and
+of which source wins a metadata tie. One <code>plan</code> can be materialized many ways without re-asking. A future
+database adds <code>Source</code>s/<code>Profiler</code>s; <code>ask()</code>'s signature never moves.</div>
 
-<h3>A.5 Control flow — three sequences</h3>
+<h3>A.6 Control flow — three sequences</h3>
 
-<h4>ask() — translate, size, persist</h4>
+<h4>ask() — translate, preview (incl. overlap), persist</h4>
 <figure>
 <pre class="mermaid">
 sequenceDiagram
@@ -190,7 +231,7 @@ sequenceDiagram
   participant AS as AskService
   participant T as Translator
   participant L as LlmBackend
-  participant Z as CohortSizer
+  participant Z as CohortPreviewBuilder
   participant DB as Database
   participant R as PlanRepository
   U->>F: ask(text, save)
@@ -200,17 +241,17 @@ sequenceDiagram
   L-->>T: Translation (queries per source)
   T-->>AS: Translation
   AS->>Z: preview(translation)
-  Z->>DB: COUNT per source + per profiler
-  DB-->>Z: counts
-  Z-->>AS: CohortPreview
+  Z->>DB: per-source accessions + per-profiler counts
+  DB-->>Z: rows
+  Z-->>AS: CohortPreview (partition + coverage)
   AS->>R: save(plan, path)
   R-->>AS: plans/&lt;slug&gt;.json
   AS-->>U: Plan (rich _repr_html_)
 </pre>
-<figcaption>One network hop, then cheap COUNTs only. No profiler chosen yet; the preview lists coverage for all of them.</figcaption>
+<figcaption>Preview computes the SRA-only / Metalog-only / shared partition and per-profiler coverage. No materialization yet.</figcaption>
 </figure>
 
-<h4>plan.run(profiler, out) — discover, pull, reconcile, assemble</h4>
+<h4>plan.run(profiler, metadata_winner, out) — discover, pull, reconcile, assemble</h4>
 <figure>
 <pre class="mermaid">
 sequenceDiagram
@@ -220,21 +261,21 @@ sequenceDiagram
   participant PR as ProfileReader
   participant MR as MetadataReader
   participant BF as BiomFactory
-  P->>CB: build(plan, profiler, out)
+  P->>CB: build(plan, materialization, out)
   CB->>CD: discover(queries)
-  CD-->>CB: Cohort (union of all sources)
+  CD-->>CB: Cohort (per-source sets; normalized accessions)
   CB->>PR: read(profiler, cohort.union)
   PR-->>CB: ProfileMatrix (single feature space)
-  CB->>MR: reconciled(cohort)
-  MR-->>CB: ReconciledMetadata (precedence: Metalog > SRA)
+  CB->>MR: reconciled(cohort, winner)
+  MR-->>CB: ReconciledMetadata (winner wins on shared)
   CB->>BF: build(matrix, metadata)
   BF-->>CB: biom.Table
   CB-->>P: biom.Table + DropReport warning
 </pre>
-<figcaption>Profiler arrives here; discovery unions all sources; samples lacking the chosen profiler are dropped and reported.</figcaption>
+<figcaption>Discovery normalizes + partitions; the chosen profiler defines the feature space; the winner resolves shared-sample metadata.</figcaption>
 </figure>
 
-<h4>load_plan(path).run(profiler, out) — reproduce without the LLM</h4>
+<h4>load_plan(path).run(...) — reproduce without the LLM</h4>
 <figure>
 <pre class="mermaid">
 sequenceDiagram
@@ -245,49 +286,45 @@ sequenceDiagram
   LP->>R: load(path)
   R-->>LP: Plan (SQL frozen, no network)
   LP-->>U: Plan
-  Note over U,R: then identical to plan.run(profiler, out)
+  Note over U,R: then identical to plan.run(profiler, metadata_winner, out)
 </pre>
-<figcaption>The plan file holds the frozen per-source SQL, so reproduction never re-invokes the LLM — and can pick a different profiler.</figcaption>
+<figcaption>The plan file holds the frozen per-source SQL, so reproduction never re-invokes the LLM — and can pick different materialization choices.</figcaption>
 </figure>
 
-<h3>A.6 Module layout <span class="badge proposed">Proposed</span></h3>
-<p>One public class per file. Packages mirror the layers.</p>
+<h3>A.7 Module layout <span class="badge proposed">Proposed</span></h3>
 <pre><code>src/askslm/
-  __init__.py            <span class="com"># facade: config, ask, load_plan; re-export Profiler</span>
-  runtime.py             <span class="com"># Runtime — the wiring point; builds wired services</span>
+  __init__.py            <span class="com"># facade: config, ask, load_plan; re-export Profiler, Source</span>
+  runtime.py             <span class="com"># Runtime — the composition root</span>
   config/
-    settings.py          <span class="com"># Settings (frozen; validates on construction)</span>
+    settings.py
   profiling/
-    profiler.py          <span class="com"># Profiler enum + ProfilerSpec</span>
-    source.py            <span class="com"># Source enum (SRA | METALOG | …)</span>
+    profiler.py source.py
+  identity/
+    accession.py accession_normalizer.py cohort.py
   translation/
     research_question.py interpretation.py source_query.py translation.py
     translation_prompt.py translator.py schema_catalog.py
   llm/
-    backend.py           <span class="com"># LlmBackend Protocol</span>
-    gemini_backend.py
+    backend.py gemini_backend.py
   plan/
-    plan.py plan_view.py plan_repository.py cohort_preview.py cohort_sizer.py
+    plan.py plan_view.py plan_repository.py
+    cohort_preview.py cohort_preview_builder.py materialization.py
   cohort/
-    cohort.py discovery.py profile_reader.py profile_matrix.py
+    discovery.py profile_reader.py profile_matrix.py
     metadata_reader.py metadata_reconciler.py reconciled_metadata.py
     drop_report.py cohort_builder.py
   biom/
     biom_factory.py
   db/
-    database.py          <span class="com"># Database Protocol</span>
-    duckdb_connection.py
+    database.py duckdb_connection.py
   errors.py
 </code></pre>
 
-<h3>A.7 Reuse from the existing codebase</h3>
+<h3>A.8 Reuse from the existing codebase</h3>
 <ul>
-  <li><code>sra_schema.py</code> (<code>SRAMetadataSchema</code>, <code>SRATaxonomySchema</code>) feeds
-      <code>SchemaCatalog</code> — the column inventory the LLM is grounded on.</li>
-  <li>The current biom build path (counts + lineage feature metadata + sample metadata) is wrapped by
-      <code>BiomFactory</code>; the assembly rules do not change.</li>
-  <li>Reconciliation keeps <strong>two DataFrames</strong> (standing rule): metadata and lineage never merge.
-      <code>ReconciledMetadata</code> is sample metadata only; lineage rides the biom feature axis.</li>
+  <li><code>sra_schema.py</code> feeds <code>SchemaCatalog</code> — the column inventory the LLM is grounded on.</li>
+  <li>The current biom build path is wrapped by <code>BiomFactory</code>; assembly rules unchanged.</li>
+  <li>Reconciliation keeps <strong>two DataFrames</strong> (standing rule): metadata and lineage never merge.</li>
 </ul>
 
 <hr>
@@ -295,11 +332,7 @@ sequenceDiagram
 <h2>B. Low-Level Design</h2>
 
 <h3>B.1 Domain value objects (frozen dataclasses)</h3>
-<p>Everything crossing a seam is a typed domain object, never bare <code>str</code>/<code>dict</code>/
-<code>DataFrame</code>. <code>Accession</code> is a <code>NewType(str)</code>; the real object is <code>Cohort</code>,
-which owns the set semantics. Note <code>ResearchQuestion</code> carries only the text — no profiler — and
-<code>Translation</code> carries <strong>N</strong> source queries.</p>
-<pre><code>Accession = NewType(<span class="str">"Accession"</span>, str)
+<pre><code>Accession = NewType(<span class="str">"Accession"</span>, str)   <span class="com"># canonical (biosample-level) id — the join key</span>
 
 <span class="kw">class</span> Source(Enum):
     SRA = <span class="str">"sra"</span>
@@ -315,28 +348,27 @@ which owns the set semantics. Note <code>ResearchQuestion</code> carries only th
     sql: str
 
 <span class="kw">@dataclass</span>(frozen=True)
-<span class="kw">class</span> QueryInterpretation:
-    restatement: str                 <span class="com"># one English line per understood filter</span>
-    filters: tuple[str, ...]
-
-<span class="kw">@dataclass</span>(frozen=True)
 <span class="kw">class</span> Translation:                    <span class="com"># LlmBackend output, before any DB hit</span>
     interpretation: QueryInterpretation
     queries: tuple[SourceQuery, ...] <span class="com"># one per source — add a DB, add an entry</span>
 
 <span class="kw">@dataclass</span>(frozen=True)
 <span class="kw">class</span> CohortPreview:                  <span class="com"># the show-your-work numbers</span>
-    by_source: dict[Source, int]
+    by_source: dict[Source, int]     <span class="com"># samples found per source</span>
+    shared: int                      <span class="com"># samples in &gt;1 source — the overlaps</span>
     union: int
-    by_profiler: dict[Profiler, int] <span class="com"># coverage so Noam picks the feature space</span>
+    by_profiler: dict[Profiler, int] <span class="com"># count-provenance coverage, to pick a feature space</span>
+
+<span class="kw">@dataclass</span>(frozen=True)
+<span class="kw">class</span> Materialization:               <span class="com"># the two run() choices, grouped</span>
+    profiler: Profiler
+    metadata_winner: Source
 </code></pre>
 
-<h3>B.2 <code>Profiler</code> — the closed set, single source of truth</h3>
-<p>Each member carries its <code>ProfilerSpec</code>: which source, which DuckDB table, which lineage column. This
-is the only place a profiler maps to a table — adding a database means adding members here, nowhere else.</p>
+<h3>B.2 <code>Profiler</code> — closed set, single source of truth</h3>
 <pre><code><span class="kw">@dataclass</span>(frozen=True)
 <span class="kw">class</span> ProfilerSpec:
-    source: Source
+    source: Source                   <span class="com"># a profiler is bound to its source — picking it picks count provenance</span>
     table: str
     lineage_column: str
 
@@ -351,10 +383,7 @@ is the only place a profiler maps to a table — adding a database means adding 
         <span class="kw">return</span> self.value
 </code></pre>
 
-<h3>B.3 The wiring point — <code>Settings</code> &amp; <code>Runtime</code></h3>
-<p><code>Settings</code> validates on construction (fail fast). <code>Runtime</code> is the one place concretes are
-named; it builds wired services on demand. The facade reads one module-level <code>Runtime</code> set by
-<code>config()</code> — the <code>Program.cs</code> of this package.</p>
+<h3>B.3 Composition root — <code>Settings</code> &amp; <code>Runtime</code></h3>
 <pre><code><span class="kw">@dataclass</span>(frozen=True)
 <span class="kw">class</span> Settings:
     db_path: Path
@@ -365,20 +394,42 @@ named; it builds wired services on demand. The facade reads one module-level <co
         self._require(self.db_path.exists(), <span class="str">"database file not found"</span>)   <span class="com"># fail fast at config()</span>
         self._require(bool(self.llm_key), <span class="str">"missing LLM key"</span>)
 
-<span class="kw">class</span> Runtime:
+<span class="kw">class</span> Runtime:                          <span class="com"># the Program.cs of the package</span>
     <span class="kw">def</span> __init__(self, settings: Settings):
         self._settings = settings
 
     <span class="kw">def</span> ask_service(self) -> AskService:
-        <span class="kw">return</span> AskService(self._translator(), self._sizer(), self._repository())
+        <span class="kw">return</span> AskService(self._translator(), self._preview_builder(), self._repository())
 
     <span class="kw">def</span> cohort_builder(self) -> CohortBuilder:
         <span class="kw">return</span> CohortBuilder(self._discovery(), self._profiles(), self._metadata(), self._factory())
 </code></pre>
 
-<h3>B.4 Translation — <code>Translator</code> + <code>GeminiBackend</code></h3>
-<p><code>Translator</code> orchestrates; <code>GeminiBackend</code> is the only class that imports the Gemini SDK.
-The prompt is a typed DTO so the port stays at one parameter.</p>
+<h3>B.4 Identity — <code>AccessionNormalizer</code> &amp; <code>Cohort</code></h3>
+<p><code>AccessionNormalizer</code> turns each source's raw identifier into one canonical <code>Accession</code> so set
+equality is meaningful. <code>Cohort</code> holds the per-source sets and answers the overlap questions; nothing else
+computes set differences by hand.</p>
+<pre><code><span class="kw">class</span> AccessionNormalizer:
+    <span class="kw">def</span> canonical(self, raw: str, source: Source) -> Accession:
+        <span class="com"># map run/ENA/NCBI identifiers to the biosample-level key</span>
+        ...
+
+<span class="kw">@dataclass</span>(frozen=True)
+<span class="kw">class</span> Cohort:
+    by_source: dict[Source, frozenset[Accession]]
+
+    <span class="kw">def</span> union(self) -> frozenset[Accession]:
+        <span class="kw">return</span> frozenset().union(*self.by_source.values())
+
+    <span class="kw">def</span> shared(self) -> frozenset[Accession]:
+        <span class="kw">return</span> self._appearing_in_more_than_one()      <span class="com"># the overlaps</span>
+
+    <span class="kw">def</span> only(self, source: Source) -> frozenset[Accession]:
+        others = self.union() - self.by_source[source]
+        <span class="kw">return</span> self.by_source[source] - others
+</code></pre>
+
+<h3>B.5 Translation — <code>Translator</code> + <code>GeminiBackend</code></h3>
 <pre><code><span class="kw">@dataclass</span>(frozen=True)
 <span class="kw">class</span> TranslationPrompt:
     question: ResearchQuestion
@@ -393,14 +444,10 @@ The prompt is a typed DTO so the port stays at one parameter.</p>
         prompt = TranslationPrompt(question=question, schemas=self._catalog.all())
         <span class="kw">return</span> self._backend.translate(prompt)
 </code></pre>
-<p>Invalid SQL is not caught here — it surfaces when <code>CohortSizer</code> runs the count against the DB (B.6).
-That keeps the network step pure and pushes "is this SQL real?" to the component that owns the DB.</p>
+<p>Invalid SQL surfaces when <code>CohortPreviewBuilder</code> runs the counts (B.7), not here — keeping the network
+step pure.</p>
 
-<h3>B.5 <code>Plan</code>, <code>PlanView</code>, <code>PlanRepository</code></h3>
-<p><code>Plan</code> is a serializable document plus two thin behaviors: render (<code>_repr_html_</code> →
-<code>PlanView</code>) and <code>run</code> (sugar over the active <code>Runtime</code>'s
-<code>CohortBuilder</code>). The on-disk form <em>is</em> the <code>Plan</code>: JSON via <code>asdict</code>. The
-profiler is <strong>not</strong> stored — it is a <code>run()</code> argument.</p>
+<h3>B.6 <code>Plan</code>, <code>PlanView</code>, <code>PlanRepository</code></h3>
 <pre><code><span class="kw">@dataclass</span>(frozen=True)
 <span class="kw">class</span> Plan:
     question: ResearchQuestion
@@ -408,9 +455,11 @@ profiler is <strong>not</strong> stored — it is a <code>run()</code> argument.
     preview: CohortPreview
     error: str | None = None
 
-    <span class="kw">def</span> run(self, profiler: Profiler, out: Path) -> biom.Table:
-        self._guard_runnable()                       <span class="com"># guard clause, no else</span>
-        <span class="kw">return</span> active_runtime().cohort_builder().build(self, profiler, out)
+    <span class="kw">def</span> run(self, profiler: Profiler, out: Path,
+            metadata_winner: Source = Source.METALOG) -> biom.Table:
+        self._guard_runnable()
+        request = Materialization(profiler=profiler, metadata_winner=metadata_winner)
+        <span class="kw">return</span> active_runtime().cohort_builder().build(self, request, out)
 
     <span class="kw">def</span> _guard_runnable(self):
         <span class="kw">if</span> self.error <span class="kw">is</span> <span class="kw">not</span> None:
@@ -419,11 +468,11 @@ profiler is <strong>not</strong> stored — it is a <code>run()</code> argument.
     <span class="kw">def</span> _repr_html_(self) -> str:
         <span class="kw">return</span> PlanView(self).render()
 </code></pre>
-<p class="meta">Tradeoff, stated honestly: <code>run()</code> reaches the module-level runtime (a service locator),
-coupling the DTO to global config. The alternative — a <code>RunnablePlan</code> bound to services on load — was
-rejected as ceremony: the plan file must run from a bare <code>load_plan(path)</code>, so the runtime is ambient
-anyway. <code>CohortBuilder.build(plan, profiler, out)</code> stays the pure, injectable entry point;
-<code>run()</code> is sugar over it.</p>
+<p class="meta">The profiler and winner are <strong>not</strong> stored on the <code>Plan</code> — they are <code>run()</code>
+arguments, so one persisted plan materializes many ways. <code>run()</code> bundles them into a
+<code>Materialization</code> so <code>CohortBuilder.build(plan, request, out)</code> stays at three params.
+Tradeoff on the ambient <code>active_runtime()</code> (service locator) is unchanged from the prior revision:
+accepted because <code>load_plan(path).run()</code> must work from a bare file.</p>
 <pre><code><span class="kw">class</span> PlanRepository:
     <span class="kw">def</span> __init__(self, root: Path):
         self._root = root
@@ -437,11 +486,11 @@ anyway. <code>CohortBuilder.build(plan, profiler, out)</code> stays the pure, in
         <span class="kw">return</span> self._decode(path.read_text())
 </code></pre>
 
-<h3>B.6 <code>AskService</code> &amp; <code>CohortSizer</code></h3>
+<h3>B.7 <code>AskService</code> &amp; <code>CohortPreviewBuilder</code></h3>
 <pre><code><span class="kw">class</span> AskService:
-    <span class="kw">def</span> __init__(self, translator: Translator, sizer: CohortSizer, repository: PlanRepository):
+    <span class="kw">def</span> __init__(self, translator: Translator, previews: CohortPreviewBuilder, repository: PlanRepository):
         self._translator = translator
-        self._sizer = sizer
+        self._previews = previews
         self._repository = repository
 
     <span class="kw">def</span> ask(self, question: ResearchQuestion, save: Path | None) -> Plan:
@@ -451,15 +500,14 @@ anyway. <code>CohortBuilder.build(plan, profiler, out)</code> stays the pure, in
         <span class="kw">return</span> plan
 
     <span class="kw">def</span> _planned(self, question: ResearchQuestion, translation: Translation) -> Plan:
-        preview = self._sizer.preview(translation)
+        preview = self._previews.preview(translation)
         <span class="kw">return</span> Plan(question=question, translation=translation, preview=preview)
 </code></pre>
-<p><code>CohortSizer</code> runs only cheap aggregates: a <code>COUNT</code> per source query, the union size, and a
-coverage count for every profiler (so the preview can list them all). It is also where invalid SQL is detected —
-the count fails, and the <code>Plan</code> is returned carrying <code>error</code> instead of a preview, so review
-still renders and <code>run()</code> refuses.</p>
+<p><code>CohortPreviewBuilder</code> runs cheap aggregates only: per-source accession counts, the overlap (shared)
+size, and a coverage count for every profiler. It is also where invalid SQL is caught — the count fails and the
+<code>Plan</code> is returned carrying <code>error</code>, so review still renders and <code>run()</code> refuses.</p>
 
-<h3>B.7 The cohort engine — <code>CohortBuilder</code> and its collaborators</h3>
+<h3>B.8 The cohort engine — <code>CohortBuilder</code> and collaborators</h3>
 <pre><code><span class="kw">class</span> CohortBuilder:
     <span class="kw">def</span> __init__(self, discovery: CohortDiscovery, profiles: ProfileReader,
                  metadata: MetadataReader, factory: BiomFactory):
@@ -468,42 +516,42 @@ still renders and <code>run()</code> refuses.</p>
         self._metadata = metadata
         self._factory = factory
 
-    <span class="kw">def</span> build(self, plan: Plan, profiler: Profiler, out: Path) -> biom.Table:
+    <span class="kw">def</span> build(self, plan: Plan, request: Materialization, out: Path) -> biom.Table:
         cohort = self._discovery.discover(plan.translation.queries)
-        matrix = self._profiles.read(profiler, cohort.union())
-        metadata = self._metadata.reconciled(cohort)
+        matrix = self._profiles.read(request.profiler, cohort.union())
+        metadata = self._metadata.reconciled(cohort, request.metadata_winner)
         table = self._factory.build(matrix, metadata.restricted_to(matrix.accessions()))
         <span class="kw">return</span> self._written(table, out, DropReport.between(cohort.union(), matrix.accessions()))
 </code></pre>
 <table>
   <tr><th>Class</th><th>Signature</th><th>Domain effect</th></tr>
-  <tr><td><code>CohortDiscovery</code></td><td><code>discover(queries) -> Cohort</code></td><td>run every source SELECT via <code>Database</code>; union accessions into a <code>Cohort</code> (keeps each source set distinct internally).</td></tr>
-  <tr><td><code>ProfileReader</code></td><td><code>read(profiler, accessions) -> ProfileMatrix</code></td><td>pull the chosen profiler's table for those accessions; the matrix columns define which samples actually have it.</td></tr>
-  <tr><td><code>MetadataReader</code></td><td><code>reconciled(cohort) -> ReconciledMetadata</code></td><td>read each source's metadata for the cohort and fold them by precedence.</td></tr>
-  <tr><td><code>MetadataReconciler</code></td><td><code>reconcile(frames) -> ReconciledMetadata</code></td><td>fold sources by precedence (today Metalog &gt; SRA); higher wins per accession, lower fills gaps.</td></tr>
-  <tr><td><code>BiomFactory</code></td><td><code>build(matrix, metadata) -> biom.Table</code></td><td>assemble the single-feature-space table; lineage rides the feature axis.</td></tr>
-  <tr><td><code>DropReport</code></td><td><code>between(requested, present) -> DropReport</code></td><td>set difference: cohort accessions with no profile, reported never silently kept.</td></tr>
+  <tr><td><code>CohortDiscovery</code></td><td><code>discover(queries) -> Cohort</code></td><td>run every source SELECT, normalize accessions, group into per-source sets (a <code>Cohort</code> that knows its overlaps).</td></tr>
+  <tr><td><code>ProfileReader</code></td><td><code>read(profiler, accessions) -> ProfileMatrix</code></td><td>pull the chosen profiler's table; matrix columns are the samples that actually have it.</td></tr>
+  <tr><td><code>MetadataReader</code></td><td><code>reconciled(cohort, winner) -> ReconciledMetadata</code></td><td>read each source's metadata, fold with the chosen winner first.</td></tr>
+  <tr><td><code>MetadataReconciler</code></td><td><code>reconcile(frames, winner) -> ReconciledMetadata</code></td><td>winner wins on shared samples; others fill gaps + their own samples.</td></tr>
+  <tr><td><code>BiomFactory</code></td><td><code>build(matrix, metadata) -> biom.Table</code></td><td>assemble the single-feature-space table; lineage on the feature axis.</td></tr>
+  <tr><td><code>DropReport</code></td><td><code>between(requested, present) -> DropReport</code></td><td>set difference: cohort samples with no profile, reported never silently kept.</td></tr>
 </table>
 
-<h3>B.8 The precedence merge (the one subtle line)</h3>
-<p>Reconciliation folds the source frames by precedence. Two sources today; the fold generalizes to N. Opaque
-library call gets an extracted method and a <em>why</em>-comment (clean-code rule 5):</p>
+<h3>B.9 The winner-driven merge</h3>
+<p>The chosen <code>winner</code> heads the precedence order; the rest fill gaps. Generalizes to N sources. The
+opaque library call gets an extracted method and a <em>why</em>-comment.</p>
 <pre><code><span class="kw">class</span> MetadataReconciler:
-    PRECEDENCE = (Source.METALOG, Source.SRA)        <span class="com"># highest wins; extend when a DB is added</span>
-
-    <span class="kw">def</span> reconcile(self, frames: dict[Source, pandas.DataFrame]) -> ReconciledMetadata:
-        ordered = [frames[source] <span class="kw">for</span> source <span class="kw">in</span> self.PRECEDENCE <span class="kw">if</span> source <span class="kw">in</span> frames]
+    <span class="kw">def</span> reconcile(self, frames: dict[Source, pandas.DataFrame], winner: Source) -> ReconciledMetadata:
+        ordered = self._winner_first(frames, winner)
         <span class="kw">return</span> ReconciledMetadata(self._folded(ordered))
 
-    <span class="kw">def</span> _folded(self, ordered: list[pandas.DataFrame]) -> pandas.DataFrame:
-        winner = ordered[0]
-        <span class="kw">return</span> reduce(combine_first_onto, ordered[1:], winner)   <span class="com"># each lower frame only fills gaps</span>
-</code></pre>
-<p class="meta">Frames are indexed by <code>Accession</code>; <code>combine_first</code> is exactly "left wins, right
-fills." No hand-rolled column logic, no <code>else</code>. <code>combine_first_onto</code> is a named module
-function (no lambda) wrapping <code>base.combine_first(filler)</code>.</p>
+    <span class="kw">def</span> _winner_first(self, frames: dict[Source, pandas.DataFrame], winner: Source) -> list[pandas.DataFrame]:
+        losers = [frames[s] <span class="kw">for</span> s <span class="kw">in</span> frames <span class="kw">if</span> s <span class="kw">is</span> <span class="kw">not</span> winner]
+        <span class="kw">return</span> [frames[winner], *losers]
 
-<h3>B.9 <code>ProfileMatrix</code> / <code>ReconciledMetadata</code> — owning their invariants</h3>
+    <span class="kw">def</span> _folded(self, ordered: list[pandas.DataFrame]) -> pandas.DataFrame:
+        <span class="kw">return</span> reduce(combine_first_onto, ordered[1:], ordered[0])   <span class="com"># each later frame only fills gaps</span>
+</code></pre>
+<p class="meta">Frames indexed by <code>Accession</code>; <code>combine_first</code> is exactly "left wins, right fills."
+No <code>else</code>, no lambda — <code>combine_first_onto</code> is a named module function.</p>
+
+<h3>B.10 <code>ProfileMatrix</code> / <code>ReconciledMetadata</code></h3>
 <pre><code><span class="kw">@dataclass</span>(frozen=True)
 <span class="kw">class</span> ProfileMatrix:
     counts: pandas.DataFrame          <span class="com"># features × accessions, one feature space</span>
@@ -519,36 +567,33 @@ function (no lambda) wrapping <code>base.combine_first(filler)</code>.</p>
     <span class="kw">def</span> restricted_to(self, accessions: frozenset[Accession]) -> ReconciledMetadata:
         <span class="kw">return</span> ReconciledMetadata(self.frame.loc[sorted(accessions)])
 </code></pre>
-<p>Callers never see <code>.columns</code> or <code>.loc</code>; the matrix answers "which samples do I cover?" and
-the metadata answers "restrict to these." The DataFrame is an implementation detail behind the type.</p>
 
-<h3>B.10 Error model</h3>
+<h3>B.11 Error model</h3>
 <table>
   <tr><th>Condition</th><th>Where</th><th>Behavior</th></tr>
-  <tr><td>Missing DB file / LLM key</td><td><code>Settings.__post_init__</code></td><td><code>ConfigError</code> at <code>config()</code> — fail fast, nothing else constructed.</td></tr>
-  <tr><td>Invalid generated SQL</td><td><code>CohortSizer</code> (COUNT)</td><td><code>Plan</code> returned with <code>error</code> set; review renders it; <code>run()</code> raises <code>TranslationError</code>.</td></tr>
-  <tr><td>Profiler absent for whole cohort</td><td><code>CohortBuilder</code></td><td><code>warning</code> + empty <code>biom.Table</code> — explicit, never silent success.</td></tr>
-  <tr><td>Genuinely bad data in DB</td><td>adapters</td><td>let DuckDB / biom raise. No defensive validation past the config boundary (trust input, fail fast).</td></tr>
+  <tr><td>Missing DB file / LLM key</td><td><code>Settings.__post_init__</code></td><td><code>ConfigError</code> at <code>config()</code> — fail fast.</td></tr>
+  <tr><td>Invalid generated SQL</td><td><code>CohortPreviewBuilder</code></td><td><code>Plan</code> carries <code>error</code>; review renders it; <code>run()</code> raises <code>TranslationError</code>.</td></tr>
+  <tr><td>Profiler absent for whole cohort</td><td><code>CohortBuilder</code></td><td><code>warning</code> + empty <code>biom.Table</code> — never silent success.</td></tr>
+  <tr><td>Bad data in DB</td><td>adapters</td><td>let DuckDB / biom raise. No defensive validation past config (trust input, fail fast).</td></tr>
 </table>
 
-<h3>B.11 Testing strategy</h3>
+<h3>B.12 Testing strategy</h3>
 <ul>
-  <li><strong>Ports get fakes.</strong> <code>FakeLlmBackend</code> returns a canned <code>Translation</code>;
-      <code>FakeDatabase</code> returns canned frames. Every service is unit-tested with zero network and zero
-      disk. AAA, blank-line-separated.</li>
-  <li><strong>Domain objects are pure</strong> — <code>DropReport.between</code>, the precedence fold,
-      <code>restricted_to</code> tested directly on small fixtures.</li>
-  <li><strong>One e2e</strong> wires real <code>DuckDbConnection</code> against a tiny fixture DuckDB (a handful of
-      accessions across both sources, two profilers) and asserts the biom feature space, dropped set, and
-      precedence metadata. Mirrors the existing <code>Tests/e2e</code> shape.</li>
+  <li><strong>Ports get fakes.</strong> <code>FakeLlmBackend</code> / <code>FakeDatabase</code>; every service unit-tested
+      with zero network/disk. AAA, blank-line-separated.</li>
+  <li><strong>Domain objects are pure</strong> — <code>Cohort.shared/only</code>, the winner-fold,
+      <code>DropReport.between</code>, <code>restricted_to</code> tested on small fixtures.</li>
+  <li><strong>One e2e</strong> against a tiny fixture DuckDB (a few accessions overlapping across both sources, two
+      profilers): asserts the partition, the biom feature space, the dropped set, and winner-driven metadata.</li>
   <li><strong>Plan round-trip</strong>: <code>save</code> → <code>load</code> → equal <code>Plan</code>;
-      <code>load_plan(path).run(profiler, out)</code> never touches <code>LlmBackend</code> and accepts a different
-      profiler than any earlier run.</li>
+      <code>load_plan(path).run(...)</code> never touches <code>LlmBackend</code> and accepts different
+      profiler/winner than any earlier run.</li>
 </ul>
 
 <hr>
 <p class="meta">Confirmed knobs (parent spec §9): explicit <code>save=</code> with <code>plans/&lt;slug&gt;.json</code>
-default; JSON plan files; samples lacking the profiler are dropped. Next: writing-plans skill → implementation plan.</p>
+default; JSON plan files; samples lacking the profiler are dropped; metadata winner chosen per run (default Metalog).
+Open: identity level (biosample assumed). Next: writing-plans skill → implementation plan.</p>
 
 </div>
 

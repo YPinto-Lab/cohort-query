@@ -86,10 +86,13 @@ and emits one <code>.biom</code>.</p>
       at <strong><code>plan.run()</code></strong> — materialization, not part of <code>ask()</code>. Different
       profilers are incompatible feature spaces and are never mixed in one table. One plan can be materialized
       in several feature spaces.</td></tr>
-  <tr><td>Metadata conflict</td><td><strong>Metalog wins.</strong> SRA fills gaps and contributes
-      SRA-only samples.</td></tr>
-  <tr><td>Count conflict</td><td>Resolved by the per-query profiler choice — the chosen profiler defines
-      all counts. No row-level mixing.</td></tr>
+  <tr><td>Sample identity</td><td><strong>Accession is the join key.</strong> Same canonical (biosample-level)
+      accession in two sources = same sample. The preview shows the SRA-only / Metalog-only / <strong>shared</strong>
+      partition so the overlaps are visible before deciding.</td></tr>
+  <tr><td>Metadata conflict</td><td>On <strong>shared</strong> samples, <strong>Noam picks the winning source
+      per query</strong> (<code>metadata_winner</code> on <code>run()</code>, default Metalog). The loser fills gaps.</td></tr>
+  <tr><td>Count conflict</td><td>No separate choice — a profiler is bound to its source, so picking the profiler
+      picks the count provenance. One feature space, no row-level mixing.</td></tr>
   <tr><td>Notebook UX</td><td><strong>Two-step Plan object</strong> that is also persisted to disk.</td></tr>
   <tr><td>LLM provider</td><td>Provider-agnostic behind a small interface; <strong>v1 ships a Gemini
       backend</strong> (free API). Swapping providers is a new backend class.</td></tr>
@@ -128,15 +131,16 @@ space is a third world. Hence one profiler per biom.</p>
 4. Review — `plan` renders "show your work":
      • English restatement of the filters understood
      • the per-source SQL (SRA, Metalog, …)
-     • cohort: 412 samples (SRA 380 ∪ Metalog 207)
+     • cohort partition: SRA-only 205, Metalog-only 32, shared 175  (overlaps made visible)
      • per-profiler coverage so you can pick: metaphlan4_species 207, motus3 207, sra_taxonomy 380
-     • policy: metadata → Metalog wins
-   (Stats only? Stop here — you never needed a profiler.)
+   (Stats only? Stop here — no profiler, no materialization needed.)
 
-5. Execute — the feature space (profiler) is chosen HERE, at materialization:
-   table = plan.run(profiler=askslm.Profiler.METAPHLAN4_SPECIES, out="cohort.biom")
+5. Execute — feature space + metadata winner chosen HERE, at materialization:
+   table = plan.run(profiler=askslm.Profiler.METAPHLAN4_SPECIES,
+                    metadata_winner=askslm.Source.METALOG,    # resolves the 175 shared samples
+                    out="cohort.biom")
 
-   # reproduce later — same cohort, even a different profiler, no LLM call:
+   # reproduce later — same cohort, different choices, no LLM call:
    askslm.load_plan("plans/ibd_western.json").run(profiler=askslm.Profiler.MOTUS3, out="cohort_motus.biom")
 </code></pre>
 
@@ -147,13 +151,13 @@ reproduces the cohort in any feature space without re-invoking the LLM.</div>
 
 <h2>6. What <code>plan.run()</code> does — the merge <span class="badge locked">Locked</span></h2>
 <ol>
-  <li><strong>Discovery.</strong> Run both SQL strings on the DuckDB → accession set <em>A</em> (SRA) and
-      <em>B</em> (Metalog). Cohort = <em>A ∪ B</em>.</li>
+  <li><strong>Discovery.</strong> Run both SQL strings → accessions per source; normalize to the canonical
+      (biosample) level; cohort = the union, partitioned into SRA-only / Metalog-only / shared.</li>
   <li><strong>Counts.</strong> Pull the chosen profiler's matrix for the cohort accessions. Samples lacking that
       profiler are <strong>dropped and reported</strong> — never silently included. This defines the biom's single
       feature space.</li>
-  <li><strong>Sample metadata.</strong> Per accession, the Metalog row wins; SRA fills gaps and supplies
-      SRA-only samples.</li>
+  <li><strong>Sample metadata.</strong> On shared samples the chosen <code>metadata_winner</code> wins
+      (default Metalog); the loser fills gaps and supplies its own samples.</li>
   <li><strong>Feature metadata.</strong> Lineage taken from the chosen profiler.</li>
   <li><strong>Assemble.</strong> Build a <code>biom.Table</code>: counts × samples, reconciled sample metadata,
       profiler lineage as feature metadata. Reuses the existing biom build path.</li>
