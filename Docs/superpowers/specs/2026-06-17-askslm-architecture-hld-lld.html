@@ -190,6 +190,14 @@ classDiagram
 <figcaption>Two single-method ports; one concrete each in v1. The readers depend on the <code>Database</code> port.</figcaption>
 </figure>
 
+<div class="note"><strong>The <code>Database</code> adapter queries a prebuilt DuckDB over SQL — it never reads raw
+files.</strong> This is a deliberate decision, not an accident of the v1 implementation. The Metalog/SRA files
+(gzipped TSVs, parquet) are parsed <strong>once</strong> into a columnar <code>askslm_mirror.duckdb</code> by a
+separate ETL; the package only ever opens that mirror read-only and runs the LLM's SQL against it. The rejected
+alternative — <code>read_csv</code> over the raw files at query time — re-parses multi-GB gzip on every call and was
+ruled out for speed. <strong>Build-time reads files; run-time queries DuckDB.</strong> Rationale and the A/B/C
+trade-off: <code>Docs/superpowers/plans/2026-06-18-metalog-duckdb-build.md</code>.</div>
+
 <h3>A.4 Sources &amp; feature universes <span class="badge locked">core model</span></h3>
 <p>One <strong>source = one DuckDB table</strong>. A database (SRA, Metalog) contributes several. Every source has a
 <strong>kind</strong> that decides how multiples of it combine:</p>
