@@ -63,7 +63,7 @@ taxonomic profiles. The connective tissue between the two is the <strong>sample/
 
 <h2>2. Scope &amp; boundary <span class="badge locked">Locked</span></h2>
 <p><code>askslm</code> is a <strong>read-only</strong> Python package (<code>pip install askslm</code>). It reads one
-shared, prebuilt DuckDB that already contains both SRA and Metalog (metadata + every profiler table),
+shared, prebuilt DuckDB that already contains both SRA and Metalog (metadata + every profile table),
 and emits one <code>.biom</code>.</p>
 <ul>
   <li><strong>In scope:</strong> natural-language → structured query, show-your-work + confirm, the SRA∪Metalog
@@ -78,42 +78,54 @@ and emits one <code>.biom</code>.</p>
   <tr><th>Decision</th><th>Resolution</th></tr>
   <tr><td>Query spine</td><td><strong>Both, then merge.</strong> Run the query against SRA and Metalog
       independently; union results on accession. A sample may match in one or both.</td></tr>
-  <tr><td>Metalog access</td><td><strong>Everything mirrored into DuckDB</strong> (metadata + all profiler
+  <tr><td>Metalog access</td><td><strong>Everything mirrored into DuckDB</strong> (metadata + all profile
       tables), alongside SRA. Queried locally; no live API.</td></tr>
   <tr><td>Where the DB lives</td><td><strong>Shared prebuilt DuckDB.</strong> Lab builds/refreshes it;
       Noam points config at it and only reads.</td></tr>
-  <tr><td>Output feature space</td><td>One biom = <strong>one profiler.</strong> Noam picks the profiler (enum)
-      at <strong><code>plan.run()</code></strong> — materialization, not part of <code>ask()</code>. Different
-      profilers are incompatible feature spaces and are never mixed in one table. One plan can be materialized
-      in several feature spaces.</td></tr>
+  <tr><td>Source model</td><td><strong>Every DuckDB table is one <code>Source</code></strong> (e.g.
+      <code>METALOG_MOTUS3</code>, <code>METALOG_METADATA</code>, <code>SRA_TAXONOMY</code>). Each has a
+      <strong>kind</strong>: <code>METADATA</code> (reconcilable) or <code>PROFILE</code> (feeds counts). One flat
+      list; adding a database or profiler = adding a source. No separate "profiler" type.</td></tr>
+  <tr><td>Feature universe</td><td>Each PROFILE source belongs to a <strong><code>FeatureUniverse</code></strong> —
+      its feature-ID namespace: <code>NCBI_TAXONOMY</code> (STAT + MetaPhlAn, by NCBI tax_id) or <code>MOTUS</code>
+      (mOTUs3 + SPIRE). <strong>One biom = one universe.</strong></td></tr>
+  <tr><td>Output / counts</td><td>Noam names a <code>profile_winning_source</code> at <strong><code>plan.run()</code></strong>
+      (materialization, not <code>ask()</code>). Its universe is derived; other same-universe sources fill the samples
+      it lacks at <strong>whole-column granularity</strong> (a sample is never half-STAT/half-MetaPhlAn); cross-universe
+      never mixes. All counts <strong>normalized to relative abundance</strong>. One plan materializes in several
+      universes.</td></tr>
   <tr><td>Sample identity</td><td><strong>Accession is the join key.</strong> Same canonical (biosample-level)
-      accession in two sources = same sample. The preview shows the SRA-only / Metalog-only / <strong>shared</strong>
-      partition so the overlaps are visible before deciding.</td></tr>
-  <tr><td>Metadata conflict</td><td>On <strong>shared</strong> samples, <strong>Noam picks the winning source
-      per query</strong> (<code>metadata_winning_source</code> on <code>run()</code>, default Metalog). It heads a
-      total precedence order; remaining sources fill gaps by a fixed default order (so 3+-source ties are defined).</td></tr>
-  <tr><td>Count conflict</td><td>No separate choice — a profiler is bound to its source, so picking the profiler
-      picks the count provenance. One feature space, no row-level mixing.</td></tr>
+      accession across sources = same sample. The preview shows the SRA-only / Metalog-only / <strong>shared</strong>
+      partition so overlaps are visible before deciding.</td></tr>
+  <tr><td>Metadata conflict</td><td>On <strong>shared</strong> samples, <strong>Noam picks the winning METADATA
+      source per query</strong> (<code>metadata_winning_source</code> on <code>run()</code>, default
+      <code>METALOG_METADATA</code>). It heads a total precedence order; remaining sources fill gaps by a fixed
+      default order (so 3+-source ties are defined).</td></tr>
+  <tr><td>Count conflict</td><td>On shared samples the <code>profile_winning_source</code>'s column wins; other
+      same-universe sources only supply samples it lacks. Whole-column granularity, no within-sample method mixing.</td></tr>
   <tr><td>Notebook UX</td><td><strong>Two-step Plan object</strong> that is also persisted to disk.</td></tr>
   <tr><td>LLM provider</td><td>Provider-agnostic behind a small interface; <strong>v1 ships a Gemini
       backend</strong> (free API). Swapping providers is a new backend class.</td></tr>
-  <tr><td>Microbial-load predictions</td><td><strong>Not in v1.</strong> A per-sample scalar, not a profiler;
+  <tr><td>Microbial-load predictions</td><td><strong>Not in v1.</strong> A per-sample scalar, not a PROFILE source;
       revisit as a relative→absolute modifier later.</td></tr>
 </table>
 
-<h2>4. The profilers <span class="badge locked">Locked</span></h2>
-<p>Each is a <em>taxonomic profiler</em> Metalog (or the SRA pipeline) ran on the same samples. Each produces a
-<strong>distinct, non-interchangeable feature space</strong> — which is why one biom holds exactly one.</p>
+<h2>4. The sources <span class="badge locked">Locked</span></h2>
+<p>Every DuckDB table is one <code>Source</code> with a <strong>kind</strong>. <code>METADATA</code> sources describe
+samples (reconcilable, per field). <code>PROFILE</code> sources feed counts; each belongs to a
+<strong>feature universe</strong> (its ID namespace) — sources sharing a universe combine into one biom.</p>
 <table>
-  <tr><th>Enum member</th><th>Feature space</th><th>Notes</th></tr>
-  <tr><td><code>SRA_TAXONOMY</code></td><td>NCBI tax_id (nested-set)</td><td>From the SRA-side pipeline; <code>self_count</code>/<code>total_count</code>.</td></tr>
-  <tr><td><code>MOTUS3</code></td><td>mOTUs 3.0 OTUs</td><td>Marker-gene; includes uncultivated species. Relative abundance.</td></tr>
-  <tr><td><code>SPIRE_MOTUS</code></td><td>mOTUs OTUs (SPIRE)</td><td>Same feature space as mOTUs3, different provenance/coverage.</td></tr>
-  <tr><td><code>METAPHLAN4_ALL</code></td><td>Named taxa, all ranks</td><td>Clade markers; full lineage phylum→strain.</td></tr>
-  <tr><td><code>METAPHLAN4_SPECIES</code></td><td>Named species</td><td>Species-only; common meta-analysis choice.</td></tr>
+  <tr><th>Source</th><th>Kind</th><th>Universe</th><th>Unit</th><th>Role / notes</th></tr>
+  <tr><td><code>SRA_METADATA</code></td><td>METADATA</td><td>—</td><td>—</td><td>Messy free-text; SRA run/sample fields.</td></tr>
+  <tr><td><code>METALOG_METADATA</code></td><td>METADATA</td><td>—</td><td>—</td><td>Default winner — curated, comparable.</td></tr>
+  <tr><td><code>SRA_TAXONOMY</code></td><td>PROFILE</td><td><code>NCBI_TAXONOMY</code></td><td>counts</td><td>STAT pipeline; <code>self_count</code>/<code>total_count</code> (→ normalized).</td></tr>
+  <tr><td><code>METALOG_METAPHLAN4_ALL</code></td><td>PROFILE</td><td><code>NCBI_TAXONOMY</code></td><td>relative</td><td>Clade markers; full lineage phylum→strain; tax_ids.</td></tr>
+  <tr><td><code>METALOG_METAPHLAN4_SPECIES</code></td><td>PROFILE</td><td><code>NCBI_TAXONOMY</code></td><td>relative</td><td>Species-only; common meta-analysis choice.</td></tr>
+  <tr><td><code>METALOG_MOTUS3</code></td><td>PROFILE</td><td><code>MOTUS</code></td><td>relative</td><td>Marker-gene; uncultivated species.</td></tr>
+  <tr><td><code>METALOG_SPIRE_MOTUS</code></td><td>PROFILE</td><td><code>MOTUS</code></td><td>relative</td><td>Same mOTU IDs, different coverage.</td></tr>
 </table>
-<p class="meta">mOTUs and MetaPhlAn IDs do not map to each other without a translation step; the SRA tax_id
-space is a third world. Hence one profiler per biom.</p>
+<p class="meta">Within a universe (e.g. STAT + MetaPhlAn both speak NCBI tax_id) sources combine by winner + per-sample
+fill, after normalizing counts to relative abundance. Across universes (mOTUs ≠ NCBI tax_id) they never share a biom.</p>
 
 <h2>5. End-to-end flow <span class="badge locked">Locked</span></h2>
 <pre><code>1. pip install askslm
@@ -123,7 +135,7 @@ space is a third world. Hence one profiler per biom.</p>
 
 3. Build a plan (the LLM reads every source's schema, writes ONE SQL per source).
    The plan is WRITTEN TO DISK on creation — the full object, self-contained.
-   NOTE: no profiler here — ask() is the research question only.
+   NOTE: no source choices here — ask() is the research question only.
    plan = askslm.ask(
        "fecal metagenomes from adults with IBD, Western countries",
        save="plans/ibd_western.json",
@@ -133,35 +145,40 @@ space is a third world. Hence one profiler per biom.</p>
      • English restatement of the filters understood
      • the per-source SQL (SRA, Metalog, …)
      • cohort partition: SRA-only 205, Metalog-only 32, shared 175  (overlaps made visible)
-     • per-profiler coverage so you can pick: metaphlan4_species 207, motus3 207, sra_taxonomy 380
-   (Stats only? Stop here — no profiler, no materialization needed.)
+     • per profile-source coverage so you can pick:
+         metalog_metaphlan4_species 207, metalog_motus3 207, sra_taxonomy 380
+   (Stats only? Stop here — no materialization needed.)
 
-5. Execute — feature space + metadata winner chosen HERE, at materialization:
-   table = plan.run(profiler=askslm.Profiler.METAPHLAN4_SPECIES,
-                    metadata_winning_source=askslm.Source.METALOG,    # resolves the 175 shared samples
+5. Execute — winning sources chosen HERE; both are Sources:
+   # profile winner heads the NCBI_TAXONOMY universe; STAT fills samples MetaPhlAn lacks;
+   # all counts normalized to relative abundance.
+   table = plan.run(profile_winning_source=askslm.Source.METALOG_METAPHLAN4_SPECIES,
+                    metadata_winning_source=askslm.Source.METALOG_METADATA,  # resolves the 175 shared
                     out="cohort.biom")
 
-   # reproduce later — same cohort, different choices, no LLM call:
-   askslm.load_plan("plans/ibd_western.json").run(profiler=askslm.Profiler.MOTUS3, out="cohort_motus.biom")
+   # reproduce later — same cohort, a different universe, no LLM call:
+   askslm.load_plan("plans/ibd_western.json").run(profile_winning_source=askslm.Source.METALOG_MOTUS3, out="cohort_motus.biom")
 </code></pre>
 
 <div class="note"><strong>The plan file is the reproducible artifact.</strong> <code>ask()</code> persists the question,
-interpretation, per-source SQL, cohort preview, and db reference — but <em>not</em> a profiler, since that is a
-<code>run()</code> argument. Commit the plan next to the notebook; <code>load_plan(...).run(profiler, out)</code>
-reproduces the cohort in any feature space without re-invoking the LLM.</div>
+interpretation, per-source SQL, cohort preview, and db reference — but <em>not</em> the source choices, since those are
+<code>run()</code> arguments. Commit the plan next to the notebook;
+<code>load_plan(...).run(profile_winning_source, metadata_winning_source, out)</code> reproduces the cohort in any
+universe without re-invoking the LLM.</div>
 
 <h2>6. What <code>plan.run()</code> does — the merge <span class="badge locked">Locked</span></h2>
 <ol>
   <li><strong>Discovery.</strong> Run both SQL strings → accessions per source; normalize to the canonical
       (biosample) level; cohort = the union, partitioned into SRA-only / Metalog-only / shared.</li>
-  <li><strong>Counts.</strong> Pull the chosen profiler's matrix for the cohort accessions. Samples lacking that
-      profiler are <strong>dropped and reported</strong> — never silently included. This defines the biom's single
-      feature space.</li>
+  <li><strong>Counts.</strong> Take the <code>profile_winning_source</code>'s universe; read every source in it,
+      normalize each to relative abundance, and fold per sample (winner's column wins, others fill the samples it
+      lacks). Samples in <em>no</em> source of that universe are <strong>dropped and reported</strong>. This defines
+      the biom's single feature space (the universe).</li>
   <li><strong>Sample metadata.</strong> On shared samples the chosen <code>metadata_winning_source</code> wins
-      (default Metalog); remaining sources fill gaps by a fixed precedence order.</li>
-  <li><strong>Feature metadata.</strong> Lineage taken from the chosen profiler.</li>
+      (default <code>METALOG_METADATA</code>); remaining sources fill gaps per field by a fixed precedence order.</li>
+  <li><strong>Feature metadata.</strong> Lineage taken from the universe's sources (the winner's lineage column).</li>
   <li><strong>Assemble.</strong> Build a <code>biom.Table</code>: counts × samples, reconciled sample metadata,
-      profiler lineage as feature metadata. Reuses the existing biom build path.</li>
+      profile lineage as feature metadata. Reuses the existing biom build path.</li>
 </ol>
 
 <h2>7. Components <span class="badge locked">Locked</span></h2>
@@ -169,11 +186,11 @@ reproduces the cohort in any feature space without re-invoking the LLM.</div>
 <table>
   <tr><th>Unit</th><th>Responsibility</th><th>Depends on</th></tr>
   <tr><td><code>config</code></td><td>Resolve DuckDB path + LLM provider/key; fail fast if missing.</td><td>env, filesystem</td></tr>
-  <tr><td><code>Profiler</code> (enum)</td><td>Closed set of profilers; single source of truth mapping each member to its DuckDB table / feature space.</td><td>—</td></tr>
+  <tr><td><code>Source</code> (enum)</td><td>Closed set; one member per DuckDB table, each tagged METADATA or PROFILE (PROFILE sources carry a <code>FeatureUniverse</code> + unit) — single source of truth mapping a source to its table.</td><td>—</td></tr>
   <tr><td><code>translator</code></td><td>Question + every source's schema → structured interpretation + one SQL per source. Provider-agnostic interface; v1 = Gemini backend.</td><td>LLM backend, schemas</td></tr>
-  <tr><td><code>Plan</code></td><td>Hold interpretation / per-source SQL / cohort preview. Rich repr = show-your-work. Serialize to / from disk. <code>.run(profiler, out)</code>.</td><td>translator output</td></tr>
-  <tr><td><code>executor</code></td><td>Run SQL on DuckDB; union accessions; count cohort + per-profiler coverage.</td><td>DuckDB, config</td></tr>
-  <tr><td><code>reconciler</code></td><td>Metadata merge by source precedence (Metalog-wins); assemble chosen-profiler counts; produce the drop report.</td><td>executor output, Profiler</td></tr>
+  <tr><td><code>Plan</code></td><td>Hold interpretation / per-source SQL / cohort preview. Rich repr = show-your-work. Serialize to / from disk. <code>.run(profile_winning_source, metadata_winning_source, out)</code>.</td><td>translator output</td></tr>
+  <tr><td><code>executor</code></td><td>Run SQL on DuckDB; union accessions; count cohort partition + per profile-source coverage.</td><td>DuckDB, config</td></tr>
+  <tr><td><code>reconciler</code></td><td>Two folds: metadata by source precedence (per field), and profiles within the winner's universe (per sample, normalized to relative abundance). Produces the drop report.</td><td>executor output, Source</td></tr>
   <tr><td><code>biom_builder</code></td><td>Assemble the <code>biom.Table</code> (reuses existing build path).</td><td>reconciler output</td></tr>
   <tr><td><code>load_plan</code></td><td>Reconstruct a Plan from its file.</td><td>Plan</td></tr>
 </table>
@@ -184,8 +201,8 @@ reproduces the cohort in any feature space without re-invoking the LLM.</div>
       with a clear message.</li>
   <li><strong>Invalid LLM SQL:</strong> surfaced on the Plan as an error; Noam can refine the question (or hand-edit
       SQL on the plan) and re-run. Nothing executes until <code>run()</code>.</li>
-  <li><strong>Chosen profiler missing for the whole cohort:</strong> explicit warning; resulting biom is empty —
-      no silent success.</li>
+  <li><strong>Winner's universe missing for the whole cohort</strong> (no source in it covers any sample): explicit
+      warning; resulting biom is empty — no silent success.</li>
   <li><strong>Trust input, fail fast:</strong> no defensive validation beyond the config boundary; let the
       libraries (DuckDB, biom) raise on genuinely bad data.</li>
 </ul>
@@ -194,7 +211,8 @@ reproduces the cohort in any feature space without re-invoking the LLM.</div>
 <ul>
   <li><code>save=</code> on <code>ask()</code>: explicit path, defaulting to <code>plans/&lt;slug&gt;.json</code> when omitted.</li>
   <li>Plan file format: JSON (human-diffable, commit-friendly).</li>
-  <li>Sample lacking the chosen profiler: <strong>dropped</strong> and reported (not kept as an all-zero column).</li>
+  <li>Sample in none of the winner's universe sources: <strong>dropped</strong> and reported (not kept as an all-zero column).</li>
+  <li>Profile sources within a universe combine by winner + per-sample fill; counts normalized to relative abundance.</li>
 </ul>
 <p class="meta">Deep design: see <code>2026-06-17-askslm-architecture-hld-lld.html</code> (HLD + LLD).</p>
 
