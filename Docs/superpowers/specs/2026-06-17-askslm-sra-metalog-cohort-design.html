@@ -90,7 +90,8 @@ and emits one <code>.biom</code>.</p>
       accession in two sources = same sample. The preview shows the SRA-only / Metalog-only / <strong>shared</strong>
       partition so the overlaps are visible before deciding.</td></tr>
   <tr><td>Metadata conflict</td><td>On <strong>shared</strong> samples, <strong>Noam picks the winning source
-      per query</strong> (<code>metadata_winner</code> on <code>run()</code>, default Metalog). The loser fills gaps.</td></tr>
+      per query</strong> (<code>metadata_winning_source</code> on <code>run()</code>, default Metalog). It heads a
+      total precedence order; remaining sources fill gaps by a fixed default order (so 3+-source ties are defined).</td></tr>
   <tr><td>Count conflict</td><td>No separate choice — a profiler is bound to its source, so picking the profiler
       picks the count provenance. One feature space, no row-level mixing.</td></tr>
   <tr><td>Notebook UX</td><td><strong>Two-step Plan object</strong> that is also persisted to disk.</td></tr>
@@ -137,7 +138,7 @@ space is a third world. Hence one profiler per biom.</p>
 
 5. Execute — feature space + metadata winner chosen HERE, at materialization:
    table = plan.run(profiler=askslm.Profiler.METAPHLAN4_SPECIES,
-                    metadata_winner=askslm.Source.METALOG,    # resolves the 175 shared samples
+                    metadata_winning_source=askslm.Source.METALOG,    # resolves the 175 shared samples
                     out="cohort.biom")
 
    # reproduce later — same cohort, different choices, no LLM call:
@@ -156,8 +157,8 @@ reproduces the cohort in any feature space without re-invoking the LLM.</div>
   <li><strong>Counts.</strong> Pull the chosen profiler's matrix for the cohort accessions. Samples lacking that
       profiler are <strong>dropped and reported</strong> — never silently included. This defines the biom's single
       feature space.</li>
-  <li><strong>Sample metadata.</strong> On shared samples the chosen <code>metadata_winner</code> wins
-      (default Metalog); the loser fills gaps and supplies its own samples.</li>
+  <li><strong>Sample metadata.</strong> On shared samples the chosen <code>metadata_winning_source</code> wins
+      (default Metalog); remaining sources fill gaps by a fixed precedence order.</li>
   <li><strong>Feature metadata.</strong> Lineage taken from the chosen profiler.</li>
   <li><strong>Assemble.</strong> Build a <code>biom.Table</code>: counts × samples, reconciled sample metadata,
       profiler lineage as feature metadata. Reuses the existing biom build path.</li>

@@ -229,7 +229,7 @@ plan        <span class="com"># show-your-work: interpretation, per-source SQL, 
 
 <span class="com"># materialize: feature space + metadata winner chosen HERE.</span>
 table = plan.run(profiler=askslm.Profiler.METAPHLAN4_SPECIES,
-                 metadata_winner=askslm.Source.METALOG,   <span class="com"># default; resolves the 175 shared samples</span>
+                 metadata_winning_source=askslm.Source.METALOG,   <span class="com"># default; resolves the 175 shared samples</span>
                  out=<span class="str">"cohort.biom"</span>)
 
 <span class="com"># reproduce later — same cohort, different choices, no LLM call:</span>
@@ -270,7 +270,7 @@ sequenceDiagram
 <figcaption>Preview computes the SRA-only / Metalog-only / shared partition and per-profiler coverage. No materialization yet.</figcaption>
 </figure>
 
-<h4>plan.run(profiler, metadata_winner, out) — discover, pull, reconcile, assemble</h4>
+<h4>plan.run(profiler, metadata_winning_source, out) — discover, pull, reconcile, assemble</h4>
 <figure>
 <pre class="mermaid">
 sequenceDiagram
@@ -285,8 +285,8 @@ sequenceDiagram
   CD-->>CB: Cohort (per-source sets; normalized accessions)
   CB->>PR: read(profiler, cohort.union)
   PR-->>CB: ProfileMatrix (single feature space)
-  CB->>MR: reconciled(cohort, winner)
-  MR-->>CB: ReconciledMetadata (winner wins on shared)
+  CB->>MR: reconciled(cohort, winning_source)
+  MR-->>CB: ReconciledMetadata (winning source wins shared; rest by precedence)
   CB->>BF: build(matrix, metadata)
   BF-->>CB: biom.Table
   CB-->>P: biom.Table + DropReport warning
@@ -305,7 +305,7 @@ sequenceDiagram
   LP->>R: load(path)
   R-->>LP: Plan (SQL frozen, no network)
   LP-->>U: Plan
-  Note over U,R: then identical to plan.run(profiler, metadata_winner, out)
+  Note over U,R: then identical to plan.run(profiler, metadata_winning_source, out)
 </pre>
 <figcaption>The plan file holds the frozen per-source SQL, so reproduction never re-invokes the LLM — and can pick different materialization choices.</figcaption>
 </figure>
@@ -381,7 +381,7 @@ sequenceDiagram
 <span class="kw">@dataclass</span>(frozen=True)
 <span class="kw">class</span> Materialization:               <span class="com"># the two run() choices, grouped</span>
     profiler: Profiler
-    metadata_winner: Source
+    metadata_winning_source: Source
 </code></pre>
 
 <h3>B.2 <code>Profiler</code> — closed set, single source of truth</h3>
@@ -475,9 +475,9 @@ step pure.</p>
     error: str | None = None
 
     <span class="kw">def</span> run(self, profiler: Profiler, out: Path,
-            metadata_winner: Source = Source.METALOG) -> biom.Table:
+            metadata_winning_source: Source = Source.METALOG) -> biom.Table:
         self._guard_runnable()
-        request = Materialization(profiler=profiler, metadata_winner=metadata_winner)
+        request = Materialization(profiler=profiler, metadata_winning_source=metadata_winning_source)
         <span class="kw">return</span> active_runtime().cohort_builder().build(self, request, out)
 
     <span class="kw">def</span> _guard_runnable(self):
@@ -538,7 +538,7 @@ size, and a coverage count for every profiler. It is also where invalid SQL is c
     <span class="kw">def</span> build(self, plan: Plan, request: Materialization, out: Path) -> biom.Table:
         cohort = self._discovery.discover(plan.translation.queries)
         matrix = self._profiles.read(request.profiler, cohort.union())
-        metadata = self._metadata.reconciled(cohort, request.metadata_winner)
+        metadata = self._metadata.reconciled(cohort, request.metadata_winning_source)
         table = self._factory.build(matrix, metadata.restricted_to(matrix.accessions()))
         <span class="kw">return</span> self._written(table, out, DropReport.between(cohort.union(), matrix.accessions()))
 </code></pre>
@@ -546,29 +546,36 @@ size, and a coverage count for every profiler. It is also where invalid SQL is c
   <tr><th>Class</th><th>Signature</th><th>Domain effect</th></tr>
   <tr><td><code>CohortDiscovery</code></td><td><code>discover(queries) -> Cohort</code></td><td>run every source SELECT, normalize accessions, group into per-source sets (a <code>Cohort</code> that knows its overlaps).</td></tr>
   <tr><td><code>ProfileReader</code></td><td><code>read(profiler, accessions) -> ProfileMatrix</code></td><td>pull the chosen profiler's table; matrix columns are the samples that actually have it.</td></tr>
-  <tr><td><code>MetadataReader</code></td><td><code>reconciled(cohort, winner) -> ReconciledMetadata</code></td><td>read each source's metadata, fold with the chosen winner first.</td></tr>
-  <tr><td><code>MetadataReconciler</code></td><td><code>reconcile(frames, winner) -> ReconciledMetadata</code></td><td>winner wins on shared samples; others fill gaps + their own samples.</td></tr>
+  <tr><td><code>MetadataReader</code></td><td><code>reconciled(cohort, winning_source) -> ReconciledMetadata</code></td><td>read each source's metadata, fold with the winning source at the head.</td></tr>
+  <tr><td><code>MetadataReconciler</code></td><td><code>reconcile(frames, winning_source) -> ReconciledMetadata</code></td><td>total precedence order: winning source wins, then <code>DEFAULT_PRECEDENCE</code> fills gaps.</td></tr>
   <tr><td><code>BiomFactory</code></td><td><code>build(matrix, metadata) -> biom.Table</code></td><td>assemble the single-feature-space table; lineage on the feature axis.</td></tr>
   <tr><td><code>DropReport</code></td><td><code>between(requested, present) -> DropReport</code></td><td>set difference: cohort samples with no profile, reported never silently kept.</td></tr>
 </table>
 
-<h3>B.9 The winner-driven merge</h3>
-<p>The chosen <code>winner</code> heads the precedence order; the rest fill gaps. Generalizes to N sources. The
-opaque library call gets an extracted method and a <em>why</em>-comment.</p>
+<h3>B.9 Precedence merge — and 3+-source ties</h3>
+<p>Reconciliation uses a <strong>total precedence order</strong>, never just "winner vs the rest." The chosen
+<code>winning_source</code> is promoted to the head; the remaining sources fall back to one explicit
+<code>DEFAULT_PRECEDENCE</code>. So a conflict between two <em>non-winning</em> sources is resolved by whichever
+ranks higher there — there is never an undefined tie. (With today's two sources the winner fully determines it; this
+only matters at three or more.)</p>
 <pre><code><span class="kw">class</span> MetadataReconciler:
-    <span class="kw">def</span> reconcile(self, frames: dict[Source, pandas.DataFrame], winner: Source) -> ReconciledMetadata:
-        ordered = self._winner_first(frames, winner)
+    DEFAULT_PRECEDENCE = (Source.METALOG, Source.SRA)    <span class="com"># total order; the tie-break among non-winning sources</span>
+
+    <span class="kw">def</span> reconcile(self, frames: dict[Source, pandas.DataFrame], winning_source: Source) -> ReconciledMetadata:
+        ordered = self._ordered(frames, winning_source)
         <span class="kw">return</span> ReconciledMetadata(self._folded(ordered))
 
-    <span class="kw">def</span> _winner_first(self, frames: dict[Source, pandas.DataFrame], winner: Source) -> list[pandas.DataFrame]:
-        losers = [frames[s] <span class="kw">for</span> s <span class="kw">in</span> frames <span class="kw">if</span> s <span class="kw">is</span> <span class="kw">not</span> winner]
-        <span class="kw">return</span> [frames[winner], *losers]
+    <span class="kw">def</span> _ordered(self, frames: dict[Source, pandas.DataFrame], winning_source: Source) -> list[pandas.DataFrame]:
+        rest = [s <span class="kw">for</span> s <span class="kw">in</span> self.DEFAULT_PRECEDENCE <span class="kw">if</span> s <span class="kw">is</span> <span class="kw">not</span> winning_source]
+        present = [s <span class="kw">for</span> s <span class="kw">in</span> [winning_source, *rest] <span class="kw">if</span> s <span class="kw">in</span> frames]
+        <span class="kw">return</span> [frames[s] <span class="kw">for</span> s <span class="kw">in</span> present]
 
     <span class="kw">def</span> _folded(self, ordered: list[pandas.DataFrame]) -> pandas.DataFrame:
         <span class="kw">return</span> reduce(combine_first_onto, ordered[1:], ordered[0])   <span class="com"># each later frame only fills gaps</span>
 </code></pre>
-<p class="meta">Frames indexed by <code>Accession</code>; <code>combine_first</code> is exactly "left wins, right fills."
-No <code>else</code>, no lambda — <code>combine_first_onto</code> is a named module function.</p>
+<p class="meta">Frames indexed by <code>Accession</code>; <code>combine_first</code> is exactly "left wins, right fills,"
+so folding head→tail makes the head win and each lower-ranked source fill only the gaps left. No <code>else</code>,
+no lambda — <code>combine_first_onto</code> is a named module function.</p>
 
 <h3>B.10 <code>ProfileMatrix</code> / <code>ReconciledMetadata</code></h3>
 <pre><code><span class="kw">@dataclass</span>(frozen=True)
