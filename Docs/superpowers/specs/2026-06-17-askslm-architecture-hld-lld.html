@@ -101,7 +101,7 @@ world uses the same words). Only <code>Protocol</code> is Python-specific; it me
   <tr><td><strong>DTO / value object</strong></td><td>A small immutable data holder with a domain name (<code>Translation</code>, <code>CohortPreview</code>). Frozen dataclass.</td><td>a <code>record</code></td></tr>
   <tr><td><strong>Source</strong><br>(+ <code>SourceKind</code>)</td><td>One DuckDB table = one source (<code>METALOG_MOTUS3</code>, <code>SRA_METADATA</code>). Its kind is <code>METADATA</code> (reconcilable) or <code>PROFILE</code> (feeds counts).</td><td>a typed enum keyed to a table</td></tr>
   <tr><td><strong>FeatureUniverse</strong></td><td>The feature-ID namespace a PROFILE source lives in. <code>NCBI_TAXONOMY</code> (NCBI tax_id — STAT &amp; MetaPhlAn) or <code>MOTUS</code> (mOTU IDs — mOTUs3 &amp; SPIRE). One biom holds exactly one universe; sources within it combine.</td><td>a closed enum of ID schemes</td></tr>
-  <tr><td><strong>Accession</strong></td><td>The public ID of a sample. The canonical one here is the <strong>NCBI BioSample</strong> (<code>SAMN…</code>) — <strong>the join key</strong>: the same biosample in two sources = the same biological sample. (Other public ids exist — ENA sample <code>ERS…</code>, run <code>ERR…</code> — but everything is normalized <em>to the biosample</em>.)</td><td>a natural key / external Id</td></tr>
+  <tr><td><strong>Accession</strong></td><td>The sample's key. The canonical one is the <strong>NCBI BioSample</strong> (<code>SAMN…</code>), materialized onto every table at build (A.5) so it is <strong>one primary key across all sources</strong>. (Other public ids exist — ENA sample <code>ERS…</code>, run <code>ERR…</code>; the build resolves them down to the biosample. Metalog's internal <code>sample_alias</code> is the fallback key for samples with no BioSample.)</td><td>a natural key / external Id</td></tr>
   <tr><td><strong>CohortPreviewBuilder</strong><br>→ <code>CohortPreview</code></td><td>Before pulling gigabytes, run cheap <code>COUNT</code>s to build the show-your-work: per-source partition + per profile-source coverage.</td><td>read-only queries for a summary card</td></tr>
 </table>
 
@@ -223,26 +223,31 @@ row: a new database, metadata set, or profiler is just a new <code>Source</code>
 
 <h3>A.5 Sample identity <span class="badge locked">confirmed against the data</span></h3>
 <p>The canonical key is the <strong>NCBI BioSample</strong> (<code>SAMN…</code>) — the biom's columns <em>are</em>
-biosamples. SRA exposes it directly; Metalog profiles use a study-internal name, so they reach it in two hops:</p>
+biosamples. The two-hop bridge (Metalog profiles use a study-internal name, not an external accession) is
+<strong>resolved once, at build time</strong>, so every table in the mirror already carries a <code>biosample</code>
+column. The package then sees <strong>one primary key across all sources</strong> — run-time never re-derives it:</p>
 <table>
-  <tr><th>Hop</th><th>From → to</th><th>Join key</th></tr>
-  <tr><td>1</td><td>Metalog profile → <code>METALOG_METADATA</code></td><td><code>sample_alias</code> <span class="meta">(e.g. <code>Cait_2019_infant.sample_AC114</code>)</span></td></tr>
-  <tr><td>2</td><td><code>METALOG_METADATA</code> → <code>SRA_METADATA</code></td><td><code>spire_sample_name</code> == <code>sra_metadata.biosample</code> <span class="meta">(<code>SAMN…</code>)</span></td></tr>
+  <tr><th>When</th><th>What happens</th></tr>
+  <tr><td><strong>Build (ETL, once)</strong></td><td>resolve <code>profile.sample_alias → metalog_metadata.sample_alias</code>, then <code>spire_sample_name == sra_metadata.biosample</code>; <strong>stamp the resolved <code>biosample</code> onto every Metalog table</strong> and index it. The two-hop lives here and nowhere else.</td></tr>
+  <tr><td><strong>Run (per query)</strong></td><td>every source — SRA and Metalog — already exposes <code>biosample</code>; joins are single-key. No <code>AccessionNormalizer</code>, no per-query bridge.</td></tr>
 </table>
-<p><code>AccessionNormalizer</code> resolves every source <em>to a biosample</em> on this basis:</p>
+<p>One key, with one honest exception. Because Metalog keeps its own ids (an external accession isn't always 1:1 with
+a sample) and <code>spire_sample_name</code> is mixed-type, some Metalog samples resolve to <strong>no
+biosample</strong>:</p>
 <table>
-  <tr><th>Source</th><th>Reaches the biosample by</th></tr>
-  <tr><td>SRA (all sources)</td><td>the <code>biosample</code> column, directly</td></tr>
-  <tr><td>Metalog profiles</td><td>bridged through <code>METALOG_METADATA</code> (<code>sample_alias → spire_sample_name</code>)</td></tr>
+  <tr><th>Identifier</th><th>Role</th><th>Null?</th></tr>
+  <tr><td><code>sample_alias</code></td><td>Metalog's internal PK — always present, unambiguous</td><td>never</td></tr>
+  <tr><td><code>biosample</code></td><td>the cross-source join key (resolved at build, indexed everywhere)</td><td>NULL for the Metalog-only tail with no external BioSample</td></tr>
 </table>
-<div class="note">The metadata bridge is <strong>mandatory, not a shortcut</strong>: Metalog keeps its own ids because
-one external accession can map to several biological samples and vice-versa, so a profile can only be placed on a
-biosample <em>through</em> <code>METALOG_METADATA</code>.</div>
+<div class="note"><strong>Column-id rule.</strong> A biom column is keyed by its <code>biosample</code> when present;
+for the null tail (Metalog-only, no BioSample — nothing to join to anyway) it <strong>falls back to
+<code>sample_alias</code></strong>. So "one key across all sources" holds for everything that can be shared, without
+inventing biosamples for orphans.</div>
 
 <h3>A.6 Overlap &amp; the cohort partition <span class="badge locked">core model</span></h3>
-<p>Discovery runs each source's query, normalizes results to the biosample key, and partitions the cohort by
-<strong>where each biosample appears</strong>. That partition is what <code>plan</code> shows and what
-<code>run()</code> resolves:</p>
+<p>Discovery runs each source's query — every row already carries its <code>biosample</code> (stamped at build, A.5) —
+and partitions the cohort by <strong>where each biosample appears</strong>. That partition is what <code>plan</code>
+shows and what <code>run()</code> resolves:</p>
 <table>
   <tr><th>Partition</th><th>Biosample appears in</th><th>Metadata comes from</th><th>Counts come from</th></tr>
   <tr><td><strong>SRA-only</strong></td><td>SRA query only</td><td>SRA</td><td>the universe's SRA source</td></tr>
@@ -393,7 +398,7 @@ sequenceDiagram
   participant BF as BiomFactory
   P->>CB: build(plan, materialization, out)
   CB->>CD: discover(queries)
-  CD-->>CB: Cohort with per-source sets, normalized accessions
+  CD-->>CB: Cohort with per-source sets, biosample keys ready
   CB->>PR: read(profile_winning_source, cohort.union)
   PR-->>CB: ProfileMatrix in one universe, relative abundance
   CB->>MR: reconciled(cohort, metadata_winning_source)
@@ -429,7 +434,7 @@ A.1, so the folder tree and the architecture read as the same picture.</p>
   <tr><td><code>askslm/</code> (root)</td><td>Facade + root</td><td><code>__init__.py</code> · <code>runtime.py</code> · <code>errors.py</code></td><td>the only public surface (<code>config · ask · load_plan</code>) and the one wiring point</td></tr>
   <tr><td><code>config/</code></td><td>Composition root</td><td><code>settings.py</code></td><td>resolve + validate db path / llm key — fail fast</td></tr>
   <tr><td><code>sources/</code></td><td>Domain</td><td><code>source · source_kind · source_spec · feature_universe</code></td><td>the flat source model: one DuckDB table ↔ one <code>Source</code></td></tr>
-  <tr><td><code>identity/</code></td><td>Domain</td><td><code>accession · accession_normalizer · cohort</code></td><td>the biosample key and the SRA / Metalog / shared partition</td></tr>
+  <tr><td><code>identity/</code></td><td>Domain</td><td><code>accession · cohort</code></td><td>the biosample key (materialized at build) and the SRA / Metalog / shared partition — pure set logic, no run-time normalizer</td></tr>
   <tr><td><code>translation/</code></td><td>Domain + service</td><td><code>research_question · interpretation · source_query · translation · translation_prompt · translator · schema_catalog</code></td><td>question + every source's schema → one SQL per source</td></tr>
   <tr><td><code>llm/</code></td><td>Port + adapter</td><td><code>backend</code> (port) · <code>gemini_backend</code> (adapter)</td><td>the provider-agnostic LLM seam</td></tr>
   <tr><td><code>plan/</code></td><td>Domain + service + adapter</td><td><code>plan · plan_view · plan_repository · cohort_preview · cohort_preview_builder · materialization</code></td><td>the reviewable, persistable artifact and its show-your-work preview</td></tr>
@@ -702,15 +707,14 @@ chosen winner.</p>
         <span class="kw">return</span> CohortBuilder(self._discovery(), self._profiles(), self._metadata(), self._factory())
 </code></pre>
 
-<h3>B.5 Identity — <code>AccessionNormalizer</code> &amp; <code>Cohort</code></h3>
-<pre><code><span class="kw">class</span> AccessionNormalizer:
-    <span class="kw">def</span> canonical(self, raw: str, source: Source) -> Accession:
-        <span class="com"># map run/ENA/NCBI identifiers to the biosample-level key</span>
-        ...
-
-<span class="kw">@dataclass</span>(frozen=True)
+<h3>B.5 Identity — <code>Cohort</code></h3>
+<p>There is <strong>no run-time normalizer</strong>: the <code>biosample</code> key is materialized at build (A.5), so
+every query already returns it. <code>Accession</code> is just the resolved <code>biosample</code> (or the
+<code>sample_alias</code> fallback for the null tail). <code>Cohort</code> is therefore pure set logic over keys that
+arrive ready:</p>
+<pre><code><span class="kw">@dataclass</span>(frozen=True)
 <span class="kw">class</span> Cohort:
-    by_source: dict[Source, frozenset[Accession]]    <span class="com"># metadata sources that returned each accession</span>
+    by_source: dict[Source, frozenset[Accession]]    <span class="com"># metadata sources that returned each biosample</span>
 
     <span class="kw">def</span> union(self) -> frozenset[Accession]:
         <span class="kw">return</span> frozenset().union(*self.by_source.values())
@@ -821,7 +825,7 @@ refuses.</p>
 </code></pre>
 <table>
   <tr><th>Class</th><th>Signature</th><th>Domain effect</th></tr>
-  <tr><td><code>CohortDiscovery</code></td><td><code>discover(queries) -> Cohort</code></td><td>run each query, normalize accessions, group by metadata source into a <code>Cohort</code> that knows its overlaps.</td></tr>
+  <tr><td><code>CohortDiscovery</code></td><td><code>discover(queries) -> Cohort</code></td><td>run each query (rows already carry the build-stamped <code>biosample</code>), group by metadata source into a <code>Cohort</code> that knows its overlaps. No normalization step.</td></tr>
   <tr><td><code>ProfileReader</code></td><td><code>read(profile_source, accessions) -> ProfileMatrix</code></td><td>pull one PROFILE source's table; matrix columns are the samples that actually have it.</td></tr>
   <tr><td><code>ProfileReconciler</code></td><td><code>read(profile_winning_source, accessions) -> ProfileMatrix</code></td><td>read every source of the winner's universe, normalize each to relative abundance, fold by precedence at <strong>whole-column</strong> granularity (winner's column wins, others fill missing samples).</td></tr>
   <tr><td><code>MetadataReader</code></td><td><code>read(source, accessions) -> DataFrame</code></td><td>read ONE metadata source's frame for the cohort — the mirror of <code>ProfileReader</code>.</td></tr>
@@ -935,8 +939,8 @@ no lambda.</p>
 <p class="meta">Confirmed knobs (parent spec §9): explicit <code>save=</code> with <code>plans/&lt;slug&gt;.json</code>
 default; JSON plan files; samples lacking the winner's universe are dropped; profile + metadata winning sources
 chosen per run; profile counts normalized to relative abundance. Identity <strong>confirmed</strong> against the data:
-NCBI BioSample (<code>SAMN…</code>), two-hop join via <code>metalog_metadata.spire_sample_name</code>.
-Next: writing-plans skill.</p>
+NCBI BioSample (<code>SAMN…</code>), the two-hop join <strong>resolved once at build</strong> so the package sees one
+primary key across all sources (<code>sample_alias</code> fallback for the null tail). Next: writing-plans skill.</p>
 
 </div>
 

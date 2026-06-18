@@ -54,6 +54,28 @@ sra_taxonomy.acc  ⋈  sra_metadata.acc → sra_metadata.biosample
 ```
 Index `sample_alias`, `spire_sample_name`, `biosample`, `acc`.
 
+### Materialize `biosample` as the single primary key (do the two-hop ONCE, at build)
+The package must see **one key across all sources**, not re-run the two-hop per query. So after loading, **stamp a
+`biosample` column onto every Metalog table** (the metadata and all profile tables) and index it. Run-time joins are
+then single-key; the package needs no `AccessionNormalizer`.
+
+- `metalog_metadata.biosample` = its `spire_sample_name` **when that value is an NCBI BioSample** (`SAMN`/`SAME`/`SAMD`
+  — confirmed by joining to `sra_metadata.biosample`); else `NULL`.
+- Each Metalog **profile** table gets `biosample` by joining `sample_alias → metalog_metadata.sample_alias`, e.g.
+  ```sql
+  ALTER TABLE metalog_metaphlan4_species ADD COLUMN biosample TEXT;
+  UPDATE metalog_metaphlan4_species p
+  SET biosample = m.biosample
+  FROM metalog_metadata m
+  WHERE p.sample_alias = m.sample_alias;
+  CREATE INDEX ON metalog_metaphlan4_species (biosample);
+  ```
+- **Null tail (kept, not dropped):** a Metalog sample whose `spire_sample_name` is not a BioSample (some `SRS`/`ERR`/
+  study-internal) gets `biosample = NULL`; it stays addressable by `sample_alias` (Metalog-only — nothing to join to).
+- **Multiplicity rule:** if one `sample_alias` resolves to several biosamples (external accession ↔ sample isn't
+  always 1:1), pick the BioSample-prefixed value deterministically and record the collisions in the build report —
+  resolve the ambiguity **here**, once, visibly, never at query time.
+
 ## The build script — UNION the 4 environments
 `Scripts/build_mirror/build_duckdb.py` (one class, small methods). DuckDB's globbed `read_csv` with
 `filename=true` does the UNION and the `environment` column in one statement, e.g. per profiler:
@@ -66,7 +88,8 @@ FROM read_csv('…/Taxonomic Profiles/*/*_metaphlan4_species_*.tsv.gz',
               delim='\t', header=true, filename=true, compression='gzip');
 ```
 Steps: (1) one `CREATE TABLE … AS read_csv(glob)` per profiler + for `*_extended_wide` → `metalog_metadata`;
-(2) load SRA parquet → `sra_metadata`, `sra_taxonomy`; (3) create indexes on the join keys; (4) write
+(2) load SRA parquet → `sra_metadata`, `sra_taxonomy`; (3) **stamp `biosample` onto every Metalog table** (the
+two-hop, done once — see above); (4) create indexes on the join keys incl. `biosample` everywhere; (5) write
 `askslm_mirror.duckdb`.
 
 ## Verification
@@ -75,6 +98,8 @@ Steps: (1) one `CREATE TABLE … AS read_csv(glob)` per profiler + for `*_extend
   `SELECT count(*) FROM (SELECT DISTINCT spire_sample_name FROM metalog_metadata) m
    JOIN sra_metadata s ON m.spire_sample_name = s.biosample;`  → matches the 1,294 IBDProjects overlap.
 - `spire_sample_name` prefix histogram is mostly `SAMN`/`SAME`/`SAMD`.
+- After stamping: every profile table has `biosample`; count non-null vs null (the fallback tail) and assert no
+  `sample_alias` maps to >1 biosample after the multiplicity rule.
 
 ## Out of scope
 The read-only package itself, the LLM/translator, and refresh automation. This script just assembles the mirror.
