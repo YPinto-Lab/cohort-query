@@ -282,11 +282,11 @@ sequenceDiagram
   participant BF as BiomFactory
   P->>CB: build(plan, materialization, out)
   CB->>CD: discover(queries)
-  CD-->>CB: Cohort (per-source sets; normalized accessions)
+  CD-->>CB: Cohort (per-source sets, normalized accessions)
   CB->>PR: read(profiler, cohort.union)
   PR-->>CB: ProfileMatrix (single feature space)
   CB->>MR: reconciled(cohort, winning_source)
-  MR-->>CB: ReconciledMetadata (winning source wins shared; rest by precedence)
+  MR-->>CB: ReconciledMetadata — winning source wins shared, rest by precedence
   CB->>BF: build(matrix, metadata)
   BF-->>CB: biom.Table
   CB-->>P: biom.Table + DropReport warning
