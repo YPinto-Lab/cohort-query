@@ -46,6 +46,13 @@ Every Metalog table gets an `environment` column (human | animal | ocean | envir
 > Caveat: MetaPhlAn4 all-levels uses **SGB** clade ids (`t__SGB1871`) that don't all map to NCBI tax_id; the
 > `s__` species file is the NCBI-alignable one. Note in code; doesn't change the build.
 
+### Reference table (static, ships with MetaPhlAn)
+- **`metaphlan_clades`** — load `~/Downloads/metaphlan4_clades.tsv` (95,710 rows): `clade_name`, `lineage`,
+  `NCBI_taxids` (pipe-aligned to lineage). This is **the crosswalk** that lets the package rewrite STAT's NCBI
+  `tax_id` → MetaPhlAn `clade_name` (clade is canonical; named clades carry a tax_id, SGB clades don't → MetaPhlAn-only
+  by construction). The `lineage` column also drives `feature_rank` roll-up. Build the reverse map (species-rank
+  tax_id → clade) here or in the package; the table itself is just loaded read-only.
+
 ### Join keys (resolve everything to biosample)
 ```
 metalog profile.sample_alias  ⋈  metalog_metadata.sample_alias

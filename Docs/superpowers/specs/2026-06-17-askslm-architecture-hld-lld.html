@@ -210,14 +210,15 @@ trade-off: <code>Docs/superpowers/plans/2026-06-18-metalog-duckdb-build.md</code
 it speaks. Two sources can only share a biom if they share a universe:</p>
 <table>
   <tr><th>FeatureUniverse</th><th>Feature ID</th><th>Member sources</th><th>How they align</th></tr>
-  <tr><td><code>NCBI_TAXONOMY</code></td><td>NCBI <code>tax_id</code></td><td><code>SRA_TAXONOMY</code> (STAT) · <code>METALOG_METAPHLAN4_ALL</code> · <code>METALOG_METAPHLAN4_SPECIES</code></td><td>an NCBI <code>tax_id</code> maps to a MetaPhlAn clade (<code>tax_id → clade</code>, not the reverse) — STAT's tax_ids align onto MetaPhlAn's clades</td></tr>
+  <tr><td><code>NCBI_TAXONOMY</code></td><td>NCBI <code>tax_id</code></td><td><code>SRA_TAXONOMY</code> (STAT) · <code>METALOG_METAPHLAN4_ALL</code> · <code>METALOG_METAPHLAN4_SPECIES</code></td><td>an NCBI <code>tax_id</code> maps to a MetaPhlAn clade (<code>tax_id → clade</code>, not the reverse) — STAT's tax_ids align onto MetaPhlAn's clades via the <code>metaphlan_clades</code> crosswalk (B.11)</td></tr>
   <tr><td><code>MOTUS</code></td><td>mOTU ID</td><td><code>METALOG_MOTUS3</code> · <code>METALOG_SPIRE_MOTUS</code></td><td>shared mOTU IDs, directly</td></tr>
 </table>
 <div class="note"><strong>One biom = one universe.</strong> The <code>profile_winning_source</code> names the universe;
 the other sources of <em>that</em> universe fill the samples it lacks (whole-column, never half-STAT/half-MetaPhlAn).
 Counts are <strong>normalized to relative abundance</strong> so columns compare even across native units (STAT counts
 vs MetaPhlAn %). Because the universe is derived from the winner, <strong>cross-universe mixing is structurally
-impossible</strong> — mOTU IDs and NCBI tax_ids never share a biom.</div>
+impossible</strong> — mOTU IDs and NCBI tax_ids never share a biom. The feature axis's <strong>rank</strong>
+(species, genus, …) is a separate <code>run()</code> choice — <code>feature_rank</code> (B.11).</div>
 <p class="meta">The flat list mirrors how the data ships (one table per metadata set and per profiler). Extension is one
 row: a new database, metadata set, or profiler is just a new <code>Source</code> (with its <code>universe</code>).</p>
 
@@ -298,10 +299,15 @@ plan                       <span class="com"># renders the show-your-work below;
 
 table = plan.run(profile_winning_source=askslm.Source.METALOG_METAPHLAN4_SPECIES,
                  metadata_winning_source=askslm.Source.METALOG_METADATA,   <span class="com"># default</span>
+                 feature_rank=askslm.FeatureRank.SPECIES,                  <span class="com"># default; the biom's feature axis</span>
                  out=<span class="str">"cohort.biom"</span>)                                <span class="com"># prints the overview below, returns a biom.Table</span>
 
 <span class="com"># reproduce later — same cohort, a different universe, no LLM call:</span>
 askslm.load_plan(<span class="str">"plans/ibd.json"</span>).run(profile_winning_source=askslm.Source.METALOG_MOTUS3, out=<span class="str">"cohort_motus.biom"</span>)
+
+<span class="com"># same cohort, rolled up to genus (STAT can head NCBI_TAXONOMY at any rank ≥ species):</span>
+askslm.load_plan(<span class="str">"plans/ibd.json"</span>).run(profile_winning_source=askslm.Source.SRA_TAXONOMY,
+                                       feature_rank=askslm.FeatureRank.GENUS, out=<span class="str">"cohort_genus.biom"</span>)
 </code></pre>
 
 <h4>What <code>plan</code> shows — the simple read</h4>
@@ -399,7 +405,7 @@ sequenceDiagram
   P->>CB: build(plan, materialization, out)
   CB->>CD: discover(queries)
   CD-->>CB: Cohort with per-source sets, biosample keys ready
-  CB->>PR: read(profile_winning_source, cohort.union)
+  CB->>PR: read(request, cohort.union)
   PR-->>CB: ProfileMatrix in one universe, relative abundance
   CB->>MR: reconciled(cohort, metadata_winning_source)
   MR-->>CB: ReconciledMetadata, winner heads precedence
@@ -456,7 +462,7 @@ A.1, so the folder tree and the architecture read as the same picture.</p>
 <hr>
 
 <h2>B. Low-Level Design</h2>
-<p>Read this overview first. The detail sections (B.2–B.13) give every class down to the code; here are three UML
+<p>Read this overview first. The detail sections (B.2–B.14) give every class down to the code; here are three UML
 views of the same model — the <strong>domain values</strong> that flow, the <strong>ask path</strong> that builds a
 <code>Plan</code>, and the <strong>build engine</strong> that <code>run()</code> drives.</p>
 
@@ -571,7 +577,7 @@ classDiagram
     +discover(queries) Cohort
   }
   class ProfileReconciler {
-    +read(profile_winning_source, accessions) ProfileMatrix
+    +read(request, accessions) ProfileMatrix
   }
   class MetadataReconciler {
     +reconciled(cohort, winning_source) ReconciledMetadata
@@ -649,14 +655,25 @@ Every reader reaches DuckDB only through the <code>Database</code> port.</figcap
     union: int
     by_profile_source: dict[Source, int]    <span class="com"># coverage per PROFILE source — pick one to head its universe</span>
 
+<span class="kw">class</span> FeatureRank(IntEnum):        <span class="com"># the biom's feature-axis granularity — ordered, so roll-up = "to a higher value"</span>
+    SPECIES = 1
+    GENUS   = 2
+    FAMILY  = 3
+    ORDER   = 4
+    CLASS   = 5
+    PHYLUM  = 6
+    ALL     = 0                     <span class="com"># every level kept (no roll-up)</span>
+
 <span class="kw">@dataclass</span>(frozen=True)
-<span class="kw">class</span> Materialization:           <span class="com"># the two run() choices, grouped + validated</span>
+<span class="kw">class</span> Materialization:           <span class="com"># the run() choices, grouped + validated</span>
     profile_winning_source: Source
     metadata_winning_source: Source
+    feature_rank: FeatureRank = FeatureRank.SPECIES
 
     <span class="kw">def</span> __post_init__(self):
         require(self.profile_winning_source.kind() <span class="kw">is</span> SourceKind.PROFILE,  <span class="str">"profile_winning_source must be a PROFILE source"</span>)
         require(self.metadata_winning_source.kind() <span class="kw">is</span> SourceKind.METADATA, <span class="str">"metadata winner must be a METADATA source"</span>)
+        require(self._rank_rolls_up(), <span class="str">"feature_rank can only roll up from the winner's native rank"</span>)
 
     <span class="kw">def</span> universe(self) -> FeatureUniverse:
         <span class="kw">return</span> self.profile_winning_source.spec().universe   <span class="com"># the biom's one universe, derived</span>
@@ -754,10 +771,12 @@ step pure.</p>
     error: str | None = None
 
     <span class="kw">def</span> run(self, profile_winning_source: Source, out: Path,
-            metadata_winning_source: Source = Source.METALOG_METADATA) -> biom.Table:
+            metadata_winning_source: Source = Source.METALOG_METADATA,
+            feature_rank: FeatureRank = FeatureRank.SPECIES) -> biom.Table:
         self._guard_runnable()
         request = Materialization(profile_winning_source=profile_winning_source,
-                                  metadata_winning_source=metadata_winning_source)
+                                  metadata_winning_source=metadata_winning_source,
+                                  feature_rank=feature_rank)
         <span class="kw">return</span> active_runtime().cohort_builder().build(self, request, out)
 
     <span class="kw">def</span> _guard_runnable(self):
@@ -818,7 +837,7 @@ refuses.</p>
 
     <span class="kw">def</span> build(self, plan: Plan, request: Materialization, out: Path) -> biom.Table:
         cohort = self._discovery.discover(plan.translation.queries)
-        matrix = self._profiles.read(request.profile_winning_source, cohort.union())
+        matrix = self._profiles.read(request, cohort.union())
         metadata = self._metadata.reconciled(cohort, request.metadata_winning_source)
         table = self._factory.build(matrix, metadata.restricted_to(matrix.accessions()))
         <span class="kw">return</span> self._written(table, out, DropReport.between(cohort.union(), matrix.accessions()))
@@ -827,14 +846,14 @@ refuses.</p>
   <tr><th>Class</th><th>Signature</th><th>Domain effect</th></tr>
   <tr><td><code>CohortDiscovery</code></td><td><code>discover(queries) -> Cohort</code></td><td>run each query (rows already carry the build-stamped <code>biosample</code>), group by metadata source into a <code>Cohort</code> that knows its overlaps. No normalization step.</td></tr>
   <tr><td><code>ProfileReader</code></td><td><code>read(profile_source, accessions) -> ProfileMatrix</code></td><td>pull one PROFILE source's table; matrix columns are the samples that actually have it.</td></tr>
-  <tr><td><code>ProfileReconciler</code></td><td><code>read(profile_winning_source, accessions) -> ProfileMatrix</code></td><td>read every source of the winner's universe, normalize each to relative abundance, fold by precedence at <strong>whole-column</strong> granularity (winner's column wins, others fill missing samples).</td></tr>
+  <tr><td><code>ProfileReconciler</code></td><td><code>read(request, accessions) -> ProfileMatrix</code></td><td>per the winner's universe: relabel STAT tax_ids onto MetaPhlAn clades, roll up to <code>request.feature_rank</code>, normalize each source to relative abundance, fold by precedence at <strong>whole-column</strong> granularity. Full pipeline in B.11.</td></tr>
   <tr><td><code>MetadataReader</code></td><td><code>read(source, accessions) -> DataFrame</code></td><td>read ONE metadata source's frame for the cohort — the mirror of <code>ProfileReader</code>.</td></tr>
   <tr><td><code>MetadataReconciler</code></td><td><code>reconciled(cohort, winning_source) -> ReconciledMetadata</code></td><td>orchestrate: read every metadata source via <code>MetadataReader</code>, fold per field by precedence (winner heads it) — the mirror of <code>ProfileReconciler</code>.</td></tr>
   <tr><td><code>BiomFactory</code></td><td><code>build(matrix, metadata) -> biom.Table</code></td><td>assemble the single-feature-space table; lineage on the feature axis.</td></tr>
   <tr><td><code>DropReport</code></td><td><code>between(requested, present) -> DropReport</code></td><td>set difference: cohort samples with no profile, reported never silently kept.</td></tr>
 </table>
 
-<h3>B.10 Precedence merge — and 3+-source ties</h3>
+<h3>B.10 Metadata precedence merge — and 3+-source ties</h3>
 <p>Reconciliation uses a <strong>total precedence order</strong>, never just "winner vs the rest." The chosen
 <code>winning_source</code> is promoted to the head; the remaining metadata sources fall back to one explicit
 <code>DEFAULT_PRECEDENCE</code>. So a conflict between two <em>non-winning</em> sources is resolved by whichever
@@ -863,36 +882,78 @@ only matters at three or more.)</p>
 so folding head→tail makes the head win and each lower-ranked source fill only the gaps. No <code>else</code>,
 no lambda — <code>combine_first_onto</code> is a named module function.</p>
 
-<h4>Profiles — same universe, per-sample (whole-column) fill</h4>
-<p><code>ProfileReconciler</code> is the same precedence idea for counts, with two differences: it stays inside the
-winner's <code>FeatureUniverse</code>, and it folds at <strong>sample</strong> granularity (a whole column comes from
-one source — never half-STAT/half-MetaPhlAn). Each source is normalized to relative abundance first, so columns are
-comparable.</p>
+<h3>B.11 Profiles → one comparable matrix (universe · rank · normalization)</h3>
+<p>Two profile sources of one universe — STAT counts and MetaPhlAn relative abundance — must become a single
+comparable matrix. The hard part is not format: they are <strong>different estimators of the same quantity</strong>.
+This section is the whole counts pipeline behind <code>ProfileReconciler</code>.</p>
+
+<h4>How MetaPhlAn defines relative abundance</h4>
+<p>MetaPhlAn4 maps reads to clade-specific <strong>marker genes</strong>, estimates each clade's coverage, corrects for
+marker length, and reports each clade as a <strong>fraction of the total microbial community</strong> — values sum to
+~100% within a rank, <em>over the classified fraction only</em> (unmapped reads are excluded). It is <strong>not a raw
+read-count proportion</strong>: a species at 5% means "5% of the estimated community," coverage-based. This is the
+convention every column in the biom must speak.</p>
+
+<h4>How STAT differs, and the alignment target</h4>
+<p>STAT (<code>sra_taxonomy</code>) gives <strong>read counts</strong> per NCBI <code>tax_id</code> (<code>self_count</code>
+direct, <code>total_count</code> cumulative clade). To enter MetaPhlAn's space we take each clade's reads at the chosen
+rank and divide by the per-sample <strong>classified total</strong> → per-sample proportions summing to 1. That mirrors
+MetaPhlAn's convention but is a coverage-free, read-count estimator — so for the <em>same</em> sample the two produce
+genuinely different numbers.</p>
+<div class="note"><strong>This is exactly why fill is whole-column.</strong> A sample is entirely STAT or entirely
+MetaPhlAn, never blended, so each column is internally consistent (one estimator). Comparing columns across the cohort
+accepts the estimator difference as the price of breadth — stated in the build overview, never hidden.</div>
+
+<h4>Putting both on one feature id — the crosswalk</h4>
+<p>The canonical feature id is the <strong>MetaPhlAn clade</strong>. MetaPhlAn rows are untouched; STAT's tax_ids are
+<strong>rewritten to clades</strong> (the direction is <code>tax_id → clade</code>, never the reverse). The crosswalk is
+MetaPhlAn's own <code>metaphlan_clades</code> table (loaded into the mirror): <code>clade_name</code>,
+<code>lineage</code>, pipe-aligned <code>NCBI_taxids</code>.</p>
+<table>
+  <tr><th>Case</th><th>Rule</th></tr>
+  <tr><td>STAT tax_id has a clade at the rank</td><td>relabel the row to that <code>clade_name</code></td></tr>
+  <tr><td>several tax_ids (strains) → one clade</td><td><strong>sum</strong> their counts into the clade</td></tr>
+  <tr><td>STAT tax_id with no clade at the rank</td><td>roll up via <code>lineage</code> to the rank, else the <code>Unclassified</code> bucket</td></tr>
+  <tr><td>SGB-only clade (<code>s__…SGB…</code>, <code>t__SGB…</code>)</td><td>no NCBI tax_id by construction → <strong>MetaPhlAn-only</strong>; STAT can never produce it (consistent with whole-column fill)</td></tr>
+</table>
+
+<h4>Rank — a property of the materialized biom (<code>feature_rank</code>)</h4>
+<p><code>feature_rank: FeatureRank</code> (<code>SPECIES</code> default · <code>GENUS</code> · … · <code>ALL</code>) is a
+<code>run()</code> knob, not an <code>ask()</code> one: one plan yields a species biom <em>and</em> a genus biom. Each
+source is rolled up to the rank using its <code>lineage</code> (the existing collapse path). You can only roll
+<strong>up</strong> — <code>feature_rank</code> must be ≥ the winner's native granularity, so a
+<code>METALOG_METAPHLAN4_SPECIES</code> winner pins <code>SPECIES</code>. The <code>MOTUS</code> universe is
+species-level OTUs with no NCBI ranks → <code>feature_rank</code> is fixed at <code>SPECIES</code> there (rejected
+otherwise).</p>
+
 <pre><code><span class="kw">class</span> ProfileReconciler:
     DEFAULT_PRECEDENCE = {
         FeatureUniverse.NCBI_TAXONOMY: (Source.METALOG_METAPHLAN4_SPECIES, Source.SRA_TAXONOMY),
         FeatureUniverse.MOTUS:         (Source.METALOG_MOTUS3, Source.METALOG_SPIRE_MOTUS),
     }
 
-    <span class="kw">def</span> read(self, winning_source: Source, accessions: frozenset[Accession]) -> ProfileMatrix:
-        ordered = self._universe_order(winning_source)
-        columns = [self._relative(s, accessions) <span class="kw">for</span> s <span class="kw">in</span> ordered]
+    <span class="kw">def</span> read(self, request: Materialization, accessions: frozenset[Accession]) -> ProfileMatrix:
+        ordered = self._universe_order(request.profile_winning_source)
+        columns = [self._aligned(s, request.feature_rank, accessions) <span class="kw">for</span> s <span class="kw">in</span> ordered]
         <span class="kw">return</span> ProfileMatrix.fold_by_sample(columns)   <span class="com"># winner's column wins; others fill missing samples</span>
+
+    <span class="kw">def</span> _aligned(self, source: Source, feature_rank: FeatureRank, accessions: frozenset[Accession]) -> ProfileColumns:
+        native = self._reader.read(source, accessions)
+        on_clade = self._crosswalk.to_clade(native, source)        <span class="com"># STAT tax_id → clade; MetaPhlAn untouched</span>
+        rolled = roll_up(on_clade, feature_rank)                    <span class="com"># collapse to the rank via lineage</span>
+        <span class="kw">return</span> normalize_to_relative(rolled, source.spec().unit)    <span class="com"># → per-sample proportions, MetaPhlAn convention</span>
 
     <span class="kw">def</span> _universe_order(self, winning_source: Source) -> list[Source]:
         universe = winning_source.spec().universe
         rest = [s <span class="kw">for</span> s <span class="kw">in</span> self.DEFAULT_PRECEDENCE[universe] <span class="kw">if</span> s <span class="kw">is</span> <span class="kw">not</span> winning_source]
         <span class="kw">return</span> [winning_source, *rest]
-
-    <span class="kw">def</span> _relative(self, source: Source, accessions: frozenset[Accession]) -> ProfileColumns:
-        native = self._reader.read(source, accessions)    <span class="com"># ProfileReader → native unit (counts or relative)</span>
-        <span class="kw">return</span> normalize_to_relative(native, source.spec().unit)   <span class="com"># counts → per-sample proportions</span>
 </code></pre>
 <p class="meta">Only the winner's universe appears in <code>DEFAULT_PRECEDENCE[universe]</code>, so cross-universe mixing
-cannot happen by construction. <code>normalize_to_relative</code> and <code>fold_by_sample</code> are named functions —
-no lambda.</p>
+cannot happen by construction. <code>to_clade</code> reads the <code>metaphlan_clades</code> crosswalk; <code>roll_up</code>
+reuses the lineage/collapse path; <code>normalize_to_relative</code> and <code>fold_by_sample</code> are named
+functions — no lambda.</p>
 
-<h3>B.11 <code>ProfileMatrix</code> / <code>ReconciledMetadata</code></h3>
+<h3>B.12 <code>ProfileMatrix</code> / <code>ReconciledMetadata</code></h3>
 <pre><code><span class="kw">@dataclass</span>(frozen=True)
 <span class="kw">class</span> ProfileMatrix:
     counts: pandas.DataFrame          <span class="com"># features × accessions, one feature space</span>
@@ -909,7 +970,7 @@ no lambda.</p>
         <span class="kw">return</span> ReconciledMetadata(self.frame.loc[sorted(accessions)])
 </code></pre>
 
-<h3>B.12 Error model</h3>
+<h3>B.13 Error model</h3>
 <table>
   <tr><th>Condition</th><th>Where</th><th>Behavior</th></tr>
   <tr><td>Missing DB file / LLM key</td><td><code>Settings.__post_init__</code></td><td><code>ConfigError</code> at <code>config()</code> — fail fast.</td></tr>
@@ -917,18 +978,25 @@ no lambda.</p>
   <tr><td>Invalid generated SQL</td><td><code>CohortPreviewBuilder</code></td><td><code>Plan</code> carries <code>error</code>; review renders it; <code>run()</code> raises <code>TranslationError</code>.</td></tr>
   <tr><td>Winner's universe absent for whole cohort</td><td><code>CohortBuilder</code></td><td><code>warning</code> + empty <code>biom.Table</code> — never silent success.</td></tr>
   <tr><td>Cross-universe mixing</td><td><code>ProfileReconciler</code> (by construction)</td><td>Structurally impossible — only the winner's universe is in <code>DEFAULT_PRECEDENCE[universe]</code>, so no NCBI/mOTUs mix can be assembled. No runtime check needed.</td></tr>
+  <tr><td><code>feature_rank</code> below the winner's granularity</td><td><code>Materialization.__post_init__</code></td><td><code>ValueError</code> — you can only roll up (e.g. <code>SPECIES</code> winner + <code>STRAIN</code> rank, or any non-<code>SPECIES</code> rank in the <code>MOTUS</code> universe).</td></tr>
+  <tr><td>STAT tax_id with no clade at the rank</td><td><code>ProfileReconciler</code> (crosswalk)</td><td>Not an error — rolled up via <code>lineage</code> or bucketed <code>Unclassified</code>; the per-source unmapped fraction is reported in the build overview.</td></tr>
+  <tr><td>Write attempt on the DB</td><td><code>DuckDbConnection</code></td><td>The mirror is opened <strong>read-only</strong>; any write (incl. a stray LLM <code>INSERT</code>/<code>UPDATE</code>) is refused by DuckDB. The LLM only ever emits <code>SELECT</code>s, and they run against a read-only handle.</td></tr>
   <tr><td>Bad data in DB</td><td>adapters</td><td>let DuckDB / biom raise. No defensive validation past config (trust input, fail fast).</td></tr>
 </table>
 
-<h3>B.13 Testing strategy</h3>
+<h3>B.14 Testing strategy</h3>
 <ul>
   <li><strong>Ports get fakes.</strong> <code>FakeLlmBackend</code> / <code>FakeDatabase</code>; every service unit-tested
       with zero network/disk. AAA, blank-line-separated.</li>
   <li><strong>Domain objects are pure</strong> — <code>Cohort.shared/only</code>, both precedence folds,
       <code>ProfileMatrix.fold_by_sample</code>, <code>normalize_to_relative</code>, <code>Materialization</code>
-      kind-guards + <code>universe()</code>, <code>DropReport.between</code>, <code>restricted_to</code> on fixtures.</li>
-  <li><strong>One e2e</strong> against a tiny fixture DuckDB (a few accessions overlapping across both databases, two
-      profile sources in one universe with different units): asserts the partition, the universe's feature space,
+      kind-guards + <code>universe()</code> + <code>feature_rank</code> roll-up guard, <code>DropReport.between</code>,
+      <code>restricted_to</code> on fixtures.</li>
+  <li><strong>Crosswalk + rank (B.11)</strong> on a small fixture: STAT tax_ids relabel to the right clades, several
+      strains <strong>sum</strong> into one species, a no-clade tax_id rolls up (else <code>Unclassified</code>), and an
+      SGB-only clade never receives a STAT value; <code>feature_rank</code> roll-up collapses species → genus.</li>
+  <li><strong>One e2e</strong> against a tiny fixture DuckDB (a few biosamples overlapping across both databases, two
+      profile sources in one universe with different units): asserts the partition, the universe × rank feature space,
       relative-abundance normalization, per-sample fill, the dropped set, and winner-driven metadata.</li>
   <li><strong>Plan round-trip</strong>: <code>save</code> → <code>load</code> → equal <code>Plan</code>;
       <code>load_plan(path).run(...)</code> never touches <code>LlmBackend</code> and accepts different sources than

@@ -92,8 +92,13 @@ and emits one <code>.biom</code>.</p>
   <tr><td>Output / counts</td><td>Noam names a <code>profile_winning_source</code> at <strong><code>plan.run()</code></strong>
       (materialization, not <code>ask()</code>). Its universe is derived; other same-universe sources fill the samples
       it lacks at <strong>whole-column granularity</strong> (a sample is never half-STAT/half-MetaPhlAn); cross-universe
-      never mixes. All counts <strong>normalized to relative abundance</strong>. One plan materializes in several
-      universes.</td></tr>
+      never mixes. All counts <strong>normalized to relative abundance</strong> (to MetaPhlAn's convention; STAT and
+      MetaPhlAn are different estimators, hence whole-column). One plan materializes in several universes.</td></tr>
+  <tr><td>Feature rank</td><td>The biom's feature-axis granularity is a separate <code>run()</code> knob,
+      <strong><code>feature_rank</code></strong> (<code>SPECIES</code> default · <code>GENUS</code> · … · <code>ALL</code>).
+      Each source is rolled <strong>up</strong> to it via lineage; <code>feature_rank</code> must be ≥ the winner's
+      native rank. Within <code>NCBI_TAXONOMY</code>, STAT tax_ids are rewritten to MetaPhlAn clades through MetaPhlAn's
+      own <code>metaphlan_clades</code> crosswalk (clade is canonical, untouched).</td></tr>
   <tr><td>Sample identity</td><td><strong>Canonical key = NCBI BioSample (<code>SAMN…</code>)</strong>, confirmed
       against the data, and <strong>materialized at build</strong>: the two-hop resolution (Metalog
       <code>sample_alias</code> → <code>METALOG_METADATA.spire_sample_name</code> = SRA <code>biosample</code>) runs
@@ -158,6 +163,7 @@ fill, after normalizing counts to relative abundance. Across universes (mOTUs �
    # all counts normalized to relative abundance.
    table = plan.run(profile_winning_source=askslm.Source.METALOG_METAPHLAN4_SPECIES,
                     metadata_winning_source=askslm.Source.METALOG_METADATA,  # resolves the 175 shared
+                    feature_rank=askslm.FeatureRank.SPECIES,                 # the feature axis (default)
                     out="cohort.biom")
 
    # reproduce later — same cohort, a different universe, no LLM call:
@@ -174,12 +180,14 @@ universe without re-invoking the LLM.</div>
 <ol>
   <li><strong>Discovery.</strong> Run both SQL strings → accessions per source; normalize to the canonical
       (biosample) level; cohort = the union, partitioned into SRA-only / Metalog-only / shared.</li>
-  <li><strong>Counts.</strong> Take the <code>profile_winning_source</code>'s universe; read every source in it,
-      normalize each to relative abundance, and fold per sample (winner's column wins, others fill the samples it
-      lacks). Samples in <em>no</em> source of that universe are <strong>dropped and reported</strong>. This defines
-      the biom's single feature space (the universe).</li>
-  <li><strong>Sample metadata.</strong> On shared samples the chosen <code>metadata_winning_source</code> wins
-      (default <code>METALOG_METADATA</code>); remaining sources fill gaps per field by a fixed precedence order.</li>
+  <li><strong>Counts.</strong> Take the <code>profile_winning_source</code>'s universe; read every source in it. For
+      <code>NCBI_TAXONOMY</code>, rewrite STAT tax_ids onto MetaPhlAn clades (<code>metaphlan_clades</code> crosswalk).
+      Roll each source up to <code>feature_rank</code> via lineage, normalize to relative abundance, and fold per sample
+      (winner's column wins, others fill the samples it lacks). Samples in <em>no</em> source of that universe are
+      <strong>dropped and reported</strong>. This defines the biom's single feature space (universe × rank).</li>
+  <li><strong>Sample metadata.</strong> <strong>All</strong> columns of the winning metadata source flow onto the
+      sample axis. On shared samples the chosen <code>metadata_winning_source</code> wins (default
+      <code>METALOG_METADATA</code>); remaining sources fill gaps per field by a fixed precedence order.</li>
   <li><strong>Feature metadata.</strong> Lineage taken from the universe's sources (the winner's lineage column).</li>
   <li><strong>Assemble.</strong> Build a <code>biom.Table</code>: counts × samples, reconciled sample metadata,
       profile lineage as feature metadata. Reuses the existing biom build path.</li>
