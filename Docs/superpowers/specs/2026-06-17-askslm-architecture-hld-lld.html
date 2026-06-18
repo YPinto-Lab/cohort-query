@@ -187,7 +187,9 @@ each source has a <strong>kind</strong>:</p>
       it speaks:
       <ul>
         <li><code>NCBI_TAXONOMY</code> — addressed by NCBI <code>tax_id</code>: <code>SRA_TAXONOMY</code> (STAT) and
-            both MetaPhlAn4 variants. (MetaPhlAn maps to NCBI tax_id, so it shares STAT's namespace.)</li>
+            both MetaPhlAn4 variants. The shared key is the <code>tax_id</code>: an NCBI <code>tax_id</code> maps to a
+            MetaPhlAn clade (<code>tax_id → clade</code>), not the reverse, so alignment goes from STAT's tax_ids onto
+            MetaPhlAn's clades.</li>
         <li><code>MOTUS</code> — addressed by mOTU IDs: <code>METALOG_MOTUS3</code>, <code>METALOG_SPIRE_MOTUS</code>.</li>
       </ul></li>
 </ul>
@@ -199,14 +201,17 @@ NCBI tax_ids never share a biom). All sources are <strong>normalized to relative
 materialization, so columns are comparable even when their native units differ (STAT counts vs MetaPhlAn %).</p>
 <p>This flat list mirrors how the data ships (one table per metadata set and per profiler) and gives one extension
 path: a new database, metadata set, or profiler is just a new <code>Source</code> (with its <code>universe</code>).</p>
-<p><strong>Identity.</strong> The same biological sample can appear in more than one source; we recognize it by its
-<strong>accession</strong>. <code>AccessionNormalizer</code> maps each source's raw identifier to one canonical level
-so set equality is meaningful.</p>
-<ul>
-  <li><strong>Identity level <span class="badge proposed">confirm</span>:</strong> "a sample" = the
-      <strong>biosample-level</strong> accession (one biosample may have several runs); the biom's columns are
-      biosamples.</li>
-</ul>
+<p><strong>Identity <span class="badge locked">confirmed against the data</span>.</strong> The canonical key is the
+<strong>NCBI BioSample accession</strong> (<code>SAMN…</code>); the biom's columns are biosamples. The join is two
+hops, because Metalog profiles use a study-internal name, not an external accession:</p>
+<pre><code>profile.sample_alias            ⋈  metalog_metadata.sample_alias       <span class="com"># Metalog-internal, e.g. Cait_2019_infant.sample_AC114</span>
+metalog_metadata.spire_sample_name  ==  sra_metadata.biosample          <span class="com"># SAMN… — the canonical key</span>
+</code></pre>
+<p><code>AccessionNormalizer</code> therefore resolves each source <em>to a biosample</em>: SRA exposes
+<code>biosample</code> directly; Metalog profiles are bridged through <code>METALOG_METADATA</code>
+(<code>sample_alias → spire_sample_name</code>). Metalog deliberately keeps its own ids because one external
+accession can map to several biological samples and vice-versa — so the metadata/mapping bridge is mandatory, not a
+shortcut.</p>
 
 <figure>
 <pre class="mermaid">
@@ -235,27 +240,67 @@ flowchart LR
 <p>Two verbs. <code>ask()</code> understands the question and previews the cohort — <strong>no source choices,
 no biom presupposed.</strong> <code>run()</code> materializes a biom and is the only place the two winning sources
 (which PROFILE source heads the counts universe, which METADATA source wins ties) are named.</p>
+<h4>The calls</h4>
 <pre><code><span class="com"># configure once</span>
 askslm.config(db=<span class="str">"/mnt/lab/metalog_sra.duckdb"</span>, llm=<span class="str">"gemini"</span>, llm_key=os.environ[<span class="str">"..."</span>])
 
 <span class="com"># understand + preview (one LLM hop + cheap COUNTs). Persists the plan to disk.</span>
 plan = askslm.ask(<span class="str">"fecal metagenomes from adults with IBD, Western countries"</span>, save=<span class="str">"plans/ibd.json"</span>)
+plan                       <span class="com"># renders the show-your-work below; stats-only users stop here</span>
 
-plan        <span class="com"># show-your-work: interpretation, per-source SQL, overlap partition + coverage:</span>
-            <span class="com">#   cohort 412 — SRA-only 205, Metalog-only 32, shared 175</span>
-            <span class="com">#   profile coverage: metalog_metaphlan4_species 207, metalog_motus3 207, sra_taxonomy 380</span>
-
-<span class="com"># stats only? stop here — no materialization needed.</span>
-
-<span class="com"># materialize: winning sources chosen HERE — both are Sources.</span>
-<span class="com"># profile_winning_source heads the NCBI_TAXONOMY universe; STAT fills samples MetaPhlAn lacks,</span>
-<span class="com"># everything normalized to relative abundance.</span>
 table = plan.run(profile_winning_source=askslm.Source.METALOG_METAPHLAN4_SPECIES,
-                 metadata_winning_source=askslm.Source.METALOG_METADATA,   <span class="com"># default; resolves shared samples</span>
-                 out=<span class="str">"cohort.biom"</span>)
+                 metadata_winning_source=askslm.Source.METALOG_METADATA,   <span class="com"># default</span>
+                 out=<span class="str">"cohort.biom"</span>)                                <span class="com"># prints the overview below, returns a biom.Table</span>
 
 <span class="com"># reproduce later — same cohort, a different universe, no LLM call:</span>
 askslm.load_plan(<span class="str">"plans/ibd.json"</span>).run(profile_winning_source=askslm.Source.METALOG_MOTUS3, out=<span class="str">"cohort_motus.biom"</span>)
+</code></pre>
+
+<h4>What <code>plan</code> shows — the simple read</h4>
+<p>The headline most queries need: what was understood, how big the cohort is, and which universes Noam can build.</p>
+<pre><code>Plan · "fecal metagenomes from adults with IBD, Western countries"
+
+Understood as
+    body_site      = stool / feces
+    host_age       = adult (≥ 18)
+    disease        = IBD  (Crohn's or ulcerative colitis)
+    country        ∈ Western Europe ∪ North America ∪ Oceania
+
+Cohort           412 biosamples            (joined on SAMN biosample accession)
+
+Build options    universe         samples you could materialize
+    NCBI_TAXONOMY    405   ← METALOG_METAPHLAN4_SPECIES 207 ∪ SRA_TAXONOMY 380
+    MOTUS            240   ← METALOG_MOTUS3 207 ∪ METALOG_SPIRE_MOTUS 190
+
+→ plan.run(profile_winning_source=…, out=…)        (or stop here for stats only)
+</code></pre>
+
+<h4>…and the edge cases — expand when they matter</h4>
+<p>The same <code>plan</code> exposes the overlap and the exact SQL for when Noam needs to trust or debug it.</p>
+<pre><code>Source overlap (same biosample in both databases)
+    SRA only       205        metadata + counts come from SRA
+    Metalog only    32        from Metalog
+    shared         175    ←   metadata_winning_source decides these
+
+Per-source coverage           metadata: SRA_METADATA 380 · METALOG_METADATA 207
+                              profile : SRA_TAXONOMY 380 · METAPHLAN4_SPECIES 207
+                                        MOTUS3 207 · SPIRE_MOTUS 190
+
+SQL                           SRA      → SELECT biosample, … FROM sra_metadata WHERE …
+                              Metalog  → SELECT spire_sample_name, … FROM metalog_metadata WHERE …
+</code></pre>
+
+<h4>What <code>plan.run()</code> prints — the build overview</h4>
+<p>Materialization is not silent: <code>run()</code> prints a one-screen summary of what it actually built before
+returning the <code>biom.Table</code>, so Noam sees the drops and the provenance without inspecting the file.</p>
+<pre><code>Built  cohort.biom   (biom JSON)
+
+    universe         NCBI_TAXONOMY   (relative abundance)
+    samples          207             (412 cohort − 205 with no NCBI_TAXONOMY profile, dropped)
+    features         1,432 species
+    counts           METALOG_METAPHLAN4_SPECIES 175  +  SRA_TAXONOMY 32 (filled missing samples)
+    metadata         METALOG_METADATA wins 175 shared · SRA_METADATA supplies 32 · 0 SRA-only kept
+    dropped          205 biosamples  →  plan.dropped  for the list
 </code></pre>
 <div class="note"><strong>Symmetry.</strong> Both run() choices are <code>Source</code>s. <code>profile_winning_source</code>
 must be a <code>PROFILE</code> source (it derives the universe and heads its precedence); <code>metadata_winning_source</code>
@@ -581,7 +626,7 @@ refuses.</p>
 <h3>B.8 The cohort engine — <code>CohortBuilder</code> and collaborators</h3>
 <pre><code><span class="kw">class</span> CohortBuilder:
     <span class="kw">def</span> __init__(self, discovery: CohortDiscovery, profiles: ProfileReconciler,
-                 metadata: MetadataReader, factory: BiomFactory):
+                 metadata: MetadataReconciler, factory: BiomFactory):
         self._discovery = discovery
         self._profiles = profiles
         self._metadata = metadata
@@ -599,8 +644,8 @@ refuses.</p>
   <tr><td><code>CohortDiscovery</code></td><td><code>discover(queries) -> Cohort</code></td><td>run each query, normalize accessions, group by metadata source into a <code>Cohort</code> that knows its overlaps.</td></tr>
   <tr><td><code>ProfileReader</code></td><td><code>read(profile_source, accessions) -> ProfileMatrix</code></td><td>pull one PROFILE source's table; matrix columns are the samples that actually have it.</td></tr>
   <tr><td><code>ProfileReconciler</code></td><td><code>read(profile_winning_source, accessions) -> ProfileMatrix</code></td><td>read every source of the winner's universe, normalize each to relative abundance, fold by precedence at <strong>whole-column</strong> granularity (winner's column wins, others fill missing samples).</td></tr>
-  <tr><td><code>MetadataReader</code></td><td><code>reconciled(cohort, winning_source) -> ReconciledMetadata</code></td><td>read each metadata source, fold with the winning source at the head.</td></tr>
-  <tr><td><code>MetadataReconciler</code></td><td><code>reconcile(frames, winning_source) -> ReconciledMetadata</code></td><td>total precedence order: winner wins, then <code>DEFAULT_PRECEDENCE</code> fills gaps.</td></tr>
+  <tr><td><code>MetadataReader</code></td><td><code>read(source, accessions) -> DataFrame</code></td><td>read ONE metadata source's frame for the cohort — the mirror of <code>ProfileReader</code>.</td></tr>
+  <tr><td><code>MetadataReconciler</code></td><td><code>reconciled(cohort, winning_source) -> ReconciledMetadata</code></td><td>orchestrate: read every metadata source via <code>MetadataReader</code>, fold per field by precedence (winner heads it) — the mirror of <code>ProfileReconciler</code>.</td></tr>
   <tr><td><code>BiomFactory</code></td><td><code>build(matrix, metadata) -> biom.Table</code></td><td>assemble the single-feature-space table; lineage on the feature axis.</td></tr>
   <tr><td><code>DropReport</code></td><td><code>between(requested, present) -> DropReport</code></td><td>set difference: cohort samples with no profile, reported never silently kept.</td></tr>
 </table>
@@ -611,10 +656,14 @@ refuses.</p>
 <code>DEFAULT_PRECEDENCE</code>. So a conflict between two <em>non-winning</em> sources is resolved by whichever
 ranks higher there — never an undefined tie. (With today's two metadata sources the winner fully determines it; this
 only matters at three or more.)</p>
-<pre><code><span class="kw">class</span> MetadataReconciler:
+<pre><code><span class="kw">class</span> MetadataReconciler:                                <span class="com"># orchestrator — mirror of ProfileReconciler</span>
     DEFAULT_PRECEDENCE = (Source.METALOG_METADATA, Source.SRA_METADATA)   <span class="com"># tie-break among non-winning sources</span>
 
-    <span class="kw">def</span> reconcile(self, frames: dict[Source, pandas.DataFrame], winning_source: Source) -> ReconciledMetadata:
+    <span class="kw">def</span> __init__(self, reader: MetadataReader):
+        self._reader = reader
+
+    <span class="kw">def</span> reconciled(self, cohort: Cohort, winning_source: Source) -> ReconciledMetadata:
+        frames = {s: self._reader.read(s, cohort.union()) <span class="kw">for</span> s <span class="kw">in</span> cohort.by_source}
         ordered = self._ordered(frames, winning_source)
         <span class="kw">return</span> ReconciledMetadata(self._folded(ordered))
 

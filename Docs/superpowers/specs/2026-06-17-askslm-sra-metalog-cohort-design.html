@@ -94,9 +94,11 @@ and emits one <code>.biom</code>.</p>
       it lacks at <strong>whole-column granularity</strong> (a sample is never half-STAT/half-MetaPhlAn); cross-universe
       never mixes. All counts <strong>normalized to relative abundance</strong>. One plan materializes in several
       universes.</td></tr>
-  <tr><td>Sample identity</td><td><strong>Accession is the join key.</strong> Same canonical (biosample-level)
-      accession across sources = same sample. The preview shows the SRA-only / Metalog-only / <strong>shared</strong>
-      partition so overlaps are visible before deciding.</td></tr>
+  <tr><td>Sample identity</td><td><strong>Canonical key = NCBI BioSample (<code>SAMN…</code>)</strong>, confirmed
+      against the data. Two-hop join: Metalog profiles key on a study-internal <code>sample_alias</code> →
+      <code>METALOG_METADATA</code> carries <code>spire_sample_name</code> = SRA <code>biosample</code>. The metadata/
+      mapping bridge is mandatory (Metalog keeps its own ids; external accessions aren't 1:1). Preview shows the
+      SRA-only / Metalog-only / <strong>shared</strong> partition.</td></tr>
   <tr><td>Metadata conflict</td><td>On <strong>shared</strong> samples, <strong>Noam picks the winning METADATA
       source per query</strong> (<code>metadata_winning_source</code> on <code>run()</code>, default
       <code>METALOG_METADATA</code>). It heads a total precedence order; remaining sources fill gaps by a fixed
