@@ -44,6 +44,23 @@
   .meta{color:var(--muted); font-size:.85rem}
   hr{border:none; border-top:1px solid var(--line); margin:2.4rem 0}
   figcaption{color:var(--muted); font-size:.8rem; text-align:center; margin-top:.3rem}
+  details.sec{margin:0}
+  details.sec2{margin:2.4rem 0 0}
+  details.sec3{margin:1.4rem 0 0}
+  details.sec>summary{cursor:pointer; list-style:none; outline:none}
+  details.sec>summary::-webkit-details-marker{display:none}
+  details.sec>summary::before{color:var(--muted); font-size:.78em; margin-right:.35em}
+  details.sec[open]>summary::before{content:'\25be'}
+  details.sec:not([open])>summary::before{content:'\25b8'}
+  details.sec2>summary{font-size:1.3rem; font-weight:600; margin:0 0 .8rem; padding-bottom:.25rem; border-bottom:1px solid var(--line)}
+  details.sec3>summary{font-size:1.05rem; font-weight:600; margin:0 0 .4rem}
+  nav#toc{border:1px solid var(--line); background:#fff; border-radius:10px; padding:1rem 1.2rem; margin:1.4rem 0 2rem}
+  nav#toc>strong{display:block; font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:.5rem}
+  nav#toc ul{list-style:none; margin:.2rem 0; padding-left:0}
+  nav#toc ul ul{padding-left:1.1rem; margin:.1rem 0}
+  nav#toc li{margin:.15rem 0}
+  nav#toc a{color:var(--accent); text-decoration:none; font-size:.9rem}
+  nav#toc a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -62,6 +79,8 @@
 model: accession is the join key; <code>Cohort</code> exposes the per-source partition (SRA-only / Metalog-only /
 shared) and the preview shows it. (3) <code>Translation</code> holds <code>queries: tuple[SourceQuery, …]</code>
 (N sources). (4) Renames: <code>CohortEstimator</code> → <code>CohortPreviewBuilder</code>.</div>
+
+<nav id="toc"><strong>Contents</strong><ul id="toc-list"></ul></nav>
 
 <h2>0. Vocabulary <span class="badge locked">read this first</span></h2>
 <p>Architecture terms used below — all are <strong>industry-standard, language-agnostic</strong> names (the C#
@@ -596,6 +615,52 @@ default; JSON plan files; samples lacking the profiler are dropped; metadata win
 Open: identity level (biosample assumed). Next: writing-plans skill → implementation plan.</p>
 
 </div>
+
+<script>
+(function(){
+  var wrap = document.querySelector('.wrap');
+  var tocList = document.getElementById('toc-list');
+  if(!wrap || !tocList) return;
+  var nodes = Array.prototype.slice.call(wrap.children);
+  function slug(t){ return t.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
+  var curH2 = null, curH3 = null, curSub = null;
+
+  nodes.forEach(function(node){
+    var tag = node.tagName;
+    if(tag === 'H2'){
+      var id = node.id || slug(node.textContent);
+      var d = document.createElement('details'); d.open = true; d.className = 'sec sec2';
+      var s = document.createElement('summary'); s.id = id; s.innerHTML = node.innerHTML;
+      d.appendChild(s); wrap.appendChild(d);
+      curH2 = d; curH3 = null;
+      var li = document.createElement('li');
+      var a = document.createElement('a'); a.href = '#' + id; a.textContent = node.textContent;
+      li.appendChild(a);
+      var ul = document.createElement('ul'); li.appendChild(ul); tocList.appendChild(li); curSub = ul;
+      node.remove(); return;
+    }
+    if(tag === 'H3' && curH2){
+      var id3 = node.id || slug(node.textContent);
+      var d3 = document.createElement('details'); d3.open = true; d3.className = 'sec sec3';
+      var s3 = document.createElement('summary'); s3.id = id3; s3.innerHTML = node.innerHTML;
+      d3.appendChild(s3); curH2.appendChild(d3); curH3 = d3;
+      var li3 = document.createElement('li');
+      var a3 = document.createElement('a'); a3.href = '#' + id3; a3.textContent = node.textContent;
+      li3.appendChild(a3); curSub.appendChild(li3);
+      node.remove(); return;
+    }
+    if(curH3){ curH3.appendChild(node); return; }
+    if(curH2){ curH2.appendChild(node); }
+  });
+
+  document.addEventListener('click', function(e){
+    var a = e.target.closest('a[href^="#"]'); if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1)); if(!el) return;
+    var p = el.parentElement;
+    while(p){ if(p.tagName === 'DETAILS'){ p.open = true; } p = p.parentElement; }
+  });
+})();
+</script>
 
 <script type="module">
   import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
