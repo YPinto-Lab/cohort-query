@@ -196,6 +196,10 @@ universe without re-invoking the LLM.</div>
   <tr><td><code>biom_builder</code></td><td>Assemble the <code>biom.Table</code> (reuses existing build path).</td><td>reconciler output</td></tr>
   <tr><td><code>load_plan</code></td><td>Reconstruct a Plan from its file.</td><td>Plan</td></tr>
 </table>
+<p class="meta">These are the product-level units. The architecture doc names the concrete classes behind them:
+<code>executor</code> → <code>CohortDiscovery</code> + the readers; <code>reconciler</code> →
+<code>ProfileReconciler</code> + <code>MetadataReconciler</code>; <code>biom_builder</code> →
+<code>BiomFactory</code>. See <code>2026-06-17-askslm-architecture-hld-lld.html</code> §B.</p>
 
 <h2>8. Error handling <span class="badge locked">Locked</span></h2>
 <ul>
