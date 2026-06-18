@@ -763,6 +763,24 @@ arrive ready:</p>
 step pure.</p>
 
 <h3>B.7 <code>Plan</code>, <code>PlanView</code>, <code>PlanRepository</code></h3>
+<p>The <code>Plan</code> is a two-step, reproducible artifact: <code>ask()</code> builds and persists it;
+<code>run()</code> materializes it — any number of times, with different winners or rank. <code>load_plan</code>
+re-enters at the persisted state without touching the LLM.</p>
+<figure>
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> Translating: ask(question)
+  Translating --> Previewing: LLM → one SQL per source
+  Previewing --> Persisted: save to disk (plan JSON)
+  Persisted --> [*]: stats only — stop here
+  Persisted --> Materialized: run(winners, feature_rank)
+  Materialized --> Persisted: same plan, materialize again
+  Materialized --> [*]: biom.Table
+  [*] --> Persisted: load_plan(path) — no LLM
+</pre>
+<figcaption>One LLM hop lives on the <code>ask → Persisted</code> edge; every <code>run()</code> and
+<code>load_plan().run()</code> after it is LLM-free, so a committed plan reproduces the cohort in any universe × rank.</figcaption>
+</figure>
 <pre><code><span class="kw">@dataclass</span>(frozen=True)
 <span class="kw">class</span> Plan:
     question: ResearchQuestion
@@ -886,6 +904,33 @@ no lambda — <code>combine_first_onto</code> is a named module function.</p>
 <p>Two profile sources of one universe — STAT counts and MetaPhlAn relative abundance — must become a single
 comparable matrix. The hard part is not format: they are <strong>different estimators of the same quantity</strong>.
 This section is the whole counts pipeline behind <code>ProfileReconciler</code>.</p>
+
+<figure>
+<pre class="mermaid">
+flowchart LR
+  subgraph PER["per source · in the winner's universe"]
+    direction TB
+    RD["ProfileReader.read<br/>native (STAT counts / MetaPhlAn relative)"]
+    XW["to_clade<br/>STAT tax_id → clade · MetaPhlAn untouched"]
+    RU["roll_up<br/>→ feature_rank, via lineage"]
+    NM["normalize_to_relative<br/>→ per-sample proportions"]
+    RD --> XW --> RU --> NM
+  end
+  W["winner column<br/>(profile_winning_source)"]:::win
+  O["other same-universe<br/>columns"]:::other
+  NM --> W
+  NM --> O
+  W ==> FB["fold_by_sample<br/>winner wins · others fill missing samples"]
+  O --> FB
+  FB ==> PM["ProfileMatrix<br/>features × samples · one universe × rank"]:::out
+  classDef win fill:#fff3d6,stroke:#9a5b00,color:#5a3600
+  classDef other fill:#eef2f6,stroke:#c7d0da,color:#1b1f24
+  classDef out fill:#e7f6ec,stroke:#1f7a3d,color:#0d3b1e
+</pre>
+<figcaption>Every source runs the same four stages; columns only ever combine at <code>fold_by_sample</code>, where a
+whole column comes from one source (winner first, others fill the samples it lacks). Cross-source mixing never happens
+<em>within</em> a column.</figcaption>
+</figure>
 
 <h4>How MetaPhlAn defines relative abundance</h4>
 <p>MetaPhlAn4 maps reads to clade-specific <strong>marker genes</strong>, estimates each clade's coverage, corrects for
