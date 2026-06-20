@@ -33,25 +33,27 @@ Every Metalog table gets an `environment` column (human | animal | ocean | envir
 - **`sra_metadata`** — per `SRAMetadataSchema` (`acc`, `biosample`, `sample_acc`, `bioproject`, `assay_type`,
   `geo_loc_*`, `organism`, `jattr`, … 36 fields). Key to biosample via `biosample`.
 
-### PROFILE sources (long)
-| Table | Universe | Unit | Columns |
+### PROFILE sources (long) — each tagged with its `ProfilerFamily`
+| Table | Family | Unit | Columns |
 |---|---|---|---|
-| `metalog_metaphlan4_species` | NCBI_TAXONOMY | relative | `sample_alias`, `species` (`s__…`), `rel_abund`, `environment` |
-| `metalog_metaphlan4` (all levels) | NCBI_TAXONOMY | relative | `sample_alias`, `clade_name` (`k__…t__SGB…`), `rel_abund`, `environment` |
+| `metalog_metaphlan4_species` | METAPHLAN | relative | `sample_alias`, `species` (`s__…`), `rel_abund`, `environment` |
+| `metalog_metaphlan4` (all levels) | METAPHLAN | relative | `sample_alias`, `clade_name` (`k__…t__SGB…`), `rel_abund`, `environment` |
 | `metalog_motus3` | MOTUS | relative | `sample_alias`, `species`, `rel_abund`, `insert_count`, `environment` |
 | `metalog_spire_motus` | MOTUS | relative | `sample_alias`, `species`, `rel_abund`, `insert_count`, `environment` |
-| `sra_taxonomy` (STAT) | NCBI_TAXONOMY | counts | per `SRATaxonomySchema`: `acc`, `tax_id`, `rank`, `name`, `total_count`, `self_count`, `ilevel/ileft/iright`, `bioproject` |
+| `sra_taxonomy` (STAT) | STAT | counts | per `SRATaxonomySchema`: `acc`, `tax_id`, `rank`, `name`, `total_count`, `self_count`, `ilevel/ileft/iright`, `bioproject` |
 | `metalog_mlp` *(not v1)* | — | — | `sample_alias`, `microbial_load_prediction` (human only) |
 
-> Caveat: MetaPhlAn4 all-levels uses **SGB** clade ids (`t__SGB1871`) that don't all map to NCBI tax_id; the
-> `s__` species file is the NCBI-alignable one. Note in code; doesn't change the build.
+A biom is built from **one family** (`STAT` | `METAPHLAN` | `MOTUS`); STAT (read-count) and MetaPhlAn (coverage) are
+different estimators and never pool (see HLD §B.11). So the build needs no STAT↔MetaPhlAn crosswalk in v1.
 
-### Reference table (static, ships with MetaPhlAn)
-- **`metaphlan_clades`** — load `~/Downloads/metaphlan4_clades.tsv` (95,710 rows): `clade_name`, `lineage`,
-  `NCBI_taxids` (pipe-aligned to lineage). This is **the crosswalk** that lets the package rewrite STAT's NCBI
-  `tax_id` → MetaPhlAn `clade_name` (clade is canonical; named clades carry a tax_id, SGB clades don't → MetaPhlAn-only
-  by construction). The `lineage` column also drives `feature_rank` roll-up. Build the reverse map (species-rank
-  tax_id → clade) here or in the package; the table itself is just loaded read-only.
+> Caveat: MetaPhlAn4 all-levels uses **SGB** clade ids (`t__SGB1871`) that don't all map to NCBI tax_id; the
+> `s__` species file is the NCBI-alignable one. Within the MetaPhlAn family this is irrelevant (clades are native ids).
+
+### Reference table (static) — `metaphlan_clades` *(roadmap, not v1)*
+- **`metaphlan_clades`** — `~/Downloads/metaphlan4_clades.tsv` (95,710 rows): `clade_name`, `lineage`,
+  `NCBI_taxids` (pipe-aligned). **Not needed for v1 builds** (within a family feature ids are native). Keep it for the
+  roadmap **STAT→MetaPhlAn unification** (convert STAT counts to coverage + `tax_id → clade` relabel) and for aligning
+  taxa across a separately-built STAT biom and MetaPhlAn biom. Load it read-only if/when that work starts.
 
 ### Join keys (resolve everything to biosample)
 ```
