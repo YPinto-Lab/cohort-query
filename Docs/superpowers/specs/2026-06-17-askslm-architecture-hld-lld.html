@@ -436,18 +436,18 @@ classDiagram
     +feature_meta
   }
   class SourceKind {
-    <<enumeration>>
+    &lt;&lt;enumeration&gt;&gt;
     METADATA
     PROFILE
   }
   class ProfilerFamily {
-    <<enumeration>>
+    &lt;&lt;enumeration&gt;&gt;
     STAT
     METAPHLAN
     MOTUS
   }
   class Rank {
-    <<enumeration>>
+    &lt;&lt;enumeration&gt;&gt;
     SPECIES
     GENUS
     PHYLUM
@@ -837,13 +837,13 @@ native granularity (<code>rank</code> + <code>lineage</code> on every feature) s
 <pre class="mermaid">
 flowchart LR
   subgraph PER[per source · profile_sources, one family]
-    RD[ProfileReader.read<br>native values<br>STAT self_count · MetaPhlAn RA]
+    RD[ProfileReader.read&lt;br&gt;native values&lt;br&gt;STAT self_count · MetaPhlAn RA]
   end
-  RD --> H[head column<br>first in profile_sources]
-  RD --> O[other named<br>same-family columns]
-  H --> FB[fold_by_sample<br>head wins overlap<br>others add their samples]
+  RD --> H[head column&lt;br&gt;first in profile_sources]
+  RD --> O[other named&lt;br&gt;same-family columns]
+  H --> FB[fold_by_sample&lt;br&gt;head wins overlap&lt;br&gt;others add their samples]
   O --> FB
-  FB --> PM[ProfileMatrix<br>features × samples<br>one family · native granularity]
+  FB --> PM[ProfileMatrix&lt;br&gt;features × samples&lt;br&gt;one family · native granularity]
 </pre>
 <figcaption>The named same-family sources in, one matrix out — read at native granularity, no roll-up or normalization.
 The head labels the biom's family and wins overlapping samples; each other source adds the samples it alone has. No
