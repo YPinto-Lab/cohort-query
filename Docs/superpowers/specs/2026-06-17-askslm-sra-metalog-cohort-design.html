@@ -91,14 +91,14 @@ and emits one <code>.biom</code>.</p>
       <code>METAPHLAN</code> (NCBI clade, coverage), <code>MOTUS</code> (mOTU IDs, coverage). <strong>One biom = one
       family.</strong> STAT and MetaPhlAn share a namespace but not an estimator, so they are <em>different</em> families
       and never share a biom.</td></tr>
-  <tr><td>Output / counts</td><td>Noam names a <code>profile_winning_source</code> at <strong><code>plan.run()</code></strong>
-      (materialization, not <code>ask()</code>). Its family is derived; other same-family sources fill the samples it
-      lacks at <strong>whole-column granularity</strong>; cross-family never mixes. Counts are
-      <strong>normalized to relative abundance</strong>. One plan materializes one biom per family.</td></tr>
-  <tr><td>Feature rank</td><td>The biom's feature-axis granularity is a separate <code>run()</code> knob,
-      <strong><code>feature_rank</code></strong> (<code>SPECIES</code> default · <code>GENUS</code> · … · <code>ALL</code>).
-      Each source is rolled <strong>up</strong> to it via lineage; <code>feature_rank</code> must be ≥ the winner's
-      native rank (<code>MOTUS</code> is species-only).</td></tr>
+  <tr><td>Output / counts</td><td>Noam names <code>profile_sources</code> (one family, head first) at
+      <strong><code>plan.run()</code></strong> (materialization, not <code>ask()</code>). Their samples are <strong>unioned</strong>;
+      the head derives the family and wins overlapping samples; cross-family never mixes. Each biom ships its source's
+      <strong>native</strong> values (STAT <code>self_count</code>, MetaPhlAn relative abundance). One plan materializes one biom per family choice.</td></tr>
+  <tr><td>Granularity</td><td>No <code>run()</code> rank knob. Each biom ships its source's <strong>native</strong>
+      granularity (STAT <code>self_count</code> at every NCBI rank; MetaPhlAn all levels), with <code>rank</code> + lineage
+      on every feature. Noam projects to a rank himself; <code>StatProfile.relative_abundance(rank)</code> gives the
+      per-rank RA with an <code>Unclassified</code> bucket.</td></tr>
   <tr><td>Sample identity</td><td><strong>Canonical key = NCBI BioSample (<code>SAMN…</code>)</strong>, confirmed
       against the data, and <strong>materialized at build</strong>: the two-hop resolution (Metalog
       <code>sample_alias</code> → <code>METALOG_METADATA.spire_sample_name</code> = SRA <code>biosample</code>) runs
@@ -108,10 +108,11 @@ and emits one <code>.biom</code>.</p>
       <strong>shared</strong> partition.</td></tr>
   <tr><td>Metadata conflict</td><td>On <strong>shared</strong> samples, <strong>Noam picks the winning METADATA
       source per query</strong> (<code>metadata_winning_source</code> on <code>run()</code>, default
-      <code>METALOG_METADATA</code>). It heads a total precedence order; remaining sources fill gaps by a fixed
-      default order (so 3+-source ties are defined).</td></tr>
-  <tr><td>Count conflict</td><td>On shared samples the <code>profile_winning_source</code>'s column wins; other
-      same-family sources only supply samples it lacks. Whole-column granularity, no within-sample method mixing.</td></tr>
+      <code>METALOG_METADATA</code>). It wins; the other metadata source fills only the fields it leaves empty
+      (<code>combine_first</code>). Two metadata sources, so no tie-break table — a third would reintroduce one.</td></tr>
+  <tr><td>Count conflict</td><td>No within-sample blending: a sample's counts come from a single source (the head
+      where sources overlap). Same profiler, so the overlap choice is low-stakes; the union only adds whole columns for
+      samples a source alone has.</td></tr>
   <tr><td>Notebook UX</td><td><strong>Two-step Plan object</strong> that is also persisted to disk.</td></tr>
   <tr><td>LLM provider</td><td>Provider-agnostic behind a small interface; <strong>v1 ships a Gemini
       backend</strong> (free API). Swapping providers is a new backend class.</td></tr>
@@ -122,20 +123,20 @@ and emits one <code>.biom</code>.</p>
 <h2>4. The sources <span class="badge locked">Locked</span></h2>
 <p>Every DuckDB table is one <code>Source</code> with a <strong>kind</strong>. <code>METADATA</code> sources describe
 samples (reconcilable, per field). <code>PROFILE</code> sources feed counts; each belongs to a
-<strong>profiler family</strong> (shared namespace + estimator) — only same-family sources combine into one biom.</p>
+<strong>profiler family</strong> (shared namespace + estimator) — a biom unions the same-family sources you name
+(head first); only same-family sources can combine.</p>
 <table>
   <tr><th>Source</th><th>Kind</th><th>Family</th><th>Unit</th><th>Role / notes</th></tr>
   <tr><td><code>SRA_METADATA</code></td><td>METADATA</td><td>—</td><td>—</td><td>Messy free-text; SRA run/sample fields.</td></tr>
   <tr><td><code>METALOG_METADATA</code></td><td>METADATA</td><td>—</td><td>—</td><td>Default winner — curated, comparable.</td></tr>
-  <tr><td><code>SRA_TAXONOMY</code></td><td>PROFILE</td><td><code>STAT</code></td><td>counts</td><td>k-mer / whole-genome read counts; <code>self_count</code>/<code>total_count</code> (→ normalized). Sequence abundance.</td></tr>
+  <tr><td><code>SRA_TAXONOMY</code></td><td>PROFILE</td><td><code>STAT</code></td><td>counts</td><td>k-mer / whole-genome read counts; stored as <code>self_count</code> per tax_id (all ranks; <code>total_count</code> = subtree sum). Sequence abundance.</td></tr>
   <tr><td><code>METALOG_METAPHLAN4_ALL</code></td><td>PROFILE</td><td><code>METAPHLAN</code></td><td>relative</td><td>Marker-gene coverage; full lineage phylum→strain. Cell abundance.</td></tr>
-  <tr><td><code>METALOG_METAPHLAN4_SPECIES</code></td><td>PROFILE</td><td><code>METAPHLAN</code></td><td>relative</td><td>Species-only; common meta-analysis choice.</td></tr>
   <tr><td><code>METALOG_MOTUS3</code></td><td>PROFILE</td><td><code>MOTUS</code></td><td>relative</td><td>Marker-gene coverage; uncultivated species.</td></tr>
   <tr><td><code>METALOG_SPIRE_MOTUS</code></td><td>PROFILE</td><td><code>MOTUS</code></td><td>relative</td><td>Same mOTU IDs, different coverage.</td></tr>
 </table>
 <p class="meta">A family shares <em>both</em> a feature namespace and an estimator. STAT and MetaPhlAn share the NCBI
-namespace but not the estimator (read-count vs coverage — §B.11); MetaPhlAn and mOTUs share the estimator but not the
-namespace. So the only same-family combinations are MetaPhlAn species+all and mOTUs3+SPIRE — STAT stands alone.</p>
+namespace but not the estimator (read-count vs coverage — §G.3); MetaPhlAn and mOTUs share the estimator but not the
+namespace. So the only poolable same-family pairs are MetaPhlAn species/all and mOTUs3/SPIRE — STAT stands alone.</p>
 
 <h2>5. End-to-end flow <span class="badge locked">Locked</span></h2>
 <pre><code>1. pip install askslm
@@ -155,40 +156,41 @@ namespace. So the only same-family combinations are MetaPhlAn species+all and mO
      • English restatement of the filters understood
      • the per-source SQL (SRA, Metalog, …)
      • cohort partition: SRA-only 205, Metalog-only 32, shared 175  (overlaps made visible)
-     • per profile-source coverage so you can pick:
-         metalog_metaphlan4_species 207, metalog_motus3 207, sra_taxonomy 380
+     • per family, each profile source's coverage AND its unique-in-family contribution,
+       so the union value is visible — e.g. for METAPHLAN:
+         metalog_metaphlan4_species 207 (+0), metalog_metaphlan4_all 207 (+0),
+         somenew_metaphlan 54 (+21 unique)  →  union all = 228
+       (+0 = redundant, adds nothing; +N = listing it grows the biom by N samples)
    (Stats only? Stop here — no materialization needed.)
 
 5. Execute — winning sources chosen HERE:
-   # profile winner heads its family (METAPHLAN); the other MetaPhlAn source fills samples it lacks;
-   # counts normalized to relative abundance. (STAT is a different family — its own biom.)
-   table = plan.run(profile_winning_source=askslm.Source.METALOG_METAPHLAN4_SPECIES,
-                    metadata_winning_source=askslm.Source.METALOG_METADATA,  # resolves the 175 shared
-                    feature_rank=askslm.FeatureRank.SPECIES,                 # the feature axis (default)
+   # the named profile_sources union into the counts (family METAPHLAN, from the head);
+   # each biom ships native values. (STAT is a different family — its own biom.)
+   table = plan.run(profile_sources=[askslm.Source.METALOG_METAPHLAN4_ALL],     # one family, head first
+                    metadata_winning_source=askslm.Source.METALOG_METADATA,      # resolves the 175 shared
                     out="cohort.biom")
 
    # reproduce later — same cohort, a different family, no LLM call:
-   askslm.load_plan("plans/ibd_western.json").run(profile_winning_source=askslm.Source.METALOG_MOTUS3, out="cohort_motus.biom")
+   askslm.load_plan("plans/ibd_western.json").run(profile_sources=askslm.Source.METALOG_MOTUS3, out="cohort_motus.biom")
 </code></pre>
 
 <div class="note"><strong>The plan file is the reproducible artifact.</strong> <code>ask()</code> persists the question,
 interpretation, per-source SQL, cohort preview, and db reference — but <em>not</em> the source choices, since those are
 <code>run()</code> arguments. Commit the plan next to the notebook;
-<code>load_plan(...).run(profile_winning_source, metadata_winning_source, feature_rank, out)</code> reproduces the cohort
-in any family × rank without re-invoking the LLM.</div>
+<code>load_plan(...).run(profile_sources, metadata_winning_source, out)</code> reproduces the cohort
+in any family without re-invoking the LLM.</div>
 
 <h2>6. What <code>plan.run()</code> does — the merge <span class="badge locked">Locked</span></h2>
 <ol>
   <li><strong>Discovery.</strong> Run each SQL string → biosamples per source (the key is build-stamped, so no
       per-query join); cohort = the union, partitioned into SRA-only / Metalog-only / shared.</li>
-  <li><strong>Counts.</strong> Take the <code>profile_winning_source</code>'s <strong>family</strong>; read every source
-      in it (their feature ids already match — no crosswalk). Roll each up to <code>feature_rank</code> via lineage,
-      normalize to relative abundance, and fold per sample (winner's column wins, others fill the samples it lacks).
-      Samples in <em>no</em> source of that family are <strong>dropped and reported</strong>. This defines the biom's
-      single feature space (family × rank).</li>
+  <li><strong>Counts.</strong> Read each named <code>profile_sources</code> source (all one family) at <strong>native
+      granularity</strong> — no roll-up, no normalization — and fold <strong>per sample</strong> in list order: the head
+      wins overlapping samples, each source adds the samples it alone has. Samples no named source covers are
+      <strong>dropped and reported</strong>. This defines the biom's single feature space (one family, native granularity).</li>
   <li><strong>Sample metadata.</strong> <strong>All</strong> columns of the winning metadata source flow onto the
       sample axis. On shared samples the chosen <code>metadata_winning_source</code> wins (default
-      <code>METALOG_METADATA</code>); remaining sources fill gaps per field by a fixed precedence order.</li>
+      <code>METALOG_METADATA</code>); the other metadata source fills gaps per field (<code>combine_first</code>).</li>
   <li><strong>Feature metadata.</strong> Lineage taken from the family's sources (the winner's lineage column).</li>
   <li><strong>Assemble.</strong> Build a <code>biom.Table</code>: counts × samples, reconciled sample metadata,
       profile lineage as feature metadata. Reuses the existing biom build path.</li>
@@ -201,9 +203,9 @@ in any family × rank without re-invoking the LLM.</div>
   <tr><td><code>config</code></td><td>Resolve DuckDB path + LLM provider/key; fail fast if missing.</td><td>env, filesystem</td></tr>
   <tr><td><code>Source</code> (enum)</td><td>Closed set; one member per DuckDB table, each tagged METADATA or PROFILE (PROFILE sources carry a <code>ProfilerFamily</code> + unit) — single source of truth mapping a source to its table.</td><td>—</td></tr>
   <tr><td><code>translator</code></td><td>Question + every source's schema → structured interpretation + one SQL per source. Provider-agnostic interface; v1 = Gemini backend.</td><td>LLM backend, schemas</td></tr>
-  <tr><td><code>Plan</code></td><td>Hold interpretation / per-source SQL / cohort preview. Rich repr = show-your-work. Serialize to / from disk. <code>.run(profile_winning_source, metadata_winning_source, out)</code>.</td><td>translator output</td></tr>
-  <tr><td><code>executor</code></td><td>Run SQL on DuckDB; union accessions; count cohort partition + per profile-source coverage.</td><td>DuckDB, config</td></tr>
-  <tr><td><code>reconciler</code></td><td>Two folds: metadata by source precedence (per field), and profiles within the winner's family (per sample, normalized to relative abundance). Produces the drop report.</td><td>executor output, Source</td></tr>
+  <tr><td><code>Plan</code></td><td>Hold interpretation / per-source SQL / cohort preview. Rich repr = show-your-work. Serialize to / from disk. <code>.run(profile_sources, metadata_winning_source, out)</code>.</td><td>translator output</td></tr>
+  <tr><td><code>executor</code></td><td>Run SQL on DuckDB; union accessions; count cohort partition, per profile-source coverage, and each source's unique-in-family + family-union sizes.</td><td>DuckDB, config</td></tr>
+  <tr><td><code>reconciler</code></td><td>Metadata: <code>combine_first</code> across the two metadata sources (per field). Profiles: read each named same-family source at native granularity, fold per sample (head wins overlap). Produces the drop report.</td><td>executor output, Source</td></tr>
   <tr><td><code>biom_builder</code></td><td>Assemble the <code>biom.Table</code> (reuses existing build path).</td><td>reconciler output</td></tr>
   <tr><td><code>load_plan</code></td><td>Reconstruct a Plan from its file.</td><td>Plan</td></tr>
 </table>
@@ -228,8 +230,8 @@ in any family × rank without re-invoking the LLM.</div>
 <ul>
   <li><code>save=</code> on <code>ask()</code>: explicit path, defaulting to <code>plans/&lt;slug&gt;.json</code> when omitted.</li>
   <li>Plan file format: JSON (human-diffable, commit-friendly).</li>
-  <li>Sample in none of the winner's family sources: <strong>dropped</strong> and reported (not kept as an all-zero column).</li>
-  <li>Profile sources within a family combine by winner + per-sample fill; counts normalized to relative abundance.</li>
+  <li>Sample no named <code>profile_sources</code> source covers: <strong>dropped</strong> and reported (not kept as an all-zero column).</li>
+  <li>A biom unions the named same-family sources (head first, head wins overlap), each at its source's native granularity (STAT counts, MetaPhlAn relative abundance).</li>
 </ul>
 <p class="meta">Deep design: see <code>2026-06-17-askslm-architecture-hld-lld.html</code> (HLD + LLD).</p>
 
