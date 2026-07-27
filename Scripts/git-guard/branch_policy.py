@@ -8,7 +8,7 @@ import re
 ALLOWED_PREFIXES = ("feature", "bug", "refactor", "docs", "chore", "experiment")
 
 BRANCH_REGEX = re.compile(
-    r"^(?:feature|bug|refactor|docs|chore|experiment)-[a-z0-9-]+(?:/[a-z0-9-]+)?$"
+    r"^(?:feature|bug|refactor|docs|chore|experiment)/[a-z0-9-]+(?:/[a-z0-9-]+)?$"
 )
 
 
@@ -22,9 +22,9 @@ def is_allowed_branch(name: str) -> bool:
 RULE_MESSAGE = (
     "Branching policy violation.\n"
     "  Direct work on `main` is forbidden. Commits and edits must happen on a\n"
-    "  branch named: <prefix>-<slug>[/<sub-slug>]\n"
+    "  branch named: <prefix>/<slug>[/<sub-slug>]\n"
     "  Allowed prefixes: feature, bug, refactor, docs, chore, experiment.\n"
-    "  Example: `git fetch origin && git switch -c feature-my-task origin/main`."
+    "  Example: `git fetch origin && git switch -c feature/my-task origin/main`."
 )
 
 # Each pattern is a regex that, if matched, means the bash command is forbidden

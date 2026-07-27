@@ -4,14 +4,14 @@ from branch_policy import is_allowed_branch
 
 
 @pytest.mark.parametrize("name", [
-    "feature-add-login",
-    "bug-fix-crash",
-    "refactor-extract-engine",
-    "docs-readme-cleanup",
-    "chore-bump-deps",
-    "experiment-new-clustering",
-    "feature-foo/auth",
-    "feature-foo/ui-tweaks",
+    "feature/add-login",
+    "bug/fix-crash",
+    "refactor/extract-engine",
+    "docs/readme-cleanup",
+    "chore/bump-deps",
+    "experiment/new-clustering",
+    "feature/foo/auth",
+    "feature/foo/ui-tweaks",
 ])
 def test_allowed_branches(name):
     assert is_allowed_branch(name) is True
@@ -21,14 +21,14 @@ def test_allowed_branches(name):
     "main",
     "master",
     "develop",
-    "Feature-add-login",            # uppercase
+    "Feature/add-login",            # uppercase
     "feature_add_login",            # underscore
-    "feature-add login",            # space
-    "wip-something",                # unknown prefix
+    "feature/add login",           # space
+    "wip/something",                # unknown prefix
     "feature",                      # no slug
-    "feature-",                     # empty slug
-    "feature-foo/bar/baz",          # nested too deep
-    "feature-foo/",                 # empty sub-slug
+    "feature/",                     # empty slug
+    "feature/foo/bar/baz",          # nested too deep
+    "feature/foo/",                 # empty sub-slug
 ])
 def test_rejected_branches(name):
     assert is_allowed_branch(name) is False
@@ -47,12 +47,12 @@ def test_rule_message_mentions_prefixes_and_main():
     "git commit -m 'x'",
     "git commit",
     "git  commit --amend",
-    "git merge feature-foo",
+    "git merge feature/foo",
     "git checkout main",
     "git switch main",
-    "git branch -d feature-old",
-    "git branch -D feature-old",
-    "git push origin --delete feature-old",
+    "git branch -d feature/old",
+    "git branch -D feature/old",
+    "git push origin --delete feature/old",
     "echo hi && git commit -m x",      # compound command
 ])
 def test_dangerous_bash_detected(cmd):
@@ -63,8 +63,8 @@ def test_dangerous_bash_detected(cmd):
     "git status",
     "git log",
     "git diff",
-    "git switch -c feature-new",
-    "git checkout feature-foo",
+    "git switch -c feature/new",
+    "git checkout feature/foo",
     "git commit-tree",                  # not the same as `git commit`
     "echo committing",                  # word `commit` in plain text
 ])
@@ -76,9 +76,9 @@ from branch_policy import is_branch_delete
 
 
 @pytest.mark.parametrize("cmd", [
-    "git branch -d feature-old",
-    "git branch -D feature-old",
-    "git push origin --delete feature-old",
+    "git branch -d feature/old",
+    "git branch -D feature/old",
+    "git push origin --delete feature/old",
 ])
 def test_branch_delete_detected(cmd):
     assert is_branch_delete(cmd) is True
@@ -86,8 +86,8 @@ def test_branch_delete_detected(cmd):
 
 @pytest.mark.parametrize("cmd", [
     "git commit -m x",
-    "git push origin feature-foo",
-    "git branch feature-new",
+    "git push origin feature/foo",
+    "git branch feature/new",
 ])
 def test_non_delete_not_flagged(cmd):
     assert is_branch_delete(cmd) is False
