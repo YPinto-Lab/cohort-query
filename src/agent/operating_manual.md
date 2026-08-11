@@ -27,7 +27,9 @@ Work is organized into numbered phases on disk:
 - **Analyze**: measure a feature table, write CSVs/plots.
 
 Inside a phase script, `from askslm import workspace; ws = workspace.phase(__file__)` gives you
-`ws.inputs`, `ws.result`, `ws.data`, `ws.plots`, `ws.shared`, and `ws.upstream()`.
+`ws.inputs`, `ws.result`, `ws.shared`, and `ws.upstream()`. Every phase writes into its own
+`result/` — build/transform write `feature_table.biom` there, analyze writes its CSVs and plots
+there.
 
 ## The build recipe (use the askslm facade — do NOT hand-roll the cleaning)
 SRA inputs are messy: duplicate rows, an accession repeated many times, one `tax_id` listed under
