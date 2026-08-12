@@ -40,10 +40,10 @@ All write-tasks happen on a branch off `main`. Direct work on `main` is forbidde
 The rule is enforced by a Claude Code PreToolUse hook and a git pre-commit hook
 (see `Scripts/git-guard/`). Disable the hooks only with explicit user authorization.
 
-**Allowed top-level prefixes:** `feature-`, `bug-`, `refactor-`, `docs-`, `chore-`, `experiment-`.
+**Allowed top-level prefixes:** `feature/`, `bug/`, `refactor/`, `docs/`, `chore/`, `experiment/`.
 
 **Sub-branches:** for big features that fan out across subagents, name children
-`<parent>/<sub-slug>` (e.g. `feature-foo/auth`). Sub-branches merge back into
+`<parent>/<sub-slug>` (e.g. `feature/foo/auth`). Sub-branches merge back into
 their parent with `git merge --no-ff`; only the parent is merged to `main`.
 
 **Merging to `main`:** push the branch, open a PR with `gh pr create --base main`,
@@ -56,6 +56,6 @@ or `git push origin --delete`.
 **Starting a write-task:** if you're on `main` or any non-prefixed branch, the
 first thing you do is create and switch:
 
-    git fetch origin && git switch -c <prefix>-<slug> origin/main
+    git fetch origin && git switch -c <prefix>/<slug> origin/main
 
 Then announce the branch in your first user-facing message.

@@ -61,7 +61,7 @@ def test_bash_git_commit_blocked_on_main(repo_on):
 
 
 def test_bash_git_commit_allowed_on_feature(repo_on):
-    repo = repo_on("feature-x")
+    repo = repo_on("feature/x")
     rc, out = run_hook({
         "tool_name": "Bash",
         "tool_input": {"command": "git commit -m x"},
@@ -71,7 +71,7 @@ def test_bash_git_commit_allowed_on_feature(repo_on):
 
 
 def test_bash_checkout_main_blocked(repo_on):
-    repo = repo_on("feature-x")
+    repo = repo_on("feature/x")
     rc, out = run_hook({
         "tool_name": "Bash",
         "tool_input": {"command": "git checkout main"},
@@ -81,10 +81,10 @@ def test_bash_checkout_main_blocked(repo_on):
 
 
 def test_bash_branch_delete_blocked_even_on_feature(repo_on):
-    repo = repo_on("feature-x")
+    repo = repo_on("feature/x")
     rc, out = run_hook({
         "tool_name": "Bash",
-        "tool_input": {"command": "git branch -D feature-old"},
+        "tool_input": {"command": "git branch -D feature/old"},
         "cwd": str(repo),
     })
     assert out["decision"] == "block"
@@ -102,7 +102,7 @@ def test_edit_blocked_on_main(repo_on):
 
 
 def test_edit_allowed_on_feature(repo_on):
-    repo = repo_on("feature-x")
+    repo = repo_on("feature/x")
     rc, out = run_hook({
         "tool_name": "Write",
         "tool_input": {"file_path": str(repo / "new.txt")},

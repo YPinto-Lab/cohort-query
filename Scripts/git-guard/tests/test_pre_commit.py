@@ -53,7 +53,7 @@ def test_commit_on_main_is_rejected(tmp_git_repo: Path):
 
 def test_commit_on_allowed_branch_succeeds(tmp_git_repo: Path):
     subprocess.run(
-        ["git", "-C", str(tmp_git_repo), "switch", "-q", "-c", "feature-x"],
+        ["git", "-C", str(tmp_git_repo), "switch", "-q", "-c", "feature/x"],
         check=True,
     )
     _stage_change(tmp_git_repo)
@@ -73,7 +73,7 @@ def test_commit_on_disallowed_prefix_is_rejected(tmp_git_repo: Path):
 
 def test_commit_on_subbranch_succeeds(tmp_git_repo: Path):
     subprocess.run(
-        ["git", "-C", str(tmp_git_repo), "switch", "-q", "-c", "feature-x/auth"],
+        ["git", "-C", str(tmp_git_repo), "switch", "-q", "-c", "feature/x/auth"],
         check=True,
     )
     _stage_change(tmp_git_repo)

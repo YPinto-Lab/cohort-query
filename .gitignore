@@ -55,6 +55,7 @@ Accessors/**/output/
 *.parquet
 *.feather
 *.pkl
+*.duckdb
 
 # Notebook binary archives
 Notebooks/*.tar.gz
