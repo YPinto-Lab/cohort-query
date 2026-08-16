@@ -51,7 +51,9 @@
 </header>
 
 <h2>1. Purpose &amp; primary user <span class="badge locked">Locked</span></h2>
-<p><strong>Noam</strong>, a bioinformatician working in Jupyter notebooks. He has a research question
+<p><strong>Noam</strong>, a bioinformatician. He works in an <strong>interactive terminal session</strong> — he runs
+<code>askslm</code>, types in English, and answers arrow-key prompts. <strong>He writes no Python.</strong>
+He has a research question
 ("fecal metagenomes from adults with IBD in Western countries") and wants the set of public
 metagenome samples that answer it — with metadata and taxonomic profiles that are
 <em>comparable across studies</em>, so a meta-analysis is actually valid.</p>
@@ -67,7 +69,9 @@ shared, prebuilt DuckDB that already contains both SRA and Metalog (metadata + e
 and emits one <code>.biom</code>.</p>
 <ul>
   <li><strong>In scope:</strong> natural-language → structured query, show-your-work + confirm, the SRA∪Metalog
-      merge and reconciliation, building the biom, the Jupyter-facing API.</li>
+      merge and reconciliation, building the biom, the Python API, and the interactive terminal app over it.</li>
+  <li><strong>Out of scope (explicit):</strong> analysis and plotting of the resulting biom. The session ends when
+      the file is written; the user opens it in whatever they already use.</li>
   <li><strong>Out of scope:</strong> building or refreshing the mirror. The lab does that separately
       (the SRA→DuckDB side already exists; the Metalog ETL is a distinct, future effort). The package
       never writes to the shared DB.</li>
@@ -113,7 +117,8 @@ and emits one <code>.biom</code>.</p>
   <tr><td>Count conflict</td><td>No within-sample blending: a sample's counts come from a single source (the head
       where sources overlap). Same profiler, so the overlap choice is low-stakes; the union only adds whole columns for
       samples a source alone has.</td></tr>
-  <tr><td>Notebook UX</td><td><strong>Two-step Plan object</strong> that is also persisted to disk.</td></tr>
+  <tr><td>User surface</td><td><strong>Interactive terminal app</strong> (<code>questionary</code> + <code>rich</code>, not a full-screen TUI). Jupyter dropped 2026-08-16 — it left the user typing Python, so "no programming required" was not literally true.</td></tr>
+  <tr><td>Terminal UX</td><td><strong>Two-step Plan object</strong> that is also persisted to disk — cheap ask/inspect/refine, one confirmed expensive <code>run()</code>.</td></tr>
   <tr><td>LLM provider</td><td>Provider-agnostic behind a small interface; <strong>v1 ships a Gemini
       backend</strong> (free API). Swapping providers is a new backend class.</td></tr>
   <tr><td>Microbial-load predictions</td><td><strong>Not in v1.</strong> A per-sample scalar, not a PROFILE source;
@@ -176,7 +181,7 @@ namespace. So the only poolable same-family pairs are MetaPhlAn species/all and 
 
 <div class="note"><strong>The plan file is the reproducible artifact.</strong> <code>ask()</code> persists the question,
 interpretation, per-source SQL, cohort preview, and db reference — but <em>not</em> the source choices, since those are
-<code>run()</code> arguments. Commit the plan next to the notebook;
+<code>run()</code> arguments. Commit the plan alongside the study;
 <code>load_plan(...).run(profile_sources, metadata_winning_source, out)</code> reproduces the cohort
 in any family without re-invoking the LLM.</div>
 
