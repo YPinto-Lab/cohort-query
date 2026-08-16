@@ -113,11 +113,13 @@ Also corrected: <code>BiomFactory</code> has no existing build path to wrap — 
 the mOTUs sources' lineage column is <code>species</code>, not <code>clade_name</code> — it differs per source,
 not per family (E.3).
 <br>
-<strong>One item is left open, deliberately (B.3):</strong> <code>sra_taxonomy</code> is keyed by run
-(<code>acc</code>), not biosample, and the ETL never stamps it — so STAT cannot currently be read by the
-canonical key. Because a biosample can have several runs, closing this is an <em>aggregation</em> decision, not a
-missing column. Recommendation recorded in B.3 (stamp at build; sum <code>self_count</code> across a biosample's
-runs at read time); confirm before the build engine is written.
+(I) <strong><code>sra_taxonomy</code> is keyed by run (<code>acc</code>), not biosample</strong>, and the ETL
+never stamps it — so STAT could not be read by the canonical key at all. Because a biosample can have several
+runs, closing this was a <em>selection</em> decision, not a missing column. Settled in B.3: stamp
+<code>biosample</code> at build, then pick <strong>one run per biosample</strong> (deepest by total
+<code>self_count</code>), report the rest, and carry <code>acc</code> on the sample metadata.
+<strong>Summing the runs was proposed and rejected</strong> — runs of one BioSample can differ in assay, and the
+design already forbids within-sample blending.
 </div>
 
 <div class="fix"><strong>Revision 2026-06-20.</strong>
@@ -272,18 +274,37 @@ run-keyed counts to a biosample-keyed column is therefore an <strong>aggregation
 document never says what it should be. It is also STAT-specific: the Metalog profilers key on
 <code>sample_alias</code>, which is already per-sample, so nothing analogous arises there.
 <br><br>
-<strong>Recommended resolution</strong> (to confirm before the build engine is written): stamp
-<code>biosample</code> onto <code>sra_taxonomy</code> at ETL time via <code>sra_taxonomy.acc ⋈
-sra_metadata.acc</code>, keeping <code>acc</code>, and <strong>sum <code>self_count</code> across a biosample's
-runs</strong> at read time. Summation is the right operator here and not an arbitrary pick: self-counts partition
-the reads (each read is assigned to exactly one node, G.3.4), so counts from two runs of one sample add exactly as
-two halves of one sequencing effort would. Averaging or picking the deepest run would both discard reads. Keeping
-the aggregation at read time rather than baking it into the mirror also keeps the mirror a faithful copy of its
-sources.
+<strong>Resolution: one run per biosample, chosen deterministically, never blended</strong> (settled
+2026-08-16).
+<ul>
+  <li>Stamp <code>biosample</code> onto <code>sra_taxonomy</code> at ETL time via <code>sra_taxonomy.acc ⋈
+      sra_metadata.acc</code>, <strong>keeping <code>acc</code></strong> and indexing both.</li>
+  <li>At read time pick <strong>exactly one run per biosample</strong> — the one with the largest total
+      <code>self_count</code> (deepest sequencing). Deterministic, maximises information, and assumes nothing
+      about whether the runs are combinable.</li>
+  <li>Every non-selected run is <strong>reported</strong>, alongside the dropped samples. Never silent.</li>
+  <li><code>acc</code> travels onto the biom's <strong>sample metadata</strong>, so every column says which run
+      produced it. Provenance survives without the run becoming the key.</li>
+</ul>
+<strong>Why not sum the runs.</strong> Summation was the first proposal here and it is
+<em>rejected</em>. Two runs of one BioSample are not guaranteed to be the same experiment — they can differ in
+<code>assay_type</code>, platform, or library prep, and an amplicon run plus a shotgun run of the same sample
+measure different quantities, so adding their read counts adds unlike things. "Two halves of one sequencing
+effort" only holds when the runs share an assay, and nothing upstream enforces that. This also aligns runs with a
+rule the design already made for sources — parent spec §3, <em>Count conflict</em>: <strong>no within-sample
+blending; a sample's counts come from a single source.</strong> Runs are the same question one level down and get
+the same answer.
 <br><br>
-The alternative — a per-query <code>acc → biosample</code> join — is what B.3 exists to avoid, and it would
-reintroduce the run-time bridge for exactly one source. The fixture mirror carries a multi-run biosample so the
-sum is exercised whichever way this is settled.</div>
+<strong>Why the key stays the biosample.</strong> Re-keying the biom on runs is possible but breaks three
+things: sample metadata is per-biosample in both databases (a run-keyed biom duplicates every metadata row across
+a biosample's runs); the SRA-only / Metalog-only / shared partition is computed on biosample, so run columns would
+not align with it; and a STAT biom could no longer be compared sample-for-sample with a MetaPhlAn or mOTUs biom,
+since the Metalog profilers key on <code>sample_alias</code>, which is already per-sample.
+<br><br>
+Because run selection is a <strong>read-side policy</strong> rather than something baked into the mirror,
+summing same-assay runs remains available later as a policy change, not a rebuild. The alternative of a per-query
+<code>acc → biosample</code> join is what B.3 exists to avoid and would reintroduce the run-time bridge for
+exactly one source. The fixture mirror carries a two-run biosample so the selection is exercised either way.</div>
 <p>One key, with one honest exception. Because Metalog keeps its own ids (an external accession isn't always 1:1 with
 a sample) and <code>spire_sample_name</code> is mixed-type, some Metalog samples resolve to <strong>no
 biosample</strong>:</p>
@@ -1157,7 +1178,7 @@ still renders and <code>run()</code> refuses.</p>
 <table>
   <tbody><tr><th>Class</th><th>Signature</th><th>Domain effect</th></tr>
   <tr><td><code>CohortDiscovery</code></td><td><code>discover(queries) -&gt; Cohort</code></td><td>run each query (rows already carry the build-stamped <code>biosample</code>), group by metadata source into a <code>Cohort</code> that knows its overlaps. No normalization step.</td></tr>
-  <tr><td><code>ProfileReader</code></td><td><code>read(source, accessions) -&gt; ProfileColumns</code></td><td>pull one PROFILE source's table; columns are the samples that actually have it.</td></tr>
+  <tr><td><code>ProfileReader</code></td><td><code>read(source, accessions) -&gt; ProfileColumns</code></td><td>pull one PROFILE source's table; columns are the samples that actually have it. <strong>STAT only:</strong> its rows are per <em>run</em>, so the reader selects one run per biosample — deepest by total <code>self_count</code> — reports the rest, and carries <code>acc</code> onto the sample metadata. No summing across runs (B.3).</td></tr>
   <tr><td><code>ProfileReconciler</code></td><td><code>read(request, accessions) -&gt; ProfileMatrix</code></td><td>over the named <code>request.profile_sources</code> (all one family): read each via <code>ProfileReader</code> at native granularity, fold <strong>per sample</strong> in list order (head wins overlap, each source adds its disjoint samples). Full pipeline in G.3.</td></tr>
   <tr><td><code>MetadataReader</code></td><td><code>read(source, accessions) -&gt; DataFrame</code></td><td>read ONE metadata source's frame for the cohort — the mirror of <code>ProfileReader</code>.</td></tr>
   <tr><td><code>MetadataReconciler</code></td><td><code>reconciled(cohort, winning_source) -&gt; ReconciledMetadata</code></td><td>orchestrate: read every metadata source via <code>MetadataReader</code>, then <code>combine_first</code> — winner wins, the other fills gaps per field. (Profiles have no counterpart — one source, nothing to reconcile.)</td></tr>
