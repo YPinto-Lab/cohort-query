@@ -61,15 +61,15 @@ ws = workspace.phase(__file__)
 feature_table = ws.upstream()                        # the exploration's result/feature_table.biom
 
 # measure with skbio / scipy + ws.shared, then write:
-# result.to_csv(ws.data / "{name}.csv", index=False)
-# ws.shared.<plot>(result, ws.plots / "{name}.png")
+# result.to_csv(ws.result / "{name}.csv", index=False)
+# ws.shared.<plot>(result, ws.result / "{name}.png")
 '''
 
 ANALYSIS_MD = '''---
 kind: analysis
 intent: one line — what this measures
 input: ../../../2_transform/{exploration}/result/feature_table.biom
-outputs: [data/{name}.csv, plots/{name}.png]
+outputs: [result/{name}.csv, result/{name}.png]
 ---
 What this analysis measures and the headline finding.
 '''

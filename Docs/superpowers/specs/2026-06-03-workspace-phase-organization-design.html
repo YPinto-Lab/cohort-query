@@ -94,7 +94,7 @@
     <tr><td><strong>analyze</strong></td><td>measure / plot a chosen exploration's result</td><td>many per exploration</td></tr>
   </table>
   <div class="why"><h4>The spine</h4><p style="margin:0"><code>0_inputs/</code> &rarr; <code>1_build/feature_table.biom</code>
-     &rarr; <code>2_transform/&lt;exploration&gt;/result/</code> &rarr; <code>3_analyze/&lt;exploration&gt;/&lt;analysis&gt;/{data,plots}/</code>.
+     &rarr; <code>2_transform/&lt;exploration&gt;/result/</code> &rarr; <code>3_analyze/&lt;exploration&gt;/&lt;analysis&gt;/result/</code>.
      Each arrow is a file written to disk and read by the next phase.</p></div>
 </section>
 
@@ -120,13 +120,11 @@
     │   ├── <span class="d">braycurtis/</span>
     │   │   ├── analysis.py
     │   │   ├── analysis.md          <span class="c"># input: ../../../2_transform/no-control_bacteria/result/feature_table.biom</span>
-    │   │   ├── <span class="d">data/</span>                 <span class="c"># csv the plots are built from</span>
-    │   │   └── <span class="d">plots/</span>                <span class="c"># png</span>
+    │   │   └── <span class="d">result/</span>               <span class="c"># csv + png this analysis writes</span>
     │   └── <span class="d">alpha-shannon/</span>           <span class="c"># a 2nd analysis OF THE SAME exploration</span>
     │       ├── analysis.py
     │       ├── analysis.md          <span class="c"># input: ../../../2_transform/no-control_bacteria/result/feature_table.biom</span>
-    │       ├── <span class="d">data/</span>
-    │       └── <span class="d">plots/</span>
+    │       └── <span class="d">result/</span>
     └── <span class="d">with-control_viruses/</span> …        <span class="c"># analyses of a DIFFERENT exploration</span></pre>
   <div class="why"><h4>Why analyze is its own phase, grouped by exploration</h4><p style="margin:0">Analyze is a top-level
      phase folder with one <code>shared.py</code> at its root — shared across <em>every</em> analysis. Inside, analyses are
@@ -165,8 +163,8 @@
       <td><strong>analyze</strong><br><code>analyze/&lt;exploration&gt;/&lt;analysis&gt;/</code></td>
       <td><code>analysis.py</code> + <code>analysis.md</code> · <code>../../shared.py</code></td>
       <td>one exploration's <code>result/*.biom</code></td>
-      <td><code>data/*.csv</code> + <code>plots/*.png</code></td>
-      <td>per analysis · re-run overwrites that <code>data/</code>+<code>plots/</code></td>
+      <td><code>result/*.csv</code> + <code>result/*.png</code></td>
+      <td>per analysis · re-run overwrites that <code>result/</code></td>
     </tr>
   </table>
   <div class="callout"><strong>Idempotency rule <span class="tag lock">LOCKED</span>:</strong> a phase only ever writes
@@ -199,7 +197,7 @@
 <span class="k">kind</span>:    analysis
 <span class="k">intent</span>:  Bray-Curtis day0→last shift, per cluster
 <span class="k">input</span>:   ../../../2_transform/no-control_bacteria/result/feature_table.biom
-<span class="k">outputs</span>: [data/braycurtis.csv, plots/braycurtis_box.png]
+<span class="k">outputs</span>: [result/braycurtis.csv, result/braycurtis_box.png]
 <span class="k">params</span>:  { metric: braycurtis, from: 0, to: last }
 <span class="d">---</span>
 Per subject, distance between its day-0 and last-day community, boxed by cluster.
@@ -233,7 +231,7 @@ Finding: cluster 3 shifts least (mean BC ≈ 0.33).</pre>
   <table>
     <tr><th>Decision</th><th>Proposal</th></tr>
     <tr><td>ingest vs build</td><td>folded into one run-once <code>build.py</code>; <code>inputs/</code> is just the landing zone</td></tr>
-    <tr><td>Phase handoff</td><td>always a file on disk (<code>feature_table.biom</code> → <code>result/*.biom</code> → <code>data</code>+<code>plots</code>)</td></tr>
+    <tr><td>Phase handoff</td><td>always a file on disk (<code>feature_table.biom</code> → <code>result/*.biom</code> → <code>result/*.csv</code>+<code>result/*.png</code>)</td></tr>
     <tr><td>Idempotency</td><td>a phase writes only its own folder; re-run overwrites own outputs, never upstream</td></tr>
     <tr><td>Promotion rule</td><td>inline first; lift to <code>shared.py</code> when a 2nd script in the phase needs it</td></tr>
     <tr><td>Naming</td><td>phase folders carry a numeric prefix for sort order (<code>0_inputs</code>, <code>1_build</code>, <code>2_transform</code>, <code>3_analyze</code>); explorations intent-named; analyses grouped under their exploration by <code>&lt;method&gt;</code></td></tr>

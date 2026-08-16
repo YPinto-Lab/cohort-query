@@ -134,7 +134,8 @@ Work is organized into numbered phases on disk:
 - **Analyze**: measure a feature table, write CSVs/plots.
 
 Inside a phase script, `from askslm import workspace; ws = workspace.phase(__file__)` gives you
-`ws.inputs`, `ws.result`, `ws.data`, `ws.plots`, `ws.shared`, and `ws.upstream()`.
+`ws.inputs`, `ws.result`, `ws.shared`, and `ws.upstream()`. Every phase writes into its own
+`result/`.
 
 ## When you need more, read the source (use the read_file / list_dir tools)
 | Need | Read |
