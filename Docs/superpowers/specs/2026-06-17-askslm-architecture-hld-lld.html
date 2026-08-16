@@ -109,7 +109,15 @@ scope boundary C.0.4 draws at the written biom, and cutting them retires the lar
 the LLD (G.3.4). New <strong>H.3</strong> adds the translation eval set: execution accuracy over 15–20 real
 questions with hand-written gold SQL.
 <br>
-Also corrected: <code>BiomFactory</code> has no existing build path to wrap — it is a small rewrite (D.1).
+Also corrected: <code>BiomFactory</code> has no existing build path to wrap — it is a small rewrite (D.1); and
+the mOTUs sources' lineage column is <code>species</code>, not <code>clade_name</code> — it differs per source,
+not per family (E.3).
+<br>
+<strong>One item is left open, deliberately (B.3):</strong> <code>sra_taxonomy</code> is keyed by run
+(<code>acc</code>), not biosample, and the ETL never stamps it — so STAT cannot currently be read by the
+canonical key. Because a biosample can have several runs, closing this is an <em>aggregation</em> decision, not a
+missing column. Recommendation recorded in B.3 (stamp at build; sum <code>self_count</code> across a biosample's
+runs at read time); confirm before the build engine is written.
 </div>
 
 <div class="fix"><strong>Revision 2026-06-20.</strong>
@@ -250,6 +258,32 @@ column. The package then sees <strong>one primary key across all sources</strong
   <tr><td><strong>Build (ETL, once)</strong></td><td>resolve <code>profile.sample_alias → metalog_metadata.sample_alias</code>, then <code>spire_sample_name == sra_metadata.biosample</code>; <strong>stamp the resolved <code>biosample</code> onto every Metalog table</strong> and index it. The two-hop lives here and nowhere else.</td></tr>
   <tr><td><strong>Run (per query)</strong></td><td>every source — SRA and Metalog — already exposes <code>biosample</code>; joins are single-key. No <code>AccessionNormalizer</code>, no per-query bridge.</td></tr>
 </tbody></table>
+<div class="fix"><strong><code>sra_taxonomy</code> is keyed by run, not by biosample — open, 2026-08-16.</strong>
+The row above is not yet true of the STAT source, and this is the one correction in this revision that is a
+<em>design</em> question rather than a typo.
+<br><br>
+<code>sra_taxonomy</code>'s key is <code>acc</code> — an SRA <strong>run</strong> accession — and the build script
+stamps <code>biosample</code> onto the Metalog tables only (<code>metalog_metadata</code> plus the four Metalog
+profile tables). It never touches <code>sra_taxonomy</code>, whose only index is on <code>acc</code>. So today the
+STAT source cannot be read by biosample at all.
+<br><br>
+<strong>The part that is not just a missing column:</strong> a BioSample can have <em>several runs</em>. Going from
+run-keyed counts to a biosample-keyed column is therefore an <strong>aggregation</strong>, not a rename — and this
+document never says what it should be. It is also STAT-specific: the Metalog profilers key on
+<code>sample_alias</code>, which is already per-sample, so nothing analogous arises there.
+<br><br>
+<strong>Recommended resolution</strong> (to confirm before the build engine is written): stamp
+<code>biosample</code> onto <code>sra_taxonomy</code> at ETL time via <code>sra_taxonomy.acc ⋈
+sra_metadata.acc</code>, keeping <code>acc</code>, and <strong>sum <code>self_count</code> across a biosample's
+runs</strong> at read time. Summation is the right operator here and not an arbitrary pick: self-counts partition
+the reads (each read is assigned to exactly one node, G.3.4), so counts from two runs of one sample add exactly as
+two halves of one sequencing effort would. Averaging or picking the deepest run would both discard reads. Keeping
+the aggregation at read time rather than baking it into the mirror also keeps the mirror a faithful copy of its
+sources.
+<br><br>
+The alternative — a per-query <code>acc → biosample</code> join — is what B.3 exists to avoid, and it would
+reintroduce the run-time bridge for exactly one source. The fixture mirror carries a multi-run biosample so the
+sum is exercised whichever way this is settled.</div>
 <p>One key, with one honest exception. Because Metalog keeps its own ids (an external accession isn't always 1:1 with
 a sample) and <code>spire_sample_name</code> is mixed-type, some Metalog samples resolve to <strong>no
 biosample</strong>:</p>
@@ -891,8 +925,8 @@ database, metadata set, or profiler means adding one member here, nowhere else.<
     METALOG_METADATA           = SourceSpec(<span class="str">"metalog"</span>, <span class="str">"metalog_metadata"</span>,   SourceKind.METADATA)
     SRA_TAXONOMY               = SourceSpec(<span class="str">"sra"</span>,     <span class="str">"sra_taxonomy"</span>,       SourceKind.PROFILE, ProfilerFamily.STAT,      Unit.COUNTS,   <span class="str">None</span>)
     METALOG_METAPHLAN4_ALL     = SourceSpec(<span class="str">"metalog"</span>, <span class="str">"metalog_metaphlan4"</span>, SourceKind.PROFILE, ProfilerFamily.METAPHLAN, Unit.RELATIVE, <span class="str">"clade_name"</span>)
-    METALOG_MOTUS3             = SourceSpec(<span class="str">"metalog"</span>, <span class="str">"metalog_motus3"</span>,     SourceKind.PROFILE, ProfilerFamily.MOTUS,     Unit.RELATIVE, <span class="str">"clade_name"</span>)
-    METALOG_SPIRE_MOTUS        = SourceSpec(<span class="str">"metalog"</span>, <span class="str">"metalog_spire_motus"</span>, SourceKind.PROFILE, ProfilerFamily.MOTUS,     Unit.RELATIVE, <span class="str">"clade_name"</span>)
+    METALOG_MOTUS3             = SourceSpec(<span class="str">"metalog"</span>, <span class="str">"metalog_motus3"</span>,     SourceKind.PROFILE, ProfilerFamily.MOTUS,     Unit.RELATIVE, <span class="str">"species"</span>)
+    METALOG_SPIRE_MOTUS        = SourceSpec(<span class="str">"metalog"</span>, <span class="str">"metalog_spire_motus"</span>, SourceKind.PROFILE, ProfilerFamily.MOTUS,     Unit.RELATIVE, <span class="str">"species"</span>)
 
     <span class="kw">def</span> kind(self) -&gt; SourceKind:
         <span class="kw">return</span> self.value.kind
@@ -914,7 +948,9 @@ query. The Metalog profile tables are long-format with a <code>clade_name</code>
 <strong><code>SRA_TAXONOMY</code> has no lineage column — STAT lineage is derived.</strong> The
 <code>lineage_column</code> was <code>"lineage"</code>, but the mirror's <code>sra_taxonomy</code> table has no such
 column: per <code>SRATaxonomySchema</code> it is <code>acc · tax_id · rank · name · total_count · self_count ·
-ilevel · ileft · iright · bioproject</code>. STAT's feature axis is NCBI tax_ids, and their lineage must be
+ilevel · ileft · iright · bioproject</code>. The Metalog profile tables carry their own lineage strings, but
+under two different column names — <code>clade_name</code> for MetaPhlAn, <code>species</code> for both mOTUs
+tables (per the mirror build plan). That is why <code>lineage_column</code> is per-source and not per-family. STAT's feature axis is NCBI tax_ids, and their lineage must be
 <em>built</em> from the tax_ids via ete3 — <code>askslm.taxonomy.lineage_table</code>, the one piece of the
 pre-pivot package that survives, and exactly what the old workspace build script did. So
 <code>lineage_column=None</code> means "derive it," not "there is none," and <code>BiomFactory</code> calls
