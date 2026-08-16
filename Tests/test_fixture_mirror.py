@@ -83,15 +83,22 @@ def test_spire_contributes_a_species_motus3_has_never_seen(con):
     assert only_in_spire == 1
 
 
-def test_one_biosample_has_two_runs_of_unequal_depth_so_the_deepest_is_pickable(con):
-    """B.3: STAT selects ONE run per biosample -- deepest by total self_count. Never summed."""
-    depths = con.execute("""
-        SELECT acc, sum(self_count) AS depth FROM sra_taxonomy
-        WHERE acc LIKE 'SRR00001%' GROUP BY acc ORDER BY depth DESC
+def test_one_biosample_has_two_runs_that_become_two_columns(con):
+    """B.3: STAT columns are RUNS. Two runs of one biosample stay two columns -- never
+    summed, never selected down to one. Both must be distinguishable and both must
+    resolve to the same biosample."""
+    runs = [row[0] for row in con.execute("""
+        SELECT DISTINCT t.acc FROM sra_taxonomy t
+        JOIN sra_metadata m ON m.biosample = 'SAMN00001'
+        WHERE t.acc LIKE 'SRR00001%' ORDER BY 1
+    """).fetchall()]
+    profiles = con.execute("""
+        SELECT acc, sum(self_count) FROM sra_taxonomy
+        WHERE acc LIKE 'SRR00001%' GROUP BY acc ORDER BY acc
     """).fetchall()
 
-    assert len(depths) == 2, "the multi-run case must exist or run selection is untestable"
-    assert depths[0][1] != depths[1][1], "unequal depth, so 'deepest' is unambiguous"
+    assert runs == ["SRR00001A", "SRR00001B"]
+    assert profiles[0][1] != profiles[1][1], "distinct profiles, so collapsing them would lose data"
 
 
 def test_sra_taxonomy_is_keyed_by_run_not_biosample(con):

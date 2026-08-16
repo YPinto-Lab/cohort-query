@@ -12,7 +12,7 @@ Scripts/build_mirror/build_duckdb.py, including the quirks that matter:
   - The Metalog profile lineage column differs per source: `clade_name` for
     MetaPhlAn, `species` for both mOTUs tables.
   - `sra_taxonomy` is keyed by run `acc`, NOT biosample, and one biosample can
-    have several runs.
+    have several runs -- which per B.3 become several biom columns.
 
 What the fixture is built to exercise:
 
@@ -20,8 +20,8 @@ What the fixture is built to exercise:
   family union       two MOTUS sources that overlap on 3 samples and each add their own
   head wins overlap  the 3 overlapping samples carry DIFFERENT values per source
   lineage union      spire has a species mOTUs3 has never seen
-  multi-run STAT     SAMN00001 has two runs of unequal depth, so "pick the deepest"
-                     (B.3) is unambiguous -- runs are selected, never summed
+  multi-run STAT     SAMN00001 has two runs with distinct profiles -- per B.3 they
+                     become two biom columns, never summed and never selected down
   value vocabulary   low-cardinality metadata columns with realistic literals
 
 Build one:  python Tests/fixtures/mirror.py /tmp/fixture.duckdb
