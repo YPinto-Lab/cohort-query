@@ -90,6 +90,18 @@ class MirrorBuilder:
                 FROM metalog_metadata m
                 WHERE p.sample_alias = m.sample_alias
             """)
+        self._stamp_sra_taxonomy(con)
+
+    def _stamp_sra_taxonomy(self, con: duckdb.DuckDBPyConnection) -> None:
+        """STAT is keyed by RUN. Add biosample so it is reachable by the canonical key --
+        but keep acc, because a biom column is one run, not one biosample (HLD B.3)."""
+        con.execute("ALTER TABLE sra_taxonomy ADD COLUMN biosample TEXT")
+        con.execute("""
+            UPDATE sra_taxonomy t
+            SET biosample = s.biosample
+            FROM sra_metadata s
+            WHERE t.acc = s.acc
+        """)
 
     def _create_indexes(self, con: duckdb.DuckDBPyConnection) -> None:
         con.execute("CREATE INDEX idx_metalog_metadata_alias ON metalog_metadata (sample_alias)")
@@ -98,6 +110,7 @@ class MirrorBuilder:
         con.execute("CREATE INDEX idx_sra_metadata_biosample ON sra_metadata (biosample)")
         con.execute("CREATE INDEX idx_sra_metadata_acc ON sra_metadata (acc)")
         con.execute("CREATE INDEX idx_sra_taxonomy_acc ON sra_taxonomy (acc)")
+        con.execute("CREATE INDEX idx_sra_taxonomy_biosample ON sra_taxonomy (biosample)")
         for table in PROFILE_SPECS:
             con.execute(f"CREATE INDEX idx_{table}_alias ON {table} (sample_alias)")
             con.execute(f"CREATE INDEX idx_{table}_biosample ON {table} (biosample)")
@@ -136,6 +149,43 @@ class MirrorBuilder:
                 )
             """).fetchone()[0]
             assert multi == 0, f"{table}: {multi} sample_alias map to >1 biosample"
+
+        self._report_stat_runs(con)
+        self._report_metaphlan_species_redundancy(con)
+
+    def _report_stat_runs(self, con: duckdb.DuckDBPyConnection) -> None:
+        """How much does the one-column-per-run decision (B.3) actually affect this data?"""
+        print("-- STAT runs per biosample --")
+        biosamples, runs = con.execute("""
+            SELECT count(DISTINCT biosample), count(DISTINCT acc)
+            FROM sra_taxonomy WHERE biosample IS NOT NULL
+        """).fetchone()
+        multi_run = con.execute("""
+            SELECT count(*) FROM (
+                SELECT biosample FROM sra_taxonomy WHERE biosample IS NOT NULL
+                GROUP BY biosample HAVING count(DISTINCT acc) > 1
+            )
+        """).fetchone()[0]
+        orphan_runs = con.execute(
+            "SELECT count(DISTINCT acc) FROM sra_taxonomy WHERE biosample IS NULL"
+        ).fetchone()[0]
+        print(f"biosamples={biosamples} runs={runs} multi_run_biosamples={multi_run} "
+              f"runs_with_no_biosample={orphan_runs}")
+
+    def _report_metaphlan_species_redundancy(self, con: duckdb.DuckDBPyConnection) -> None:
+        """Does metalog_metaphlan4_species cover SAMPLES the all-levels table lacks?
+
+        It has no Source in the package (HLD E.3) on the assumption it is a rank subset.
+        If this reports a non-zero unique count the assumption is wrong and it earns a
+        Source after all -- the one question the first real build has to answer.
+        """
+        print("-- metaphlan4_species vs metaphlan4 (all levels) --")
+        only_in_species = con.execute("""
+            SELECT count(*) FROM (SELECT DISTINCT sample_alias FROM metalog_metaphlan4_species)
+            ANTI JOIN (SELECT DISTINCT sample_alias FROM metalog_metaphlan4) USING (sample_alias)
+        """).fetchone()[0]
+        print(f"samples only in metaphlan4_species: {only_in_species}"
+              f"{'  <- NOT redundant; it needs a Source' if only_in_species else '  (redundant, as assumed)'}")
 
 
 def main() -> None:
