@@ -179,7 +179,7 @@ feature_table = ws.upstream()   <span class="c"># prev phase's .biom</span>
     <tr>
       <td><strong>analyze</strong></td>
       <td><code>2_transform/&lt;exploration&gt;/result/feature_table.biom</code><br>(matched by the parent folder name)</td>
-      <td><code>&lt;analysis&gt;/</code>; <code>ws.data</code> + <code>ws.plots</code> sub-dirs created — writes CSV/PNG</td>
+      <td><code>&lt;analysis&gt;/result/</code> — writes CSV/PNG</td>
       <td><code>ws.shared</code> = <code>3_analyze/shared.py</code></td>
     </tr>
   </table>
@@ -221,7 +221,7 @@ feature_table = ws.upstream()   <span class="c"># prev phase's .biom</span>
     <tr>
       <td><code>analysis add</code></td>
       <td><code>&lt;exploration&gt;/&lt;name&gt;/analysis.py</code> + <code>analysis.md</code> (frontmatter <code>input:</code> pre-filled to the exploration result)</td>
-      <td><code>ws.upstream()</code> → measure → write into <code>ws.data</code>/<code>ws.plots</code></td>
+      <td><code>ws.upstream()</code> → measure → write into <code>ws.result</code></td>
     </tr>
   </table>
   <div class="why"><h4>Wiring</h4><p style="margin:0">These extend the existing <code>Clients/cli.py</code> and are exposed
@@ -270,8 +270,8 @@ feature_table = ws.upstream()   <span class="c"># prev phase's .biom</span>
     <tr><th>Script</th><th>Header today</th><th>Header after</th></tr>
     <tr><td><code>1_build/build.py</code></td><td><code>WS = …parents[1]; INPUTS = WS/"0_inputs"</code></td><td><code>ws = workspace.phase(__file__)</code>; uses <code>ws.inputs</code>, writes into <code>ws.result</code></td></tr>
     <tr><td><code>2_transform/no-control_bacteria/explore.py</code></td><td><code>sys.path.insert</code> + <code>import shared</code> + <code>parents[1]/"1_build"/…</code></td><td><code>ws.upstream()</code>, <code>ws.shared.cohort(…)</code>, writes into <code>ws.result</code></td></tr>
-    <tr><td><code>3_analyze/no-control_bacteria/braycurtis/analysis.py</code></td><td><code>parents[2]/"2_transform"/…</code> + <code>parents[1]</code> for shared</td><td><code>ws.upstream()</code>, <code>ws.shared.per_subject_braycurtis(…)</code>, <code>ws.data</code></td></tr>
-    <tr><td><code>3_analyze/no-control_bacteria/mann-whitney/analysis.py</code></td><td>same pattern</td><td>same — <code>ws.upstream()</code>, <code>ws.shared</code>, <code>ws.data</code></td></tr>
+    <tr><td><code>3_analyze/no-control_bacteria/braycurtis/analysis.py</code></td><td><code>parents[2]/"2_transform"/…</code> + <code>parents[1]</code> for shared</td><td><code>ws.upstream()</code>, <code>ws.shared.per_subject_braycurtis(…)</code>, <code>ws.result</code></td></tr>
+    <tr><td><code>3_analyze/no-control_bacteria/mann-whitney/analysis.py</code></td><td>same pattern</td><td>same — <code>ws.upstream()</code>, <code>ws.shared</code>, <code>ws.result</code></td></tr>
   </table>
   <div class="callout"><strong>Acceptance:</strong> after migration, re-running the four scripts reproduces the locked
      numbers (cluster means ≈ 0.41 / 0.38 / 0.33 / 0.33; Mann-Whitney cluster 0 vs 2 p ≈ 0.028). If they don't match,

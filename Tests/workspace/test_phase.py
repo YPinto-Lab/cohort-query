@@ -32,16 +32,15 @@ def test_transform_result_is_result_subdir(tmp_path):
     assert ws.result.is_dir()
 
 
-def test_analyze_makes_data_and_plots(tmp_path):
+def test_analyze_result_is_result_subdir(tmp_path):
     root = _make_tree(tmp_path)
     script = root / "3_analyze" / "no-control_bacteria" / "braycurtis" / "analysis.py"
 
     ws = workspace.phase(script)
 
     assert ws.name == "analyze"
-    assert ws.data == script.parent / "data"
-    assert ws.plots == script.parent / "plots"
-    assert ws.data.is_dir() and ws.plots.is_dir()
+    assert ws.result == script.parent / "result"
+    assert ws.result.is_dir()
 
 
 def test_script_outside_workspaces_raises(tmp_path):

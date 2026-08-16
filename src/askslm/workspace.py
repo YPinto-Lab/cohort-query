@@ -31,15 +31,9 @@ class _Phase:
     @property
     def result(self) -> Path:
         """This script's output directory, created on first access."""
-        return _made(self._result_dir())
-
-    @property
-    def data(self) -> Path:
-        return _made(self.result / "data")
-
-    @property
-    def plots(self) -> Path:
-        return _made(self.result / "plots")
+        if self.name == "build":
+            return _made(self._script.parent)
+        return _made(self._script.parent / "result")
 
     @cached_property
     def shared(self):
@@ -55,11 +49,6 @@ class _Phase:
             exploration = self._script.parent.parent.name
             return self.root / "2_transform" / exploration / "result" / "feature_table.biom"
         raise ValueError("build reads from ws.inputs; it has no upstream")
-
-    def _result_dir(self) -> Path:
-        if self.name == "transform":
-            return self._script.parent / "result"
-        return self._script.parent
 
 
 def _workspace_root(script_path: Path) -> Path:
