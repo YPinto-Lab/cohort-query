@@ -260,12 +260,15 @@ control flow behind each verb (C.2).</p>
 <p><strong>Noam never writes Python.</strong> He runs one command and answers questions:</p>
 <pre><code>$ askslm
 <span class="com">? What cohort do you need?</span> fecal metagenomes from adults with IBD, Western countries
-<span class="com">  … 847 samples · 3 studies · MetaPhlAn 62% · mOTUs 91%</span>
+<span class="com">  … 412 biosamples · STAT 380 · MetaPhlAn 228 · mOTUs 222</span>
 <span class="com">? What now? (↑/↓)</span>
 <span class="com">  › Run it</span>
 <span class="com">    Refine the question</span>
 <span class="com">    Choose profile sources</span>
+<span class="com">    Show the SQL and overlap</span>
 <span class="com">    Save plan and quit</span></code></pre>
+<p class="meta">Every transcript below uses the single worked example carried through C.1 — 412 biosamples and the
+STAT / METAPHLAN / MOTUS figures of C.1.2. Same query, same numbers, different renderer.</p>
 
 <p>This replaces the earlier Jupyter-notebook surface. The <strong>reason</strong>: in the notebook story the user
 still had to type a line of Python, so "no programming required" was not literally true — the single most-asked
@@ -274,7 +277,7 @@ ask → inspect → refine loop that a one-shot CLI cannot provide (each invocat
 
 <table>
   <tbody><tr><th>What the user does</th><th>What the app calls</th></tr>
-  <tr><td>runs <code>askslm</code></td><td><code>config()</code> — see C.0.3, the app must source its arguments</td></tr>
+  <tr><td>runs <code>askslm</code></td><td><code>config()</code> — from its stored settings (C.0.1)</td></tr>
   <tr><td>types a question</td><td><code>ask(question, save=...)</code> → <code>Plan</code></td></tr>
   <tr><td>reads the cohort preview</td><td><code>PlanView</code> rendered as a <code>rich</code> table (C.1.2 is the same content)</td></tr>
   <tr><td>refines</td><td><code>ask()</code> again — previous questions kept in history</td></tr>
@@ -302,7 +305,121 @@ flowchart TD
 step is reached only by explicit confirmation.</figcaption>
 </figure>
 
-<h4>C.0.1 Libraries <span class="badge locked">decided</span></h4>
+<h4>C.0.1 First run <span class="badge locked">accepted 2026-08-16</span></h4>
+<p>Dropping the notebook created a gap: <code>config(db, llm, llm_key)</code> takes explicit arguments (E.4), and in
+the notebook story Noam typed them. A user who writes no Python cannot, so the app sources them itself — prompting
+once, then never again.</p>
+<pre><code>$ askslm
+<span class="com">  No configuration found. Two questions, once.</span>
+
+<span class="com">? Path to the SRA × Metalog database</span>  ~/data/metalog_sra.duckdb
+<span class="com">  ✓ found · 41 GB · built 2026-07-02</span>
+<span class="com">? Gemini API key</span>  ****************************
+<span class="com">  ✓ saved to ~/.askslm/config.toml</span>
+
+<span class="com">? What cohort do you need?</span> ▊</code></pre>
+<p>It drops straight into the normal prompt — first run is the ordinary session with two questions in front of it,
+not a separate <code>init</code> command to discover. Later runs read the file and start at the question. An
+existing <code>ASKSLM_DB</code> / <code>ASKSLM_LLM_KEY</code> environment variable wins over the file and suppresses
+the prompt, so the lab server and CI need no interactive step and no file on disk.</p>
+<p>Validation is the one already specified: <code>Settings.__post_init__</code> fails fast if the database is missing
+or the key is empty (E.4). The app catches that and re-prompts instead of exiting on a typo — the only reason it
+does not simply pass the values through blind.</p>
+<table>
+  <tbody><tr><th>Source</th><th>Precedence</th><th>For</th></tr>
+  <tr><td><code>ASKSLM_DB</code>, <code>ASKSLM_LLM_KEY</code></td><td>wins</td><td>CI, lab server, shared machines — no file written</td></tr>
+  <tr><td><code>~/.askslm/config.toml</code></td><td>fallback</td><td>a workstation, written once on first run</td></tr>
+  <tr><td>first-run prompt</td><td>when neither exists</td><td>Noam's laptop, day one</td></tr>
+</tbody></table>
+<p class="meta"><strong>Still open, and deliberately separate: where the database comes from.</strong> The prompt above
+assumes the file is already on disk. Who hosts the prebuilt DuckDB and who pays (lab server / Zenodo / object store /
+user-built) is unresolved, and it is the one thing that would extend this flow — if the package ever fetches the
+mirror itself, first-run grows a download step and <code>db_path</code> gains a default. Nothing else here changes:
+whatever the app reads, it still calls <code>config()</code> with the same three values.</p>
+
+<h4>C.0.2 Every screen <span class="badge locked">settled 2026-08-16</span></h4>
+<p>The whole surface, in the order Noam meets it. Five screens — there is no sixth.</p>
+
+<p><strong>1 · Refine.</strong> The question is re-asked with the previous text pre-filled and editable, so a
+correction is an edit, not a retype. Each answer replaces the preview in place.</p>
+<pre><code><span class="com">? What cohort do you need?</span> fecal metagenomes from adults with IBD, Western countries
+<span class="com">  … 412 biosamples · STAT 380 · MetaPhlAn 228 · mOTUs 222</span>
+
+<span class="com">? What now?</span> Refine the question
+<span class="com">? What cohort do you need?</span> fecal metagenomes from adults with Crohn's, Europe▊
+<span class="com">  … 96 biosamples · STAT 91 · MetaPhlAn 44 · mOTUs 51</span>
+<span class="com">  ⚠ 96 samples — narrow. Widening to all IBD gives 412.</span></code></pre>
+<p class="meta">Each refine is a fresh <code>ask()</code>: one LLM hop and cheap <code>COUNT</code>s, no download. The
+warning is a plain threshold on cohort size, not a model judgement.</p>
+
+<p><strong>2 · Choose profile sources.</strong> A checkbox over <em>one</em> family. Picking a family first is what
+makes the cross-family guard (E.2) unreachable by construction — the invalid combination is never on screen, so it
+never has to be rejected after the fact.</p>
+<pre><code><span class="com">? Which feature space?</span>
+<span class="com">    STAT        NCBI tax_id · read counts       380 samples</span>
+<span class="com">  › METAPHLAN   NCBI clade · relative abundance  228 samples</span>
+<span class="com">    MOTUS       mOTU id · relative abundance     222 samples</span>
+
+<span class="com">? Which METAPHLAN sources? (space to toggle, order = precedence)</span>
+<span class="com">  ◉ METALOG_METAPHLAN4_ALL     207        head — wins overlapping samples</span>
+<span class="com">  ◉ SOMENEW_METAPHLAN           54   +21   adds 21 samples nothing else profiles</span>
+<span class="com">  ─────────────────────────────────────────</span>
+<span class="com">    union = 228 samples · 184 cohort samples have no METAPHLAN profile</span></code></pre>
+<p class="meta">The <code>+unique</code> column of C.1.2, live: toggling a source updates the union total, so a
+<code>+0</code> source visibly changes nothing and the head is visibly first. This is the one screen where the
+terminal beats the API — precedence is an <em>ordered</em> list, and reordering rows is easier than remembering that
+<code>profile_sources</code> is head-first.</p>
+
+<p><strong>3 · Show the SQL and overlap.</strong> The trust screen (C.1.3). Never in the headline, always one
+keystroke away.</p>
+<pre><code><span class="com">  Source overlap (same biosample in both databases)</span>
+<span class="com">      SRA only       205      metadata + counts from SRA</span>
+<span class="com">      Metalog only    32      from Metalog</span>
+<span class="com">      shared         175  ←   METALOG_METADATA wins these</span>
+
+<span class="com">  SRA      → SELECT biosample, … FROM sra_metadata WHERE …</span>
+<span class="com">  Metalog  → SELECT spire_sample_name, … FROM metalog_metadata WHERE …</span>
+
+<span class="com">  [q] back</span></code></pre>
+
+<p><strong>4 · Run.</strong> The only expensive step, reached only by explicit confirmation. Progress is a line, not
+a layout — the reason a full-screen TUI is not needed (C.0.3).</p>
+<pre><code><span class="com">? Write to</span>  ibd_metaphlan.biom
+<span class="com">  reading METALOG_METAPHLAN4_ALL  ████████████████████  207/207</span>
+<span class="com">  reading SOMENEW_METAPHLAN       ████████████████████    54/54</span>
+<span class="com">  reconciling metadata · building table</span>
+
+<span class="com">  ✓ ibd_metaphlan.biom</span>
+<span class="com">      family     METAPHLAN  (coverage → relative abundance)</span>
+<span class="com">      samples    228        union of the chosen sources ∩ cohort</span>
+<span class="com">      features   1,432 clades (all levels)</span>
+<span class="com">      counts     METALOG_METAPHLAN4_ALL 207 (head) · SOMENEW_METAPHLAN +21 new</span>
+<span class="com">      metadata   METALOG_METADATA wins shared · SRA_METADATA fills gaps per field</span>
+<span class="com">      dropped    184 biosamples → ibd_metaphlan.dropped.csv</span>
+
+<span class="com">? What now? (↑/↓)</span>
+<span class="com">  › Build another family from this cohort</span>
+<span class="com">    Refine the question</span>
+<span class="com">    Quit</span></code></pre>
+<p class="meta">This is C.1.4's build overview, rendered. <strong>Build another family</strong> is the same
+<code>Plan</code> materialized again — the cheap operation the two-step design exists to make possible, and the
+reason the session does not exit at the first biom. The dropped list goes to a file rather than the screen: 184 lines
+would bury the summary.</p>
+
+<p><strong>5 · Save and quit.</strong> Writes the plan JSON and exits. The plan is the reproducible artifact — the
+same file the non-interactive path replays (C.1.1).</p>
+<pre><code><span class="com">  ✓ plans/ibd.json — replay with:  askslm run plans/ibd.json</span></code></pre>
+
+<div class="note"><strong>Failure is a screen too.</strong> A question the LLM cannot translate must not dump a stack
+trace at a biologist. <code>Plan.error</code> already exists for this (F.2); the app renders it and returns to the
+prompt with the text pre-filled.
+<pre><code><span class="com">? What cohort do you need?</span> samples from the gut of people who felt unwell
+<span class="com">  ✗ Could not translate that into a query.</span>
+<span class="com">    "felt unwell" matches no metadata field. Try naming a disease,</span>
+<span class="com">    or ask for all stool samples and narrow afterwards.</span>
+<span class="com">? What cohort do you need?</span> samples from the gut of people who felt unwell▊</code></pre></div>
+
+<h4>C.0.3 Libraries <span class="badge locked">decided</span></h4>
 <p><code>questionary</code> (arrow-key <code>select</code> / <code>checkbox</code> / <code>confirm</code> / text with
 history — <code>prompt_toolkit</code> underneath) and <code>rich</code> (the plan table). Two dependencies, roughly
 one hundred lines of glue.</p>
@@ -313,7 +430,7 @@ is a <strong>line-oriented prompt flow</strong> that scrolls like normal termina
 user in the ways that matter and costs a small fraction of the effort. Revisit full-screen only if a persistent
 side panel or live progress across a long download is ever genuinely required. Neither is v1.</p>
 
-<h4>C.0.2 Scope boundary <span class="badge locked">accepted tradeoff</span></h4>
+<h4>C.0.4 Scope boundary <span class="badge locked">accepted tradeoff</span></h4>
 <p>The session ends when the <code>.biom</code> is written. <strong>Downstream analysis and plotting are out of
 scope</strong> — the notebook surface was quietly covering "and then he analyzes it", and dropping it makes that
 boundary explicit rather than accidental. This is the correct scope for a read-only package whose job is
@@ -321,19 +438,6 @@ boundary explicit rather than accidental. This is the correct scope for a read-o
 use.</p>
 <p class="meta">The Python facade (C.1) is unchanged and remains public — scripted and reproducible use
 (<code>load_plan(path).run(...)</code> in a pipeline, with no LLM and no terminal) is still a first-class path.</p>
-
-<h4>C.0.3 First-run configuration <span class="badge proposed">Proposed — open</span></h4>
-<p><strong>Dropping the notebook creates a gap this design did not previously have.</strong> <code>config(db, llm,
-llm_key)</code> takes explicit arguments (E.4) — in the notebook story Noam typed them. A user who writes no Python
-cannot, so the terminal app must source them itself. That mechanism does not exist yet.</p>
-<p>Proposed, smallest thing that works: on first run, prompt for the <strong>database path</strong> and
-<strong>LLM key</strong>, write them to <code>~/.askslm/config.toml</code>, and read that file on every later start
-(environment variables override it, so CI and the lab server need no file). Subsequent runs prompt for nothing.</p>
-<p class="meta">Deliberately <em>not</em> settled here because it is coupled to the one genuinely open product
-question: <strong>where the prebuilt DuckDB is hosted and who pays for it</strong> (lab server / Zenodo / object
-store / user-built). If the package ends up fetching the mirror itself, first-run config grows a download step and
-<code>db_path</code> gains a default — so decide the hosting first, then this. <code>Settings</code> (E.4) is
-unchanged either way: whatever the app reads, it still calls <code>config()</code> with the same three values.</p>
 
 <h3>C.1 Public API <span class="badge locked">revised</span></h3>
 <p class="meta">This is the layer <em>underneath</em> C.0 — what the terminal app calls on the user's behalf, and what a
@@ -343,12 +447,21 @@ counterpart the API lacks.</p>
 no biom presupposed.</strong> <code>run()</code> materializes a biom and is the only place the sources are named — the
 <code>profile_sources</code> to union (all one family, head first) and which METADATA source wins ties.
 <strong>There is no rank knob</strong> — bioms ship native granularity (C.1.4).</p>
-<h4>C.1.1 Calls <span class="badge locked">scripted path — not what the user types</span></h4>
-<div class="note"><strong>Nobody types this.</strong> Noam's path is the terminal session in C.0 — he writes no
-Python. This block is the <em>scripted</em> path: a reproducible pipeline, a test, or the lab re-running a saved plan
-unattended. It is shown here because it is the contract the terminal app is written against, not because it is the
-intended user experience. Read C.0 for what the product feels like; read this for what it calls.</div>
-<p class="meta">Mapping: <code>config()</code> ← the app's stored settings at startup (C.0.3, still open);
+<h4>C.1.1 Calls <span class="badge locked">internal contract — not a user surface</span></h4>
+<div class="note"><strong>Why this section still exists — and what it is not.</strong> It is fair to ask whether a
+Python API earns its keep once the product is a terminal app. Answer: <strong>not as a public surface.</strong>
+Ask-SLM does not ship a documented Python API for users, and "use it from Python" is not a supported story we
+advertise. What the calls below are:
+<ul>
+  <li><strong>The contract the terminal app is written against.</strong> The app is a driving adapter; something has
+      to define what it drives. Deleting this section would not remove the API, only leave it unspecified.</li>
+  <li><strong>The unit-test surface.</strong> H.2 runs every service against <code>FakeLlmBackend</code> /
+      <code>FakeDatabase</code> — through these calls, with no terminal in the loop.</li>
+</ul>
+What it is <em>not</em> is the answer to reproducibility. That was the one honest reason to hand a biologist a
+Python snippet, and it no longer is — <strong>replay is a command</strong> (C.1.1.1), so the "no programming
+language" claim holds for pipelines and CI as well, not just interactive use.</div>
+<p class="meta">Mapping: <code>config()</code> ← the app's stored settings at startup (C.0.1);
 <code>ask()</code> ← the typed question; <code>run()</code> ← the confirmation prompt. Nothing below lacks a
 terminal counterpart, and nothing in the terminal lacks a call below.</p>
 <pre><code><span class="com"># configure once</span>
@@ -375,6 +488,18 @@ askslm.load_plan(<span class="str">"plans/ibd.json"</span>).run(profile_sources=
 stat = askslm.load_plan(<span class="str">"plans/ibd.json"</span>).run(profile_sources=askslm.Source.SRA_TAXONOMY, out=<span class="str">"cohort_stat.biom"</span>)
 genus_ra = askslm.StatProfile(stat).relative_abundance(rank=askslm.Rank.GENUS)   <span class="com"># per-rank RA + Unclassified bucket (G.3.4)</span>
 </code></pre>
+<h4>C.1.1.1 Replay — the non-interactive command <span class="badge locked">settled 2026-08-16</span></h4>
+<p>A saved plan is the reproducible artifact (F.2). Replaying it needs no question, no LLM, and no decisions — so it
+needs no prompts either. It is one command, and it is the path a pipeline, a Makefile, or CI uses:</p>
+<pre><code>$ askslm run plans/ibd.json --sources METALOG_METAPHLAN4_ALL,SOMENEW_METAPHLAN --out ibd.biom
+  ✓ ibd.biom · METAPHLAN · 228 samples · 184 dropped</code></pre>
+<p>Same <code>Plan</code>, same <code>run()</code>, no terminal session — <code>--sources</code> is the head-first
+list and defaults for <code>--metadata-winner</code> match the API. Exit code is non-zero if translation or the build
+fails, so it drops into a pipeline without a wrapper.</p>
+<p class="meta">This is why C.1.1 is not a user surface. The two things a person could previously only get by writing
+Python — <em>run this exact cohort again</em> and <em>run it unattended</em> — are both this command. The Python
+facade underneath is unchanged; it simply stops being something anyone is asked to type.</p>
+
 <h4>C.1.2 <code>plan</code> render</h4>
 <p class="meta"><strong>Render contract (changed with the terminal surface).</strong> The plan renders through
 <code>__str__</code> / <code>PlanView</code> — plain text, terminal-first. There is <em>no</em>
@@ -512,7 +637,7 @@ package back to the architecture rings (top of section A).</p>
   <tr><td><code>plan/</code></td><td>Domain + service + adapter</td><td><code>plan · plan_view · plan_repository · cohort_preview · cohort_preview_builder · materialization</code></td><td>the reviewable, persistable artifact and its show-your-work preview</td></tr>
   <tr><td><code>cohort/</code></td><td>Domain + application service</td><td><code>accession · cohort · discovery · profile_reader · profile_reconciler · profile_matrix · metadata_reader · metadata_reconciler · reconciled_metadata · dropped · cohort_builder</code></td><td>the biosample key + SRA/Metalog/shared partition (pure set logic, no run-time normalizer) and the build engine: discover → reconcile → assemble</td></tr>
   <tr><td><code>db/</code></td><td>Port + adapter</td><td><code>database</code> (port) · <code>duckdb_connection</code> · <code>biom_factory</code> (adapters)</td><td>the read-only DuckDB seam and the existing biom build path</td></tr>
-  <tr><td><code>cli/</code></td><td>Driving adapter</td><td><code>session</code> (the loop) · <code>prompts</code> (questionary wrappers) · <code>render</code> (rich views of <code>PlanView</code>)</td><td>the interactive terminal app (C.0) — the only thing the user touches. Calls the facade, owns no domain logic. Entry point <code>askslm = askslm.cli.session:main</code></td></tr>
+  <tr><td><code>cli/</code></td><td>Driving adapter</td><td><code>session</code> (the loop) · <code>prompts</code> (questionary wrappers) · <code>render</code> (rich views of <code>PlanView</code>) · <code>settings_store</code> (C.0.1) · <code>replay</code> (C.1.1.1)</td><td>the interactive terminal app (C.0) — the only thing the user touches. Calls the facade, owns no domain logic. Entry point <code>askslm = askslm.cli.session:main</code></td></tr>
 </tbody></table>
 <p class="meta">Extension stays local: a new database, metadata set, or profiler adds one member to <code>sources/</code>
 (and a table to the mirror) — the engine, ports, and facade never move. The <code>cohort/</code> package is the one to
@@ -716,7 +841,7 @@ chosen winner.</p>
 wrapping in an object. <code>config()</code> stores the validated <code>Settings</code> once; the factories read it.</p>
 <p class="meta"><code>Settings</code> is constructed from explicit arguments and knows nothing about config files or
 the environment. Whoever calls <code>config()</code> sources the three values — a script passes them literally, the
-terminal app reads them from its own store (C.0.3, still open). Keeping that outside <code>Settings</code> is what
+terminal app reads them from its own store (C.0.1). Keeping that outside <code>Settings</code> is what
 lets the validation stay a plain fail-fast <code>__post_init__</code>.</p>
 <pre><code><span class="kw">@dataclass</span>(frozen=True)
 <span class="kw">class</span> Settings:
