@@ -278,13 +278,41 @@ run-keyed counts to a biosample-keyed column is therefore an <strong>aggregation
 document never says what it should be. It is also STAT-specific: the Metalog profilers key on
 <code>sample_alias</code>, which is already per-sample, so nothing analogous arises there.
 <br><br>
-<strong>Resolution: runs live side by side. The column is the profiling unit</strong> (settled
+<strong>First, a word that means two things.</strong> "Column" is overloaded here and the ambiguity has
+already caused one misreading, so: a <em>DuckDB</em> column is a <strong>field</strong> (<code>acc</code>,
+<code>tax_id</code>, <code>self_count</code>); a <em>biom</em> column is a <strong>sample</strong> — one column of
+numbers in the features × samples matrix. <strong>The decision below is about the biom's columns.</strong> On the
+DuckDB side only one field is added, <code>biosample</code>, and <code>acc</code> stays as it already is.
+<br><br>
+<strong>Resolution: runs live side by side. The biom column is the profiling unit</strong> (settled
 2026-08-16).
+<br><br>
+Concretely, for a BioSample with two runs — this is the whole decision in one picture:
+<pre><code><span class="com"># sra_taxonomy in the mirror — long rows; `biosample` is the one NEW field</span>
+acc         tax_id  name       self_count   biosample
+SRR00001A   562     E. coli    220          SAMN00001
+SRR00001B   562     E. coli    260          SAMN00001     <span class="com"># same biosample, second run</span>
+
+<span class="com"># REJECTED — one biom column per biosample forces the two runs into one number</span>
+                 SAMN00001   SAMN00002
+  E. coli           480         150       <span class="com"># summed … or 260, picking one and discarding the other</span>
+
+<span class="com"># SETTLED — one biom column per run; nothing summed, nothing discarded</span>
+                 SRR00001A   SRR00001B   SRR00002A
+  E. coli           220         260         150
+
+  sample metadata (one entry per biom column):
+    SRR00001A  →  biosample=SAMN00001  assay_type=WGS  …
+    SRR00001B  →  biosample=SAMN00001  assay_type=WGS  …     <span class="com"># group by biosample yourself, if you choose to</span>
+    SRR00002A  →  biosample=SAMN00002  …
+</code></pre>
 <ul>
   <li>Stamp <code>biosample</code> onto <code>sra_taxonomy</code> at ETL time via <code>sra_taxonomy.acc ⋈
       sra_metadata.acc</code>, <strong>keeping <code>acc</code></strong> and indexing both.</li>
-  <li>A STAT biom gets <strong>one column per run</strong>. Two runs of one BioSample are two columns, both
-      carrying <code>acc</code> and <code>biosample</code> on the sample metadata.</li>
+  <li>A STAT biom gets <strong>one biom column (one sample) per run</strong>. Two runs of one BioSample are two
+      columns, both carrying <code>acc</code> and <code>biosample</code> on the sample metadata.</li>
+  <li><strong>Metalog bioms are unaffected.</strong> MetaPhlAn and mOTUs profile per sample, so their columns
+      stay one-per-biosample exactly as before. This changes STAT and only STAT.</li>
   <li>Nothing is summed, nothing is selected, nothing is dropped. Grouping runs is the researcher's decision
       at analysis time, with <code>biosample</code> sitting in the metadata to group by.</li>
   <li>The preview reports both numbers, since they now differ: <code>STAT 380 biosamples · 412 runs</code>.</li>
