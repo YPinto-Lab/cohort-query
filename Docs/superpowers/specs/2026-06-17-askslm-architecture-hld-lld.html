@@ -115,11 +115,15 @@ not per family (E.3).
 <br>
 (I) <strong><code>sra_taxonomy</code> is keyed by run (<code>acc</code>), not biosample</strong>, and the ETL
 never stamps it — so STAT could not be read by the canonical key at all. Because a biosample can have several
-runs, closing this was a <em>selection</em> decision, not a missing column. Settled in B.3: stamp
-<code>biosample</code> at build, then pick <strong>one run per biosample</strong> (deepest by total
-<code>self_count</code>), report the rest, and carry <code>acc</code> on the sample metadata.
-<strong>Summing the runs was proposed and rejected</strong> — runs of one BioSample can differ in assay, and the
-design already forbids within-sample blending.
+runs, closing this needed a decision about what a column <em>is</em>. Settled in B.3: stamp
+<code>biosample</code> at build, and let the runs <strong>live side by side</strong> — a STAT biom gets one
+column per run, each carrying <code>acc</code> and <code>biosample</code> on its sample metadata. Generalised
+column-id rule: <strong>the column is the unit that was actually profiled</strong>; <code>biosample</code> is
+always available on the metadata, not always the column's name (which is what the orphan-tail fallback was
+already doing). <strong>Two proposals were made here and both rejected</strong> — summing runs (adds unlike
+quantities when assays differ; forbidden by "no within-sample blending") and picking the deepest run (a
+scientific judgement the tool has no business making, and it discards a real profile). Nothing is summed,
+selected, or dropped.
 </div>
 
 <div class="fix"><strong>Revision 2026-06-20.</strong>
@@ -274,37 +278,53 @@ run-keyed counts to a biosample-keyed column is therefore an <strong>aggregation
 document never says what it should be. It is also STAT-specific: the Metalog profilers key on
 <code>sample_alias</code>, which is already per-sample, so nothing analogous arises there.
 <br><br>
-<strong>Resolution: one run per biosample, chosen deterministically, never blended</strong> (settled
+<strong>Resolution: runs live side by side. The column is the profiling unit</strong> (settled
 2026-08-16).
 <ul>
   <li>Stamp <code>biosample</code> onto <code>sra_taxonomy</code> at ETL time via <code>sra_taxonomy.acc ⋈
       sra_metadata.acc</code>, <strong>keeping <code>acc</code></strong> and indexing both.</li>
-  <li>At read time pick <strong>exactly one run per biosample</strong> — the one with the largest total
-      <code>self_count</code> (deepest sequencing). Deterministic, maximises information, and assumes nothing
-      about whether the runs are combinable.</li>
-  <li>Every non-selected run is <strong>reported</strong>, alongside the dropped samples. Never silent.</li>
-  <li><code>acc</code> travels onto the biom's <strong>sample metadata</strong>, so every column says which run
-      produced it. Provenance survives without the run becoming the key.</li>
+  <li>A STAT biom gets <strong>one column per run</strong>. Two runs of one BioSample are two columns, both
+      carrying <code>acc</code> and <code>biosample</code> on the sample metadata.</li>
+  <li>Nothing is summed, nothing is selected, nothing is dropped. Grouping runs is the researcher's decision
+      at analysis time, with <code>biosample</code> sitting in the metadata to group by.</li>
+  <li>The preview reports both numbers, since they now differ: <code>STAT 380 biosamples · 412 runs</code>.</li>
 </ul>
-<strong>Why not sum the runs.</strong> Summation was the first proposal here and it is
-<em>rejected</em>. Two runs of one BioSample are not guaranteed to be the same experiment — they can differ in
-<code>assay_type</code>, platform, or library prep, and an amplicon run plus a shotgun run of the same sample
-measure different quantities, so adding their read counts adds unlike things. "Two halves of one sequencing
-effort" only holds when the runs share an assay, and nothing upstream enforces that. This also aligns runs with a
-rule the design already made for sources — parent spec §3, <em>Count conflict</em>: <strong>no within-sample
-blending; a sample's counts come from a single source.</strong> Runs are the same question one level down and get
-the same answer.
+<p><strong>The generalised column-id rule.</strong> A biom column is <strong>the unit that was actually
+profiled</strong>, and <code>biosample</code> is always present on the sample metadata as the join key:</p>
+<table>
+  <tbody><tr><th>Source</th><th>Profiles per</th><th>Column id</th><th>Always on sample metadata</th></tr>
+  <tr><td>Metalog (MetaPhlAn, mOTUs)</td><td>sample</td><td><code>biosample</code> (<code>sample_alias</code> for the orphan tail)</td><td><code>biosample</code>, <code>sample_alias</code></td></tr>
+  <tr><td>SRA (STAT)</td><td><strong>run</strong></td><td><code>acc</code></td><td><code>biosample</code>, <code>acc</code></td></tr>
+</tbody></table>
+<p>This is a generalisation of the rule B.3 already had, not a new exception: the column id was never purely the
+biosample — the Metalog orphan tail already falls back to <code>sample_alias</code>. What is constant is that
+<code>biosample</code> is always <em>available</em>, never that it is always the column's name.</p>
+<strong>Two rejected proposals, and why.</strong> Both were made here first and both were wrong in the same
+way — they destroyed information to produce a shape the rest of the document had assumed.
+<ul>
+  <li><strong>Sum <code>self_count</code> across a biosample's runs.</strong> Rejected: runs of one BioSample are
+      not guaranteed to be the same experiment — they can differ in <code>assay_type</code>, platform, or library
+      prep, and an amplicon run plus a shotgun run measure different quantities, so adding their read counts adds
+      unlike things. It also contradicts parent spec §3, <em>Count conflict</em>: <strong>no within-sample
+      blending</strong>.</li>
+  <li><strong>Pick one run per biosample, deepest by total <code>self_count</code>.</strong> Rejected: "which run
+      represents this sample" is a <em>scientific</em> judgement, and sequencing depth is not a quality metric —
+      it is merely a sortable number. A read-only cohort builder has no business making that call on the
+      researcher's behalf, and it silently discards a real profile.</li>
+</ul>
+<strong>Why run-level columns do not break what they appeared to.</strong> Three objections were raised against
+re-keying and only one had force, which then dissolved. <em>Metadata duplicating across a biosample's runs</em> is
+simply how a biom represents replicates — normal, not a defect. <em>The partition not aligning</em> is not a
+mismatch: the cohort stays biosample-level and each run column maps to exactly one biosample, which is a
+many-to-one map. <em>A STAT biom no longer comparing sample-for-sample with a MetaPhlAn biom</em> is real but
+moot — STAT and MetaPhlAn are different families and <strong>never share a biom anyway</strong> (G.3), and
+aligning across two separately-built bioms already requires the <code>metaphlan_clades</code> crosswalk on the
+roadmap (G.3.5).
 <br><br>
-<strong>Why the key stays the biosample.</strong> Re-keying the biom on runs is possible but breaks three
-things: sample metadata is per-biosample in both databases (a run-keyed biom duplicates every metadata row across
-a biosample's runs); the SRA-only / Metalog-only / shared partition is computed on biosample, so run columns would
-not align with it; and a STAT biom could no longer be compared sample-for-sample with a MetaPhlAn or mOTUs biom,
-since the Metalog profilers key on <code>sample_alias</code>, which is already per-sample.
-<br><br>
-Because run selection is a <strong>read-side policy</strong> rather than something baked into the mirror,
-summing same-assay runs remains available later as a policy change, not a rebuild. The alternative of a per-query
-<code>acc → biosample</code> join is what B.3 exists to avoid and would reintroduce the run-time bridge for
-exactly one source. The fixture mirror carries a two-run biosample so the selection is exercised either way.</div>
+Cohort, partition, and drop report are untouched — all three are biosample-level, and STAT simply materialises
+one <em>or more</em> columns per covered biosample. A cohort biosample with no STAT run is still dropped and still
+reported. If a per-biosample collapse is ever wanted it belongs where <code>StatProfile</code> went: an explicit
+read-side helper the researcher invokes with a stated rule, not a silent default in the build.</div>
 <p>One key, with one honest exception. Because Metalog keeps its own ids (an external accession isn't always 1:1 with
 a sample) and <code>spire_sample_name</code> is mixed-type, some Metalog samples resolve to <strong>no
 biosample</strong>:</p>
@@ -313,10 +333,14 @@ biosample</strong>:</p>
   <tr><td><code>sample_alias</code></td><td>Metalog's internal PK — always present, unambiguous</td><td>never</td></tr>
   <tr><td><code>biosample</code></td><td>the cross-source join key (resolved at build, indexed everywhere)</td><td>NULL for the Metalog-only tail with no external BioSample</td></tr>
 </tbody></table>
-<div class="note"><strong>Column-id rule.</strong> A biom column is keyed by its <code>biosample</code> when present;
-for the null tail (Metalog-only, no BioSample — nothing to join to anyway) it <strong>falls back to
-<code>sample_alias</code></strong>. So "one key across all sources" holds for everything that can be shared, without
-inventing biosamples for orphans.</div>
+<div class="note"><strong>Column-id rule</strong> <span class="badge">generalised 2026-08-16</span>. A biom column
+is <strong>the unit that was actually profiled</strong>, and <code>biosample</code> is always carried on the sample
+metadata as the join key. For the Metalog profilers that unit is the sample, so the column is its
+<code>biosample</code> — falling back to <code>sample_alias</code> for the null tail (Metalog-only, no BioSample,
+nothing to join to anyway). For STAT the unit is the <strong>run</strong>, so the column is its <code>acc</code>
+and a biosample with two runs is two columns. The invariant is that <code>biosample</code> is always
+<em>available</em>, not that it is always the column's name — which is what "one key across all sources" was
+always doing for the orphan tail. Full argument in the <code>sra_taxonomy</code> note above.</div>
 <h3>B.4 Cohort partition <span class="badge locked">core model</span></h3>
 <p>Discovery runs each source's query — every row already carries its <code>biosample</code> (stamped at build, B.3) —
 and partitions the cohort by <strong>where each biosample appears</strong>. That partition is what <code>plan</code>
@@ -1178,7 +1202,7 @@ still renders and <code>run()</code> refuses.</p>
 <table>
   <tbody><tr><th>Class</th><th>Signature</th><th>Domain effect</th></tr>
   <tr><td><code>CohortDiscovery</code></td><td><code>discover(queries) -&gt; Cohort</code></td><td>run each query (rows already carry the build-stamped <code>biosample</code>), group by metadata source into a <code>Cohort</code> that knows its overlaps. No normalization step.</td></tr>
-  <tr><td><code>ProfileReader</code></td><td><code>read(source, accessions) -&gt; ProfileColumns</code></td><td>pull one PROFILE source's table; columns are the samples that actually have it. <strong>STAT only:</strong> its rows are per <em>run</em>, so the reader selects one run per biosample — deepest by total <code>self_count</code> — reports the rest, and carries <code>acc</code> onto the sample metadata. No summing across runs (B.3).</td></tr>
+  <tr><td><code>ProfileReader</code></td><td><code>read(source, accessions) -&gt; ProfileColumns</code></td><td>pull one PROFILE source's table; columns are the units that actually have it. <strong>STAT only:</strong> its rows are per <em>run</em>, so a biosample with two runs yields <strong>two columns</strong>, each carrying <code>acc</code> and <code>biosample</code> on the sample metadata. Never summed, never selected down to one (B.3).</td></tr>
   <tr><td><code>ProfileReconciler</code></td><td><code>read(request, accessions) -&gt; ProfileMatrix</code></td><td>over the named <code>request.profile_sources</code> (all one family): read each via <code>ProfileReader</code> at native granularity, fold <strong>per sample</strong> in list order (head wins overlap, each source adds its disjoint samples). Full pipeline in G.3.</td></tr>
   <tr><td><code>MetadataReader</code></td><td><code>read(source, accessions) -&gt; DataFrame</code></td><td>read ONE metadata source's frame for the cohort — the mirror of <code>ProfileReader</code>.</td></tr>
   <tr><td><code>MetadataReconciler</code></td><td><code>reconciled(cohort, winning_source) -&gt; ReconciledMetadata</code></td><td>orchestrate: read every metadata source via <code>MetadataReader</code>, then <code>combine_first</code> — winner wins, the other fills gaps per field. (Profiles have no counterpart — one source, nothing to reconcile.)</td></tr>
