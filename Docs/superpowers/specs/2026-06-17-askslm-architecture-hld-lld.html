@@ -85,6 +85,33 @@
      Parent spec: <code>2026-06-17-askslm-sra-metalog-cohort-design.html</code>. Diagrams: Mermaid.</p>
 </header>
 
+<div class="fix"><strong>Revision 2026-08-16 — pre-implementation gap fixes.</strong> Seven corrections from
+the design grilling that preceded coding. Everything below is settled; each is written up in place in the section
+it belongs to.
+<br>
+(A) <strong>The LLM writes metadata queries only</strong> — <code>Translation.queries</code> is one per
+<em>METADATA</em> source (2 today), not one per source. As written it fed PROFILE sources to
+<code>MetadataReconciler</code>. Profile-side SQL is mechanical, generated in code (E.2).
+(B) <strong><code>SchemaCatalog</code> ships value vocabularies</strong>, not just column names — columns alone
+cannot tell the model how "IBD" is spelled in this data. Built at ETL time into a <code>schema_catalog</code>
+table by a separate incremental script (F.1).
+(C) <strong>Table names corrected against the mirror</strong> — <code>metalog_metaphlan4</code>,
+<code>metalog_motus3</code>, <code>metalog_spire_motus</code>. Three of six were wrong and would have failed on
+the first query. <code>metalog_metaphlan4_species</code> is dropped from the ETL (E.3).
+(D) <strong><code>SRA_TAXONOMY</code> has no lineage column</strong> — STAT lineage is derived from tax_ids via
+<code>lineage_table</code>, so <code>lineage_column=None</code> means "derive" (E.3).
+(E) <strong>Lineage on a union is the union of the lineage tables</strong>, asserting on conflict — previously
+undefined for features only a non-head source has (G.3.3).
+(F) <strong><code>Translation.failure</code></strong> lets the model say "I can't translate that," which C.0.2's
+failure screen already promised but nothing could produce (E.2).
+(G) <strong><code>StatProfile</code> and <code>Rank</code> deferred out of v1</strong> — they live past the
+scope boundary C.0.4 draws at the written biom, and cutting them retires the largest block of undesigned work in
+the LLD (G.3.4). New <strong>H.3</strong> adds the translation eval set: execution accuracy over 15–20 real
+questions with hand-written gold SQL.
+<br>
+Also corrected: <code>BiomFactory</code> has no existing build path to wrap — it is a small rewrite (D.1).
+</div>
+
 <div class="fix"><strong>Revision 2026-06-20.</strong>
 (1) <strong>Flat source model</strong> — every DuckDB table is one <code>Source</code> (e.g. <code>METALOG_MOTUS3</code>,
 <code>METALOG_METADATA</code>). No separate <code>Profiler</code> type; a source's <code>SourceKind</code>
@@ -646,7 +673,17 @@ watch; if it grows past comfort, split the readers/reconcilers back out — but 
 <ul>
   <li><code>sra_schema.py</code> already splits <code>SRAMetadataSchema</code> / <code>SRATaxonomySchema</code> — the
       same metadata/profile split as the source model. Feeds <code>SchemaCatalog</code>.</li>
-  <li>The current biom build path is wrapped by <code>BiomFactory</code>; assembly rules unchanged.</li>
+  <li><code>askslm.taxonomy.lineage_table</code> — the ete3 tax_id → lineage builder. Load-bearing, not
+      optional: <code>SRA_TAXONOMY</code> has no lineage column, so STAT's feature axis is derived through this
+      (E.3).</li>
+  <li><del>The current biom build path is wrapped by <code>BiomFactory</code>; assembly rules
+      unchanged.</del> <strong>Corrected 2026-08-16 — there is no build path in <code>src/</code> to
+      wrap.</strong> Verified when the pre-pivot code was deleted: nothing in the package ever constructed a
+      <code>biom.Table</code>. The only assembly was seven lines in an agent-authored workspace script
+      (<code>Workspaces/ABX_new/1_build/build.py</code>) — <code>Table(values, observation_ids, sample_ids)</code>
+      then two <code>add_metadata</code> calls then <code>to_json</code>. <code>BiomFactory</code> is a small
+      <em>rewrite</em>, not a wrap. The rules are unchanged and the script survives on disk as the reference
+      recipe (<code>Workspaces/</code> is git-ignored), but no code is inherited.</li>
   <li>Reconciliation keeps <strong>two DataFrames</strong> (standing rule): metadata and lineage never merge.</li>
 </ul>
 <hr>
@@ -779,7 +816,8 @@ port.</figcaption>
 <span class="kw">@dataclass</span>(frozen=True)
 <span class="kw">class</span> Translation:                <span class="com"># LlmBackend output, before any DB hit</span>
     interpretation: QueryInterpretation
-    queries: tuple[SourceQuery, ...]    <span class="com"># one per source — add a source, add an entry</span>
+    queries: tuple[SourceQuery, ...]    <span class="com"># one per METADATA source — the LLM writes 2 today</span>
+    failure: str | None = None          <span class="com"># the LLM could not translate; a sentence for the user, not a stack trace</span>
 
 <span class="kw">@dataclass</span>(frozen=True)
 <span class="kw">class</span> CohortPreview:              <span class="com"># the show-your-work numbers</span>
@@ -815,6 +853,35 @@ port.</figcaption>
     <span class="kw">def</span> family(self) -&gt; ProfilerFamily:
         <span class="kw">return</span> self.head().spec().family         <span class="com"># the biom's one family, derived from the head</span>
 </code></pre>
+<div class="fix"><strong>The LLM writes metadata queries only, fixed 2026-08-16.</strong>
+<code>Translation.queries</code> read "one per source," and that was a real bug, not loose wording:
+<code>CohortDiscovery.discover(plan.translation.queries)</code> builds <code>Cohort.by_source</code> from
+whatever it is handed, and <code>MetadataReconciler</code> (G.2) then iterates <code>cohort.by_source</code>
+and reads every member as a metadata frame — so a <code>SRA_TAXONOMY</code> entry would be read as metadata.
+Correcting the comment to <strong>one per METADATA source</strong> removes the bug at its origin: the tuple can
+only ever hold metadata sources, so <code>by_source</code> is metadata-keyed by construction and
+<code>MetadataReconciler</code> needs no filter.
+<br><br>
+The profile side is <em>not</em> LLM-authored. Every profile query is mechanical and generated in code —
+<code>SELECT DISTINCT biosample FROM &lt;table&gt; WHERE biosample IN (…)</code> for preview coverage
+(F.3), and the column pull in <code>ProfileReader</code> (G.1) — both parameterized by the cohort. C.1.3's trust
+screen already showed exactly two SQL lines; this makes the type agree with it.
+<br><br>
+<strong>Why per-table and never one joined query.</strong> The SRA-only / Metalog-only / shared partition
+<em>is</em> set membership across two independent result sets — a single joined query structurally cannot
+produce it. The two schemas also share no vocabulary (<code>geo_loc_name_sam</code> / <code>jattr</code> vs
+<code>geographic_location</code> / <code>subject_disease_status</code>), and one source's bad SQL must not kill
+the other. <strong>The risk this creates</strong> is that the LLM must encode the same intent twice in two
+vocabularies: if "adults with IBD" resolves strictly in SRA and loosely in Metalog, the cohort is silently
+biased and nothing in the design would flag it. The translation eval set (H.3) scores each question three
+ways — per source and on the shared partition — for exactly this reason.</div>
+<div class="fix"><strong><code>Translation.failure</code> — the LLM's way to say "I can't," added 2026-08-16.</strong>
+C.0.2's failure screen renders a <em>semantic</em> explanation ("'felt unwell' matches no metadata field"), but
+nothing in the design let the model produce one: <code>Plan.error</code> was only ever set by
+<code>CohortPreviewBuilder</code> when generated SQL failed to execute (F.3). One optional field on
+<code>Translation</code> closes it. <code>AskService</code> copies it into <code>Plan.error</code>, the
+existing <code>_guard_runnable</code> already refuses to <code>run()</code>, and the terminal renders it
+identically — no new type, no union threaded through every caller.</div>
 <h3>E.3 <code>Source</code> enum</h3>
 <p>Each member carries its <code>SourceSpec</code>. This is the only place a source maps to a table — adding a
 database, metadata set, or profiler means adding one member here, nowhere else.</p>
@@ -822,10 +889,10 @@ database, metadata set, or profiler means adding one member here, nowhere else.<
     <span class="com"># database, table, kind[, family, unit, lineage_column]</span>
     SRA_METADATA               = SourceSpec(<span class="str">"sra"</span>,     <span class="str">"sra_metadata"</span>,       SourceKind.METADATA)
     METALOG_METADATA           = SourceSpec(<span class="str">"metalog"</span>, <span class="str">"metalog_metadata"</span>,   SourceKind.METADATA)
-    SRA_TAXONOMY               = SourceSpec(<span class="str">"sra"</span>,     <span class="str">"sra_taxonomy"</span>,       SourceKind.PROFILE, ProfilerFamily.STAT,      Unit.COUNTS,   <span class="str">"lineage"</span>)
-    METALOG_METAPHLAN4_ALL     = SourceSpec(<span class="str">"metalog"</span>, <span class="str">"metaphlan4_all"</span>,     SourceKind.PROFILE, ProfilerFamily.METAPHLAN, Unit.RELATIVE, <span class="str">"clade"</span>)
-    METALOG_MOTUS3             = SourceSpec(<span class="str">"metalog"</span>, <span class="str">"motus3"</span>,             SourceKind.PROFILE, ProfilerFamily.MOTUS,     Unit.RELATIVE, <span class="str">"clade"</span>)
-    METALOG_SPIRE_MOTUS        = SourceSpec(<span class="str">"metalog"</span>, <span class="str">"spire_motus"</span>,        SourceKind.PROFILE, ProfilerFamily.MOTUS,     Unit.RELATIVE, <span class="str">"clade"</span>)
+    SRA_TAXONOMY               = SourceSpec(<span class="str">"sra"</span>,     <span class="str">"sra_taxonomy"</span>,       SourceKind.PROFILE, ProfilerFamily.STAT,      Unit.COUNTS,   <span class="str">None</span>)
+    METALOG_METAPHLAN4_ALL     = SourceSpec(<span class="str">"metalog"</span>, <span class="str">"metalog_metaphlan4"</span>, SourceKind.PROFILE, ProfilerFamily.METAPHLAN, Unit.RELATIVE, <span class="str">"clade_name"</span>)
+    METALOG_MOTUS3             = SourceSpec(<span class="str">"metalog"</span>, <span class="str">"metalog_motus3"</span>,     SourceKind.PROFILE, ProfilerFamily.MOTUS,     Unit.RELATIVE, <span class="str">"clade_name"</span>)
+    METALOG_SPIRE_MOTUS        = SourceSpec(<span class="str">"metalog"</span>, <span class="str">"metalog_spire_motus"</span>, SourceKind.PROFILE, ProfilerFamily.MOTUS,     Unit.RELATIVE, <span class="str">"clade_name"</span>)
 
     <span class="kw">def</span> kind(self) -&gt; SourceKind:
         <span class="kw">return</span> self.value.kind
@@ -836,6 +903,29 @@ database, metadata set, or profiler means adding one member here, nowhere else.<
 <p class="meta">PROFILE members grouped by family: <code>STAT</code> (read counts), <code>METAPHLAN</code> (species + all-levels,
 coverage) and <code>MOTUS</code> (mOTUs3 + SPIRE, coverage). <code>Materialization.family()</code> reads it back from the
 chosen winner.</p>
+<div class="fix"><strong>Table names are the mirror's, verified 2026-08-16.</strong> Checked against
+<code>Scripts/build_mirror/build_duckdb.py</code>: the ETL creates <code>metalog_metaphlan4</code>,
+<code>metalog_motus3</code>, <code>metalog_spire_motus</code>, <code>metalog_metadata</code>,
+<code>sra_metadata</code>, <code>sra_taxonomy</code>. Three of the six table strings above were previously wrong
+(<code>metaphlan4_all</code>, <code>motus3</code>, <code>spire_motus</code>) and would have failed on the first
+query. The Metalog profile tables are long-format with a <code>clade_name</code> column — not
+<code>clade</code>.
+<br><br>
+<strong><code>SRA_TAXONOMY</code> has no lineage column — STAT lineage is derived.</strong> The
+<code>lineage_column</code> was <code>"lineage"</code>, but the mirror's <code>sra_taxonomy</code> table has no such
+column: per <code>SRATaxonomySchema</code> it is <code>acc · tax_id · rank · name · total_count · self_count ·
+ilevel · ileft · iright · bioproject</code>. STAT's feature axis is NCBI tax_ids, and their lineage must be
+<em>built</em> from the tax_ids via ete3 — <code>askslm.taxonomy.lineage_table</code>, the one piece of the
+pre-pivot package that survives, and exactly what the old workspace build script did. So
+<code>lineage_column=None</code> means "derive it," not "there is none," and <code>BiomFactory</code> calls
+<code>lineage_table</code> for the STAT family. The Metalog families need no such step: their
+<code>clade_name</code> string <em>is</em> the lineage.
+<br><br>
+<strong><code>metalog_metaphlan4_species</code> is dropped from the ETL.</strong> The ETL also built a
+species-only MetaPhlAn table that no <code>Source</code> referenced. It is a rank subset of the all-levels
+table, and G.3.4 already says a single-rank MetaPhlAn view is a row filter — so it earns no Source. To be
+confirmed on the first real build: if it turns out to cover <em>samples</em> the all-levels table lacks, it is a
+genuine <code>+unique</code> source and gets a member after all.</div>
 <h3>E.4 Composition root</h3>
 <p>The composition root is the <code>runtime.py</code> module, not a class — it has two factories and no state worth
 wrapping in an object. <code>config()</code> stores the validated <code>Settings</code> once; the factories read it.</p>
@@ -897,7 +987,7 @@ arrive ready:</p>
 <pre><code><span class="kw">@dataclass</span>(frozen=True)
 <span class="kw">class</span> TranslationPrompt:
     question: ResearchQuestion
-    schemas: str                     <span class="com"># every source's columns, from SchemaCatalog</span>
+    schemas: str                     <span class="com"># every METADATA source's columns AND value vocabularies, from SchemaCatalog</span>
 
 <span class="kw">class</span> Translator:
     <span class="kw">def</span> __init__(self, backend: LlmBackend, catalog: SchemaCatalog):
@@ -909,7 +999,29 @@ arrive ready:</p>
         <span class="kw">return</span> self._backend.translate(prompt)
 </code></pre>
 <p>Invalid SQL surfaces when <code>CohortPreviewBuilder</code> runs the counts (F.3), not here — keeping the network
-step pure.</p>
+step pure. A <code>Translation</code> may also come back carrying <code>failure</code> — the model saying it
+could not translate at all (E.2); that reaches the user as <code>Plan.error</code>.</p>
+<div class="fix"><strong>Columns alone are not enough — <code>SchemaCatalog</code> ships value vocabularies,
+settled 2026-08-16.</strong> The catalog was specified as "every source's columns." That cannot work, and the
+reason is not subtle: nothing in a column list tells the model that <em>IBD</em> is written in this data as
+whatever literal strings occupy <code>subject_disease_status</code>, or that <em>Western countries</em> must be
+matched against the actual spellings in <code>geographic_location</code>. Given only names, the model invents
+plausible literals and the query returns zero rows — which looks like an empty cohort, not a bug.
+<br><br>
+This is the known-standard fix, not an invention: production text-to-SQL systems converge on
+<em>schema linking plus value retrieval</em> — narrow the schema <em>and</em> supply the real values before
+generating. So <code>SchemaCatalog.all()</code> returns, per METADATA source, its columns and types
+<strong>plus the distinct values of every low-cardinality column</strong>.
+<br><br>
+<strong>Built at ETL time, in a separate incremental script.</strong> The vocabularies live in a
+<code>schema_catalog</code> table in the mirror, written by a small script that opens an existing mirror and adds
+one table — it needs no raw TSVs, so it has no business inside the multi-hour ETL, and the cardinality cutoff can
+be re-tuned in seconds against the eval set instead of hours. Runtime <code>SELECT DISTINCT</code> across 108
+Metalog columns on every connect is the rejected alternative. Starting cutoff: <strong>≤ 200 distinct values</strong>
+counts as low-cardinality — a first guess, to be tuned against H.3.
+<br><br>
+Deliberately <em>not</em> included: sample rows. They burn prompt budget across 108 columns and add little once
+the vocabularies are explicit.</div>
 <h3>F.2 <code>Plan</code></h3>
 <p>The <code>Plan</code> is a two-step, reproducible artifact: <code>ask()</code> builds and persists it;
 <code>run()</code> materializes it — any number of times, with different winners or rank. <code>load_plan</code>
@@ -1093,6 +1205,25 @@ flowchart LR
 The head labels the biom's family and wins overlapping samples; each other source adds the samples it alone has. No
 cross-family path exists — every source shares the head's family (validated).</figcaption>
 </figure>
+<div class="fix"><strong>Lineage on a union: union the lineage tables, settled 2026-08-16.</strong> The spec
+said the head "supplies lineage," which is under-specified the moment a union actually does something: when a
+non-head source contributes the samples only it has, it contributes <em>features</em> too, and a feature absent
+from the head's lineage had no defined behavior.
+<br><br>
+<strong>The rule: union the lineage tables across the named sources.</strong> Same family means the same feature
+namespace <em>by definition</em> (B.2) — that is what the family <em>is</em> — so the lineages are compatible by
+construction and unioning them is sound. The rejected alternative, head-only lineage with unknown features dropped,
+would silently discard the very samples the second source was named to add.
+<br><br>
+<strong>Conflicts assert, they do not resolve.</strong> If one feature id carries two different lineages across
+two same-family sources, that is a broken family assumption or a bad mirror, not a tie to break by precedence.
+Fail loudly (trust input, fail fast). Note this is orthogonal to <em>counts</em>, where the head genuinely does win
+overlapping samples — lineage is the feature axis, counts are the sample axis.
+<br><br>
+<strong>STAT is the exception, and it is not a special case.</strong> <code>SRA_TAXONOMY</code> has no lineage
+column at all (E.3): its features are NCBI tax_ids and the lineage is <em>derived</em> from them via
+<code>lineage_table</code>. Deriving from the unioned tax_id set gives the same answer as unioning derived
+tables, so the rule holds without a branch.</div>
 <h4>G.3.4 Granularity &amp; the STAT relative-abundance view</h4>
 <p>askslm does <strong>not</strong> collapse to a rank and has <strong>no build-time rank knob</strong>. Each biom ships its
 source's <strong>native granularity</strong>, with <code>rank</code> + <code>lineage</code> on every feature, so Noam decides
@@ -1125,6 +1256,19 @@ chosen rank (STAT only; for MetaPhlAn it is a row filter). It never mutates the 
 abundance only sums to 1 <em>within</em> a rank, so the table must name one — the same biom yields a species table and a
 genus table from two calls. <code>total_count</code> is never stored; it is the subtree sum, recovered on demand. (<code>Rank</code>
 is the taxonomic-rank enum, now used only here at read time — there is no <code>run()</code> rank argument.)</p>
+<div class="fix"><strong><code>StatProfile</code> and <code>Rank</code> are deferred out of v1, 2026-08-16.</strong>
+C.0.4 draws the scope boundary at the written <code>.biom</code> — and <code>StatProfile</code> is the one thing
+in this document that lives <em>past</em> that boundary. It is a read-side analysis convenience over a file the
+package has already finished producing; nothing in the ask → preview → materialize path calls it. Cutting it also
+retires three of the seven unspecified helper functions (<code>roll_up_to</code>,
+<code>add_unclassified_bucket</code>, <code>to_proportions</code>) and the taxonomy tree that
+<code>roll_up_to</code> would need but that this document never sources — the largest block of undesigned work in
+the LLD, removed by deleting a class that sits outside the product's own stated scope.
+<br><br>
+<code>Rank</code> goes with it: with no <code>run()</code> rank knob and no <code>StatProfile</code>, the enum has
+no consumer left in v1. Nothing is lost from the <em>biom</em> — STAT still ships <code>self_count</code> at
+every rank with lineage on every feature, so per-rank relative abundance remains fully derivable by whoever opens
+the file. The section stays as written because it is the design for when this returns; it is simply not v1.</div>
 <pre><code><span class="kw">class</span> ProfileReconciler:
     <span class="kw">def</span> __init__(self, reader: ProfileReader):
         self._reader = reader
@@ -1186,9 +1330,10 @@ The same crosswalk also lets a researcher align taxa across a separately-built S
       <code>restricted_to</code> on fixtures.</li>
   <li><strong>Family union (G.3)</strong> on a small fixture: two same-family sources with <strong>overlapping
       and disjoint</strong> samples union into one matrix at native granularity — the head wins overlap, each source
-      contributes its disjoint samples. Assert a cross-family <code>profile_sources</code> list is rejected. Separately,
-      <code>StatProfile.relative_abundance(rank)</code> sums self-counts to the rank and buckets reads stranded above it
-      as <code>Unclassified</code>, each sample summing to 1.</li>
+      contributes its disjoint samples. Assert a cross-family <code>profile_sources</code> list is rejected. Also
+      assert the <strong>lineage union</strong> (G.3): a feature only the non-head source has still carries lineage,
+      and a conflicting lineage for one feature id raises. <del>Separately,
+      <code>StatProfile.relative_abundance(rank)</code> …</del> — deferred with <code>StatProfile</code> (G.3.4).</li>
   <li><strong>One e2e</strong> against a tiny fixture DuckDB (a few biosamples overlapping across both databases, two
       same-family profile sources): asserts the partition, the unioned native-granularity feature space, head-wins-overlap,
       the dropped set, and winner-driven metadata.</li>
@@ -1196,6 +1341,31 @@ The same crosswalk also lets a researcher align taxa across a separately-built S
       <code>load_plan(path).run(...)</code> never touches <code>LlmBackend</code> and accepts different sources than
       any earlier run.</li>
 </ul>
+<h3>H.3 Translation eval set <span class="badge">settled 2026-08-16</span></h3>
+<p>Everything in H.2 runs against fakes and a fixture, which is right — but it means <strong>the riskiest thing in
+the product is the one thing none of it tests</strong>. Whether Gemini turns a biologist's sentence into correct
+SQL is not a unit-test question, and it is not a question to answer by eyeballing a few queries either. It is
+measured.</p>
+<ul>
+  <li><strong>The set.</strong> 15–20 questions drawn from <em>real</em> research questions, not invented ones,
+      each with hand-written <strong>gold SQL</strong>. Gold is authored by the domain owner — only they know that
+      "adults with IBD" means the right cells of <code>subject_disease_status</code> and
+      <code>age_years</code>. Drafted against the live schema, corrected by hand; the corrected version is truth.</li>
+  <li><strong>The metric is execution accuracy</strong>, not string match: do the generated and gold queries return
+      the same biosample set? Scored <strong>three ways per question</strong> — per metadata source, and on the
+      shared partition — because two independently generated queries can each look right while encoding the same
+      concept differently, which is the specific failure the per-source design invites (E.2).</li>
+  <li><strong>Committed, but not CI-gating.</strong> It needs the full mirror and a live API key, so CI cannot run
+      it; the fixture tests in H.2 are what gate. This is a deliberate <code>make eval</code>, tracked in git so a
+      change in accuracy shows up as a diff when the prompt, the vocabularies, or the backend changes.</li>
+  <li><strong>It is the tuning signal</strong> for the <code>SchemaCatalog</code> cardinality cutoff (F.1) and the
+      acceptance case for v1 (C.0.4) — the same list serves both.</li>
+</ul>
+<p class="meta">Why not an existing benchmark: Spider 2.0 and its peers measure agents over 1,000-column
+enterprise warehouses across dialects, where general models collapse to ~10%. This problem is a different class —
+seven tables, one dialect, and essentially one query shape — so those numbers predict nothing here and the agent
+frameworks built for them are far oversized for a read-only package. What transfers is the discipline (measure
+execution accuracy) and the architecture (schema linking + value retrieval, F.1), not the code.</p>
 <hr>
 <p class="meta">Confirmed knobs (parent spec §9): explicit <code>save=</code> with <code>plans/&lt;slug&gt;.json</code>
 default; JSON plan files; samples no named source covers are dropped; <code>profile_sources</code> (one family, head first)
