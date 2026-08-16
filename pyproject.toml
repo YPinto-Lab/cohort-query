@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ask-slm"
 version = "0.1.0"
-description = "Ask-SLM: a metagenomic analysis toolkit for querying and analyzing SRA datasets."
+description = "Ask-SLM: build a cross-study metagenomic feature table from a research question."
 requires-python = ">=3.12"
 
-[project.scripts]
-askslm = "askslm.cli:main"
+# No [project.scripts] yet — the `askslm` entry point comes back with the terminal app
+# (askslm.cli.session:main). Pointing it at a deleted module would break `pip install -e .`.
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["askslm*", "agent*", "web*"]
+include = ["askslm*"]
 namespaces = true
