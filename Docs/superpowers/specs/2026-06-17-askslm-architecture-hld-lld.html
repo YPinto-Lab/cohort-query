@@ -343,10 +343,14 @@ counterpart the API lacks.</p>
 no biom presupposed.</strong> <code>run()</code> materializes a biom and is the only place the sources are named — the
 <code>profile_sources</code> to union (all one family, head first) and which METADATA source wins ties.
 <strong>There is no rank knob</strong> — bioms ship native granularity (C.1.4).</p>
-<h4>C.1.1 Calls</h4>
-<p class="meta">Shown as a script, which is how a pipeline uses it. In the terminal app (C.0) the same sequence is
-driven by prompts — <code>config()</code> from the config file at startup, <code>ask()</code> from the typed question,
-<code>run()</code> on confirmation.</p>
+<h4>C.1.1 Calls <span class="badge locked">scripted path — not what the user types</span></h4>
+<div class="note"><strong>Nobody types this.</strong> Noam's path is the terminal session in C.0 — he writes no
+Python. This block is the <em>scripted</em> path: a reproducible pipeline, a test, or the lab re-running a saved plan
+unattended. It is shown here because it is the contract the terminal app is written against, not because it is the
+intended user experience. Read C.0 for what the product feels like; read this for what it calls.</div>
+<p class="meta">Mapping: <code>config()</code> ← the app's stored settings at startup (C.0.3, still open);
+<code>ask()</code> ← the typed question; <code>run()</code> ← the confirmation prompt. Nothing below lacks a
+terminal counterpart, and nothing in the terminal lacks a call below.</p>
 <pre><code><span class="com"># configure once</span>
 askslm.config(db=<span class="str">"/mnt/lab/metalog_sra.duckdb"</span>, llm=<span class="str">"gemini"</span>, llm_key=os.environ[<span class="str">"..."</span>])
 
@@ -357,7 +361,7 @@ print(plan)                <span class="com"># the show-your-work below; stats-o
 <span class="com"># one MetaPhlAn source today — a bare Source is fine (normalized to a one-element list):</span>
 table = plan.run(profile_sources=askslm.Source.METALOG_METAPHLAN4_ALL,
                  metadata_winning_source=askslm.Source.METALOG_METADATA,   <span class="com"># default</span>
-                 out=<span class="str">"cohort.biom"</span>)                                <span class="com"># prints the overview below, returns a biom.Table</span>
+                 out=<span class="str">"cohort.biom"</span>)                                <span class="com"># emits the overview below, returns a biom.Table</span>
 
 <span class="com"># union same-family sources into one biom — head first, head wins overlapping samples:</span>
 plan.run(profile_sources=[askslm.Source.METALOG_METAPHLAN4_ALL,           <span class="com"># head: family + lineage + tie-break</span>
@@ -369,7 +373,7 @@ askslm.load_plan(<span class="str">"plans/ibd.json"</span>).run(profile_sources=
 
 <span class="com"># same cohort, STAT family — ships self_count at every rank; project to a rank yourself with StatProfile:</span>
 stat = askslm.load_plan(<span class="str">"plans/ibd.json"</span>).run(profile_sources=askslm.Source.SRA_TAXONOMY, out=<span class="str">"cohort_stat.biom"</span>)
-askslm.StatProfile(stat).relative_abundance(rank=askslm.Rank.GENUS)   <span class="com"># per-rank RA + Unclassified bucket (G.3.4)</span>
+genus_ra = askslm.StatProfile(stat).relative_abundance(rank=askslm.Rank.GENUS)   <span class="com"># per-rank RA + Unclassified bucket (G.3.4)</span>
 </code></pre>
 <h4>C.1.2 <code>plan</code> render</h4>
 <p class="meta"><strong>Render contract (changed with the terminal surface).</strong> The plan renders through
@@ -434,10 +438,13 @@ SQL                           SRA      → SELECT biosample, … FROM sra_metada
                               Metalog  → SELECT spire_sample_name, … FROM metalog_metadata WHERE …
 </code></pre>
 <h4>C.1.4 Build overview</h4>
-<p>Materialization is not silent: <code>run()</code> returns a one-screen summary of what it actually built alongside
-the <code>biom.Table</code>, so Noam sees the drops and the provenance without inspecting the file. Same rule as
-C.1.2 — the value object is built here, the terminal app renders it, and it is the last thing the session prints
-before exiting.</p>
+<p>Materialization is not silent: <code>run()</code> emits a one-screen summary of what it actually built, so Noam sees
+the drops and the provenance without inspecting the file. In the terminal app this is the last thing the session
+shows before exiting.</p>
+<p class="meta"><strong>How it is emitted is a layering detail, not a design commitment.</strong> <code>run()</code>'s
+signature returns <code>biom.Table</code> (F.2). A library that writes to stdout on its own would interleave with the
+prompts in C.0, so the summary should reach the app as a value it renders — the same one-view-two-renderers rule as
+C.1.2. Settle the exact mechanism in implementation; nothing in the design depends on the choice.</p>
 <pre><code>Built  cohort_metaphlan_union.biom   (biom JSON)
 
     family           METAPHLAN   (coverage → relative abundance)
