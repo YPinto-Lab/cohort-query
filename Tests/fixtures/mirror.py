@@ -20,7 +20,8 @@ What the fixture is built to exercise:
   family union       two MOTUS sources that overlap on 3 samples and each add their own
   head wins overlap  the 3 overlapping samples carry DIFFERENT values per source
   lineage union      spire has a species mOTUs3 has never seen
-  multi-run STAT     SAMN00001 has two runs, so counts must be summed per biosample
+  multi-run STAT     SAMN00001 has two runs of unequal depth, so "pick the deepest"
+                     (B.3) is unambiguous -- runs are selected, never summed
   value vocabulary   low-cardinality metadata columns with realistic literals
 
 Build one:  python Tests/fixtures/mirror.py /tmp/fixture.duckdb

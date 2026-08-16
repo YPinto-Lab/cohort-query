@@ -83,19 +83,15 @@ def test_spire_contributes_a_species_motus3_has_never_seen(con):
     assert only_in_spire == 1
 
 
-def test_one_biosample_has_two_runs_so_stat_counts_must_be_summed(con):
-    runs = _one(con, """
-        SELECT count(DISTINCT acc) FROM sra_taxonomy WHERE acc LIKE 'SRR00001%'
-    """)
-    summed = _one(con, """
-        SELECT sum(self_count) FROM sra_taxonomy WHERE acc LIKE 'SRR00001%' AND tax_id = 562
-    """)
-    single_run = _one(con, """
-        SELECT self_count FROM sra_taxonomy WHERE acc = 'SRR00001A' AND tax_id = 562
-    """)
+def test_one_biosample_has_two_runs_of_unequal_depth_so_the_deepest_is_pickable(con):
+    """B.3: STAT selects ONE run per biosample -- deepest by total self_count. Never summed."""
+    depths = con.execute("""
+        SELECT acc, sum(self_count) AS depth FROM sra_taxonomy
+        WHERE acc LIKE 'SRR00001%' GROUP BY acc ORDER BY depth DESC
+    """).fetchall()
 
-    assert runs == 2
-    assert summed > single_run
+    assert len(depths) == 2, "the multi-run case must exist or run selection is untestable"
+    assert depths[0][1] != depths[1][1], "unequal depth, so 'deepest' is unambiguous"
 
 
 def test_sra_taxonomy_is_keyed_by_run_not_biosample(con):
