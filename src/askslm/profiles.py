@@ -35,21 +35,21 @@ class ProfileReader:
         self._database = database
 
     def read(self, source: Source, accessions: frozenset[Accession]) -> ProfileMatrix:
-        rows = self._database.query(self._sql(source, accessions))
+        rows = self._database.query(self._sql(source), [sorted(accessions)])
         if rows.empty:
             return ProfileMatrix(pd.DataFrame(), pd.DataFrame(), {})
         return _matrix_of(source, rows)
 
-    def _sql(self, source: Source, accessions: frozenset[Accession]) -> str:
+    def _sql(self, source: Source) -> str:
         spec = source.spec()
         return (f"SELECT * FROM {spec.table} "
-                f"WHERE {_key_expression(spec.table)} IN ({_sql_list(accessions)})")
+                f"WHERE {_key_expression(spec.table)} IN (SELECT unnest(?::VARCHAR[]))")
 
     def coverage(self, source: Source, accessions: frozenset[Accession]) -> frozenset[Accession]:
         """Cheap preview count: which cohort biosamples does this source profile at all?"""
         rows = self._database.query(
             f"SELECT DISTINCT biosample FROM {source.spec().table} "
-            f"WHERE biosample IN ({_sql_list(accessions)})")
+            f"WHERE biosample IN (SELECT unnest(?::VARCHAR[]))", [sorted(accessions)])
         return frozenset(Accession(key) for key in rows["biosample"].dropna())
 
 
@@ -141,7 +141,3 @@ def _column_ids(spec, rows: pd.DataFrame) -> pd.Series:
 
 def _key_expression(table: str) -> str:
     return "coalesce(biosample, sample_alias)" if table.startswith("metalog_") else "biosample"
-
-
-def _sql_list(accessions: frozenset[Accession]) -> str:
-    return ", ".join(f"'{key}'" for key in sorted(accessions)) or "''"

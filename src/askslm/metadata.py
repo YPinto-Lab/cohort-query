@@ -32,10 +32,11 @@ class MetadataReader:
         self._database = database
 
     def read(self, source: Source, accessions: frozenset[Accession]) -> pd.DataFrame:
-        keys = ", ".join(f"'{key}'" for key in sorted(accessions)) or "''"
         table = source.spec().table
         rows = self._database.query(
-            f"SELECT * FROM {table} WHERE {self._key_expression(table)} IN ({keys})")
+            f"SELECT * FROM {table} "
+            f"WHERE {self._key_expression(table)} IN (SELECT unnest(?::VARCHAR[]))",
+            [sorted(accessions)])
         if rows.empty:
             return pd.DataFrame()
         frame = rows.copy()

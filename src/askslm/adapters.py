@@ -16,8 +16,8 @@ class DuckDbConnection:
     def __init__(self, db_path: Path):
         self._connection = duckdb.connect(str(db_path), read_only=True)
 
-    def query(self, sql: str) -> pd.DataFrame:
-        return self._connection.execute(sql).fetch_df()
+    def query(self, sql: str, params: list | None = None) -> pd.DataFrame:
+        return self._connection.execute(sql, params or []).fetch_df()
 
     def close(self) -> None:
         self._connection.close()
