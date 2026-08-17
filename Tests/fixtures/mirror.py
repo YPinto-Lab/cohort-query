@@ -96,15 +96,20 @@ def _primary_run(biosample: str) -> str:
 
 
 def _create_sra_taxonomy(con: duckdb.DuckDBPyConnection) -> None:
-    """STAT profiles, keyed by RUN accession. SAMN00001 deliberately has two runs."""
+    """STAT profiles, keyed by RUN accession, with the build-stamped biosample alongside.
+
+    Both columns matter: `acc` is what a STAT biom column IS, `biosample` is what makes
+    it reachable by the canonical key. SAMN00001 deliberately has two runs.
+    """
     con.execute("""
         CREATE TABLE sra_taxonomy (
             acc TEXT, tax_id BIGINT, rank TEXT, name TEXT,
-            total_count BIGINT, self_count BIGINT, bioproject TEXT
+            total_count BIGINT, self_count BIGINT, bioproject TEXT,
+            biosample TEXT
         )
     """)
     con.executemany(
-        "INSERT INTO sra_taxonomy VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO sra_taxonomy VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         _stat_rows(),
     )
 
@@ -113,7 +118,7 @@ def _stat_rows() -> list[tuple]:
     rows = []
     for biosample in _stat_biosamples():
         for run in _runs_of(biosample):
-            rows.extend(_stat_rows_for_run(run))
+            rows.extend(_stat_rows_for_run(run, biosample))
     return rows
 
 
@@ -138,10 +143,10 @@ STAT_TAXA = [
 ]
 
 
-def _stat_rows_for_run(run: str) -> list[tuple]:
+def _stat_rows_for_run(run: str, biosample: str) -> list[tuple]:
     seed = sum(ord(c) for c in run)
     return [
-        (run, tax_id, rank, name, 0, 100 + (seed + tax_id) % 400, "PRJNA900")
+        (run, tax_id, rank, name, 0, 100 + (seed + tax_id) % 400, "PRJNA900", biosample)
         for tax_id, rank, name in STAT_TAXA
     ]
 

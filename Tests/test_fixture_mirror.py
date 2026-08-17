@@ -101,12 +101,14 @@ def test_one_biosample_has_two_runs_that_become_two_columns(con):
     assert profiles[0][1] != profiles[1][1], "distinct profiles, so collapsing them would lose data"
 
 
-def test_sra_taxonomy_is_keyed_by_run_not_biosample(con):
-    """Locks in the defect found in HLD B.3 -- STAT cannot be read by the canonical key."""
+def test_sra_taxonomy_carries_both_its_run_and_its_biosample(con):
+    """B.3, now fixed: the ETL stamps biosample so STAT is reachable by the canonical key,
+    and KEEPS acc because a STAT biom column is a run. This test asserted the defect
+    before the stamping landed."""
     columns = [row[0] for row in con.execute("DESCRIBE sra_taxonomy").fetchall()]
 
     assert "acc" in columns
-    assert "biosample" not in columns
+    assert "biosample" in columns
 
 
 def test_profile_lineage_column_differs_per_source(con):

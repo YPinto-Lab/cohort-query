@@ -1,0 +1,146 @@
+"""End to end: question -> plan -> .biom on disk, against the fixture mirror.
+
+Real DuckDB, real biom, real reconciliation. Only the LLM is canned -- everything
+below the port is the shipping path. This is the test that proves the five hand-offs
+(Cohort -> ProfileMatrix -> ReconciledMetadata -> biom.Table) actually fit together.
+"""
+import biom
+import pytest
+
+import askslm
+from askslm.adapters import CannedLlmBackend, DuckDbConnection
+from askslm.translation import SourceQuery, Translation
+
+from fixtures.mirror import build_fixture_mirror
+
+# The cohort a real question would produce: every biosample in each metadata source.
+IBD_TRANSLATION = Translation(
+    interpretation="body_site = stool · disease = IBD",
+    queries=(
+        SourceQuery(askslm.Source.SRA_METADATA,
+                    "SELECT * FROM sra_metadata"),
+        SourceQuery(askslm.Source.METALOG_METADATA,
+                    "SELECT * FROM metalog_metadata"),
+    ),
+)
+
+
+@pytest.fixture
+def configured(tmp_path):
+    path = build_fixture_mirror(tmp_path / "fixture.duckdb")
+    connection = DuckDbConnection(path)
+    askslm.config(db=path, database=connection, backend=CannedLlmBackend(IBD_TRANSLATION))
+    yield tmp_path
+    connection.close()
+
+
+def test_ask_previews_the_cohort_partition(configured):
+    plan = askslm.ask("fecal metagenomes from adults with IBD, Western countries")
+
+    assert plan.preview.union == 20          # 8 shared + 6 SRA-only + 4 Metalog-only + 2 orphan
+    assert plan.preview.shared == 8
+    assert plan.error is None
+
+
+def test_run_writes_a_biom_unioning_two_same_family_sources(configured):
+    out = configured / "motus.biom"
+    plan = askslm.ask("gut metagenomes")
+
+    table, report = plan.run(
+        profile_sources=[askslm.Source.METALOG_MOTUS3, askslm.Source.METALOG_SPIRE_MOTUS],
+        out=out)
+
+    assert out.exists()
+    assert report.family is askslm.ProfilerFamily.MOTUS
+    assert report.columns == 12              # motus3's 8 + spire's 4 that nothing else profiles
+    columns = set(table.ids("sample"))
+    assert "SAMN00007" in columns            # spire alone profiles it, and it survived the union
+    assert "MG_ORPHAN_1" in columns          # no BioSample: keyed by sample_alias, not dropped
+    assert biom.load_table(str(out)).shape == table.shape
+
+
+def test_the_head_wins_every_overlapping_column(configured):
+    plan = askslm.ask("gut metagenomes")
+
+    head_first, _ = plan.run(profile_sources=[askslm.Source.METALOG_MOTUS3,
+                                              askslm.Source.METALOG_SPIRE_MOTUS])
+    spire_first, _ = plan.run(profile_sources=[askslm.Source.METALOG_SPIRE_MOTUS,
+                                               askslm.Source.METALOG_MOTUS3])
+
+    shared_column = "SAMN00004"              # profiled by both sources, with different values
+    feature = "ref_mOTU_v3_00095 Escherichia coli"
+    assert head_first.get_value_by_ids(feature, shared_column) == pytest.approx(0.20)
+    assert spire_first.get_value_by_ids(feature, shared_column) == pytest.approx(0.50)
+
+
+def test_lineage_is_unioned_so_a_spire_only_feature_survives(configured):
+    plan = askslm.ask("gut metagenomes")
+
+    table, _ = plan.run(profile_sources=[askslm.Source.METALOG_MOTUS3,
+                                         askslm.Source.METALOG_SPIRE_MOTUS])
+
+    assert "ref_mOTU_v3_99999 Spire-only species" in set(table.ids("observation"))
+
+
+def test_stat_columns_are_runs_and_carry_their_biosample(configured):
+    """B.3: two runs of one BioSample are TWO columns, neither summed nor discarded."""
+    plan = askslm.ask("gut metagenomes")
+
+    table, report = plan.run(profile_sources=askslm.Source.SRA_TAXONOMY)
+
+    columns = set(table.ids("sample"))
+    assert {"SRR00001A", "SRR00001B"} <= columns
+    assert report.columns > report.biosamples          # more runs than biosamples
+    for column in ("SRR00001A", "SRR00001B"):
+        assert table.metadata(column, axis="sample")["biosample"] == "SAMN00001"
+
+
+def test_metadata_winner_decides_shared_samples(configured):
+    plan = askslm.ask("gut metagenomes")
+
+    table, _ = plan.run(profile_sources=askslm.Source.METALOG_MOTUS3,
+                        metadata_winning_source=askslm.Source.METALOG_METADATA)
+
+    sample = table.metadata("SAMN00001", axis="sample")
+    assert sample["subject_disease_status"] in {"Crohn's disease", "ulcerative colitis",
+                                                "healthy control"}
+    assert sample["biosample"] == "SAMN00001"
+
+
+def test_samples_no_named_source_covers_are_dropped_and_reported(configured):
+    plan = askslm.ask("gut metagenomes")
+
+    _, report = plan.run(profile_sources=askslm.Source.METALOG_METAPHLAN4_ALL)
+
+    assert report.biosamples == 6                       # metaphlan covers 6 of the 20
+    assert len(report.dropped) == 14
+    assert "SAMN00009" in report.dropped                # SRA-only, no MetaPhlAn profile
+
+
+def test_cross_family_profile_sources_are_rejected_on_construction(configured):
+    plan = askslm.ask("gut metagenomes")
+
+    with pytest.raises(ValueError, match="one ProfilerFamily"):
+        plan.run(profile_sources=[askslm.Source.METALOG_MOTUS3,
+                                  askslm.Source.METALOG_METAPHLAN4_ALL])
+
+
+def test_a_metadata_source_cannot_be_used_as_a_profile_source(configured):
+    plan = askslm.ask("gut metagenomes")
+
+    with pytest.raises(ValueError, match="PROFILE source"):
+        plan.run(profile_sources=askslm.Source.SRA_METADATA)
+
+
+def test_an_untranslatable_question_refuses_to_run(configured):
+    askslm.config(db=configured / "fixture.duckdb",
+                  database=DuckDbConnection(configured / "fixture.duckdb"),
+                  backend=CannedLlmBackend(Translation(
+                      interpretation="", queries=(),
+                      failure="'felt unwell' matches no metadata field")))
+
+    plan = askslm.ask("samples from people who felt unwell")
+
+    assert plan.error is not None
+    with pytest.raises(askslm.TranslationError, match="felt unwell"):
+        plan.run(profile_sources=askslm.Source.METALOG_MOTUS3)
