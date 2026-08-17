@@ -23,6 +23,21 @@ import duckdb
 MAX_DISTINCT = 200
 HUGE_TABLE_ROWS = 100_000_000        # never aggregate over a table above this
 
+# Widening ladder for "what counts as a metagenome". Submitter labels are unreliable,
+# so the organism convention catches runs whose librarysource is mislabelled.
+_SCOPING_FILTERS = [
+    ("librarysource = METAGENOMIC",
+     "librarysource = 'METAGENOMIC'"),
+    ("+ METATRANSCRIPTOMIC",
+     "librarysource IN ('METAGENOMIC', 'METATRANSCRIPTOMIC')"),
+    ("+ organism like '%metagenome%'",
+     "librarysource IN ('METAGENOMIC', 'METATRANSCRIPTOMIC') "
+     "OR organism ILIKE '%metagenome%'"),
+    ("+ organism like '%microbiom%' (widest)",
+     "librarysource IN ('METAGENOMIC', 'METATRANSCRIPTOMIC') "
+     "OR organism ILIKE '%metagenome%' OR organism ILIKE '%microbiom%'"),
+]
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -38,6 +53,7 @@ def main() -> None:
     report.schemas()
     report.samples()
     report.runs_per_biosample(args.metadata_table or report.metadata_table())
+    report.scoping_filters(args.metadata_table or report.metadata_table())
     report.value_vocabularies(args.metadata_table or report.metadata_table())
     con.close()
 
@@ -119,6 +135,48 @@ class MirrorReport:
             SELECT assay_type, count(*) FROM {_q(table)} GROUP BY 1 ORDER BY 2 DESC LIMIT 12
         """).fetchall():
             print(f"      {str(assay):28} {count:,}")
+
+    def scoping_filters(self, table: str | None) -> None:
+        """How much of SRA is actually metagenomic?
+
+        The askslm mirror is a DERIVED working set -- the full SRA database stays on
+        the server untouched -- so narrowing it discards nothing and can be widened by
+        a rebuild. The gain is not only speed: restricting collapses `organism` from
+        ~247k mostly-irrelevant values to a vocabulary the LLM can actually match a
+        research question against.
+
+        Reported as a ladder of widening filters, because submitter labels are
+        unreliable and NCBI's convention (organism ending in "metagenome") catches
+        runs whose librarysource is mislabelled.
+        """
+        _heading(f"SCOPING: HOW MUCH OF SRA IS METAGENOMIC?  -- from {table}")
+        if table is None:
+            print("  no metadata table found")
+            return
+        columns = self._columns(table)
+        if "librarysource" not in columns or "organism" not in columns:
+            print("  needs librarysource and organism columns")
+            return
+
+        total = self._rows.get(table, 0)
+        for label, predicate in _SCOPING_FILTERS:
+            runs = self._scalar(f'SELECT count(*) FROM {_q(table)} WHERE {predicate}')
+            biosamples = self._scalar(
+                f'SELECT count(DISTINCT biosample) FROM {_q(table)} WHERE {predicate}')
+            share = (runs / total * 100) if total else 0
+            print(f"  {label:52} {runs:>13,} runs  {share:5.2f}%  "
+                  f"{biosamples:>12,} biosamples")
+
+        print("\n  organism vocabulary under the widest filter (what the LLM would see):")
+        widest = _SCOPING_FILTERS[-1][1]
+        distinct = self._scalar(
+            f'SELECT approx_count_distinct(organism) FROM {_q(table)} WHERE {widest}')
+        print(f"      ~{distinct:,} distinct organisms  (unrestricted: see VALUE VOCABULARIES)")
+        for organism, runs in self._con.execute(f"""
+            SELECT organism, count(*) FROM {_q(table)} WHERE {widest}
+            GROUP BY 1 ORDER BY 2 DESC LIMIT 25
+        """).fetchall():
+            print(f"      {str(organism):48} {runs:>12,}")
 
     def value_vocabularies(self, table: str | None) -> None:
         """The payload the LLM prompt needs: what the metadata columns actually CONTAIN."""
