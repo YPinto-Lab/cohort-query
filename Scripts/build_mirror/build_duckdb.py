@@ -43,16 +43,22 @@ PROFILE_SPECS = {
 class MirrorBuilder:
     """Builds and verifies the SRA x Metalog DuckDB mirror. One method per build step."""
 
-    def __init__(self, metalog_dir: Path, sra_db: Path, out_path: Path):
+    def __init__(self, metalog_dir: Path, sra_db: Path, out_path: Path,
+                 threads: int | None = None, memory_limit: str | None = None,
+                 temp_dir: Path | None = None):
         self.metalog_dir = metalog_dir
         self.sra_db = sra_db
         self.out_path = out_path
+        self.threads = threads
+        self.memory_limit = memory_limit
+        self.temp_dir = temp_dir
 
     def build(self) -> None:
         out_path = self.out_path
         if out_path.exists():
             out_path.unlink()
         con = duckdb.connect(str(out_path))
+        self._configure(con)
         con.execute(f"ATTACH '{self.sra_db}' AS sra (READ_ONLY)")
         self._load_profiles(con)
         self._load_metadata(con)
@@ -62,6 +68,17 @@ class MirrorBuilder:
         self._create_indexes(con)
         self._verify(con)
         con.close()
+
+    def _configure(self, con: duckdb.DuckDBPyConnection) -> None:
+        """Cluster settings. Scanning 13.6B rows spills, and the default temp directory
+        is /tmp -- small on a compute node, and shared. Point it at real storage."""
+        if self.threads:
+            con.execute(f"SET threads = {self.threads}")
+        if self.memory_limit:
+            con.execute(f"SET memory_limit = '{self.memory_limit}'")
+        if self.temp_dir:
+            Path(self.temp_dir).mkdir(parents=True, exist_ok=True)
+            con.execute(f"SET temp_directory = '{self.temp_dir}'")
 
     def _stat_coverage(self, con: duckdb.DuckDBPyConnection) -> None:
         """One row per run that STAT actually profiled -- the ONLY taxonomy-side build step.
@@ -214,9 +231,14 @@ def main() -> None:
     parser.add_argument("--sra-db", type=Path, required=True,
                         help="the existing SRA DuckDB holding metadata_raw and tax_raw")
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--threads", type=int, default=None)
+    parser.add_argument("--memory-limit", default=None, help="e.g. 400GB")
+    parser.add_argument("--temp-dir", type=Path, default=None,
+                        help="DuckDB spill directory -- NOT /tmp on a compute node")
     args = parser.parse_args()
 
-    MirrorBuilder(args.metalog_dir, args.sra_db, args.out).build()
+    MirrorBuilder(args.metalog_dir, args.sra_db, args.out,
+                  args.threads, args.memory_limit, args.temp_dir).build()
 
 
 if __name__ == "__main__":
