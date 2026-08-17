@@ -41,10 +41,11 @@ def _build_fixture(tmp_path: Path) -> MirrorBuilder:
         ["s2", "SRS_not_a_biosample"],
     ])
 
+    # A1 and A2 are two RUNS of one BioSample -- the B.3 case. A3 has no biosample.
     sra_metadata_csv = tmp_path / "metadata.csv"
-    sra_metadata_csv.write_text("acc,biosample\nA1,SAMN001\n")
+    sra_metadata_csv.write_text("acc,biosample\nA1,SAMN001\nA2,SAMN001\nA3,\n")
     sra_taxonomy_csv = tmp_path / "taxonomy.csv"
-    sra_taxonomy_csv.write_text("acc,tax_id\nA1,9606\n")
+    sra_taxonomy_csv.write_text("acc,tax_id\nA1,9606\nA2,9606\nA3,9606\n")
 
     return MirrorBuilder(
         metalog_dir=metalog_dir,
@@ -73,5 +74,25 @@ def test_build_stamps_biosample_and_joins(tmp_path, capsys):
         "SELECT DISTINCT environment FROM metalog_metaphlan4_species"
     ).fetchone()[0]
     assert environment == "human"
+
+    con.close()
+
+
+def test_sra_taxonomy_is_stamped_with_biosample_but_keeps_its_runs(tmp_path):
+    """B.3: STAT becomes reachable by the canonical key WITHOUT losing the run.
+    Two runs of one BioSample stay two rows -- the ETL never collapses them."""
+    builder = _build_fixture(tmp_path)
+    builder.build()
+
+    import duckdb
+    con = duckdb.connect(str(builder.out_path), read_only=True)
+
+    stamped = sorted(con.execute("SELECT acc, biosample FROM sra_taxonomy").fetchall())
+    runs_of_samn001 = con.execute("""
+        SELECT count(DISTINCT acc) FROM sra_taxonomy WHERE biosample = 'SAMN001'
+    """).fetchone()[0]
+
+    assert stamped == [("A1", "SAMN001"), ("A2", "SAMN001"), ("A3", None)]
+    assert runs_of_samn001 == 2
 
     con.close()
