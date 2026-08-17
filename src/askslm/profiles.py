@@ -29,28 +29,64 @@ class ProfileMatrix:
 
 
 class ProfileReader:
-    """Pulls ONE profile source, restricted to the cohort. Columns are its profiling unit."""
+    """Pulls ONE profile source, restricted to the cohort. Columns are its profiling unit.
+
+    STAT is read differently from the Metalog sources, and deliberately. Its table has
+    13.6 BILLION rows and no biosample column, so it is only ever filtered by `acc` --
+    its own key, and the one it is indexed on. The cohort's biosamples are resolved to
+    run accessions through sra_metadata first, which is small by comparison (39M rows).
+    That works precisely because a STAT biom column is a run (HLD B.3); nothing needs
+    the huge table to know about biosamples.
+    """
 
     def __init__(self, database: Database):
         self._database = database
 
     def read(self, source: Source, accessions: frozenset[Accession]) -> ProfileMatrix:
-        rows = self._database.query(self._sql(source), [sorted(accessions)])
+        rows = self._database.query(*self._query(source, accessions))
         if rows.empty:
             return ProfileMatrix(pd.DataFrame(), pd.DataFrame(), {})
-        return _matrix_of(source, rows)
+        return _matrix_of(source, self._with_biosample(source, rows))
 
-    def _sql(self, source: Source) -> str:
+    def _query(self, source: Source, accessions: frozenset[Accession]) -> tuple[str, list]:
         spec = source.spec()
+        if spec.column_id == "acc":
+            return (f"SELECT t.* FROM {spec.table} t WHERE t.acc IN "
+                    f"({_RUNS_OF_BIOSAMPLES})", [sorted(accessions)])
         return (f"SELECT * FROM {spec.table} "
-                f"WHERE {_key_expression(spec.table)} IN (SELECT unnest(?::VARCHAR[]))")
+                f"WHERE {_key_expression(spec.table)} IN (SELECT unnest(?::VARCHAR[]))",
+                [sorted(accessions)])
+
+    def _with_biosample(self, source: Source, rows: pd.DataFrame) -> pd.DataFrame:
+        """A run-keyed source carries no biosample of its own -- attach it from the runs."""
+        if source.spec().column_id != "acc":
+            return rows
+        runs = self._database.query(
+            "SELECT acc, biosample FROM sra_metadata WHERE acc IN (SELECT unnest(?::VARCHAR[]))",
+            [sorted(rows["acc"].dropna().unique().tolist())])
+        return rows.merge(runs, on="acc", how="left")
 
     def coverage(self, source: Source, accessions: frozenset[Accession]) -> frozenset[Accession]:
-        """Cheap preview count: which cohort biosamples does this source profile at all?"""
-        rows = self._database.query(
-            f"SELECT DISTINCT biosample FROM {source.spec().table} "
-            f"WHERE biosample IN (SELECT unnest(?::VARCHAR[]))", [sorted(accessions)])
+        """Preview count: which cohort biosamples does this source profile at all?
+
+        For STAT this reads `stat_coverage` -- one row per profiled run, precomputed at
+        build -- rather than the 13.6B-row table it summarises.
+        """
+        if source.spec().column_id == "acc":
+            rows = self._database.query(
+                "SELECT DISTINCT m.biosample FROM sra_metadata m "
+                "JOIN stat_coverage c ON c.acc = m.acc "
+                "WHERE m.biosample IN (SELECT unnest(?::VARCHAR[]))", [sorted(accessions)])
+        else:
+            rows = self._database.query(
+                f"SELECT DISTINCT biosample FROM {source.spec().table} "
+                f"WHERE biosample IN (SELECT unnest(?::VARCHAR[]))", [sorted(accessions)])
         return frozenset(Accession(key) for key in rows["biosample"].dropna())
+
+
+# Cohort biosamples -> their run accessions. The only bridge STAT needs.
+_RUNS_OF_BIOSAMPLES = ("SELECT acc FROM sra_metadata "
+                       "WHERE biosample IN (SELECT unnest(?::VARCHAR[]))")
 
 
 class ProfileReconciler:

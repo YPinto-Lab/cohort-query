@@ -1,0 +1,62 @@
+"""The package re-attaches the SRA source recorded in the mirror.
+
+The real mirror does not contain sra_taxonomy -- it contains a VIEW over a second
+database file holding 13.6 billion rows. config(db=...) still takes one path, so the
+connection has to find the second one itself. If this breaks, every STAT query fails
+with "table not found" against the real mirror while passing against the fixture.
+"""
+import duckdb
+import pytest
+
+from askslm.adapters import DuckDbConnection
+
+
+@pytest.fixture
+def split_mirror(tmp_path):
+    """A two-file mirror, shaped like the real one: metadata copied, taxonomy attached."""
+    source = tmp_path / "sra.duckdb"
+    connection = duckdb.connect(str(source))
+    connection.execute("CREATE TABLE tax_raw (acc VARCHAR, tax_id INTEGER, self_count BIGINT)")
+    connection.execute("INSERT INTO tax_raw VALUES ('SRR1', 562, 10), ('SRR2', 562, 20)")
+    connection.close()
+
+    mirror = tmp_path / "mirror.duckdb"
+    connection = duckdb.connect(str(mirror))
+    connection.execute(f"ATTACH '{source}' AS sra (READ_ONLY)")
+    connection.execute("CREATE VIEW sra_taxonomy AS SELECT * FROM sra.tax_raw")
+    connection.execute("CREATE TABLE mirror_config (key VARCHAR, value VARCHAR)")
+    connection.execute("INSERT INTO mirror_config VALUES ('sra_db_path', ?)", [str(source)])
+    connection.close()
+    return mirror
+
+
+def test_connection_attaches_the_recorded_source_and_the_view_resolves(split_mirror):
+    connection = DuckDbConnection(split_mirror)
+
+    rows = connection.query("SELECT acc, self_count FROM sra_taxonomy ORDER BY acc")
+
+    assert list(rows["acc"]) == ["SRR1", "SRR2"]
+    connection.close()
+
+
+def test_a_single_file_fixture_without_mirror_config_still_opens(tmp_path):
+    """The generated fixture is one self-contained file. It must not need an attach."""
+    path = tmp_path / "plain.duckdb"
+    connection = duckdb.connect(str(path))
+    connection.execute("CREATE TABLE sra_taxonomy (acc VARCHAR)")
+    connection.execute("INSERT INTO sra_taxonomy VALUES ('SRR9')")
+    connection.close()
+
+    connection = DuckDbConnection(path)
+
+    assert list(connection.query("SELECT acc FROM sra_taxonomy")["acc"]) == ["SRR9"]
+    connection.close()
+
+
+def test_the_mirror_is_read_only(split_mirror):
+    connection = DuckDbConnection(split_mirror)
+
+    with pytest.raises(duckdb.Error):
+        connection.query("CREATE TABLE injected (x INTEGER)")
+
+    connection.close()

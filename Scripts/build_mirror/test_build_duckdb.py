@@ -41,16 +41,20 @@ def _build_fixture(tmp_path: Path) -> MirrorBuilder:
         ["s2", "SRS_not_a_biosample"],
     ])
 
-    # A1 and A2 are two RUNS of one BioSample -- the B.3 case. A3 has no biosample.
-    sra_metadata_csv = tmp_path / "metadata.csv"
-    sra_metadata_csv.write_text("acc,biosample\nA1,SAMN001\nA2,SAMN001\nA3,\n")
-    sra_taxonomy_csv = tmp_path / "taxonomy.csv"
-    sra_taxonomy_csv.write_text("acc,tax_id\nA1,9606\nA2,9606\nA3,9606\n")
+    # The SRA side is a real DuckDB now, not CSVs -- that is what the lab server has.
+    # A1 and A2 are two RUNS of one BioSample (the B.3 case); A3 has no biosample.
+    sra_db = tmp_path / "sra.duckdb"
+    import duckdb
+    source = duckdb.connect(str(sra_db))
+    source.execute("CREATE TABLE metadata_raw (acc VARCHAR, biosample VARCHAR)")
+    source.execute("INSERT INTO metadata_raw VALUES ('A1','SAMN001'),('A2','SAMN001'),('A3',NULL)")
+    source.execute("CREATE TABLE tax_raw (acc VARCHAR, tax_id INTEGER)")
+    source.execute("INSERT INTO tax_raw VALUES ('A1',9606),('A2',9606),('A3',9606)")
+    source.close()
 
     return MirrorBuilder(
         metalog_dir=metalog_dir,
-        sra_metadata_csv=sra_metadata_csv,
-        sra_taxonomy_csv=sra_taxonomy_csv,
+        sra_db=sra_db,
         out_path=tmp_path / "mirror.duckdb",
     )
 
@@ -78,21 +82,34 @@ def test_build_stamps_biosample_and_joins(tmp_path, capsys):
     con.close()
 
 
-def test_sra_taxonomy_is_stamped_with_biosample_but_keeps_its_runs(tmp_path):
-    """B.3: STAT becomes reachable by the canonical key WITHOUT losing the run.
-    Two runs of one BioSample stay two rows -- the ETL never collapses them."""
+def test_taxonomy_is_a_view_over_the_attached_source_not_a_copy(tmp_path):
+    """The 13.6B-row table must never be copied, and must never be stamped.
+
+    Instead the mirror holds a VIEW plus `stat_coverage`, and records the source path so
+    a read-only reopen can re-attach. Two runs of one BioSample stay two rows -- the ETL
+    collapses nothing (HLD B.3).
+    """
     builder = _build_fixture(tmp_path)
     builder.build()
 
     import duckdb
     con = duckdb.connect(str(builder.out_path), read_only=True)
+    recorded = con.execute(
+        "SELECT value FROM mirror_config WHERE key = 'sra_db_path'").fetchone()[0]
+    con.execute(f"ATTACH '{recorded}' AS sra (READ_ONLY)")
 
-    stamped = sorted(con.execute("SELECT acc, biosample FROM sra_taxonomy").fetchall())
-    runs_of_samn001 = con.execute("""
-        SELECT count(DISTINCT acc) FROM sra_taxonomy WHERE biosample = 'SAMN001'
-    """).fetchone()[0]
+    kinds = dict(con.execute(
+        "SELECT table_name, table_type FROM information_schema.tables "
+        "WHERE table_name IN ('sra_taxonomy', 'sra_metadata')").fetchall())
+    taxonomy_columns = [row[0] for row in con.execute("DESCRIBE sra_taxonomy").fetchall()]
+    covered = sorted(row[0] for row in con.execute("SELECT acc FROM stat_coverage").fetchall())
+    runs_of_samn001 = con.execute(
+        "SELECT count(DISTINCT acc) FROM sra_metadata WHERE biosample = 'SAMN001'").fetchone()[0]
 
-    assert stamped == [("A1", "SAMN001"), ("A2", "SAMN001"), ("A3", None)]
+    assert kinds["sra_taxonomy"] == "VIEW"          # not copied
+    assert kinds["sra_metadata"] == "BASE TABLE"    # copied: small, and needs its own index
+    assert "biosample" not in taxonomy_columns      # never stamped
+    assert covered == ["A1", "A2", "A3"]
     assert runs_of_samn001 == 2
 
     con.close()

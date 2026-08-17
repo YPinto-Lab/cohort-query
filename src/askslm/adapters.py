@@ -11,10 +11,29 @@ from askslm.translation import Translation, TranslationPrompt
 
 class DuckDbConnection:
     """The mirror is opened READ-ONLY. Any write -- including a stray LLM INSERT -- is
-    refused by DuckDB itself rather than by validation we would have to write."""
+    refused by DuckDB itself rather than by validation we would have to write.
+
+    If the mirror records a `sra_db_path` in `mirror_config`, that database is attached
+    read-only too: `sra_taxonomy` is a view over its 13.6B-row table rather than a copy.
+    config(db=...) therefore still takes ONE path -- the second is read out of the
+    mirror, not asked of the caller. A fixture with no mirror_config just skips this.
+    """
 
     def __init__(self, db_path: Path):
         self._connection = duckdb.connect(str(db_path), read_only=True)
+        self._attach_sources()
+
+    def _attach_sources(self) -> None:
+        for alias, path in self._attachments():
+            self._connection.execute(f"ATTACH '{path}' AS {alias} (READ_ONLY)")
+
+    def _attachments(self) -> list[tuple[str, str]]:
+        tables = self._connection.execute("SHOW TABLES").fetchall()
+        if ("mirror_config",) not in tables:
+            return []
+        rows = self._connection.execute(
+            "SELECT value FROM mirror_config WHERE key = 'sra_db_path'").fetchall()
+        return [("sra", row[0]) for row in rows]
 
     def query(self, sql: str, params: list | None = None) -> pd.DataFrame:
         return self._connection.execute(sql, params or []).fetch_df()
