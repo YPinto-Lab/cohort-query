@@ -6,6 +6,7 @@ NATIVE granularity -- no roll-up, no normalization anywhere in the build.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 import pandas as pd
@@ -149,21 +150,46 @@ def _matrix_of(source: Source, rows: pd.DataFrame) -> ProfileMatrix:
     return ProfileMatrix(counts, _lineage_of(source, rows), mapping)
 
 
-def _lineage_of(source: Source, rows: pd.DataFrame) -> pd.DataFrame:
-    """Metalog sources carry their lineage as a string. STAT's must be DERIVED from tax_id.
+# MetaPhlAn / mOTUs rank prefixes. Verified against the real Metalog files: clade_name
+# holds ONE rank per row (k__Bacteria, c__Actinomycetia, s__…, t__SGB1871) with no
+# ancestry and no pipe separator -- the design's "full lineage phylum→strain" is wrong
+# for this table. So rank and name are parsed out, exactly as STAT reads its own columns.
+_RANK_PREFIXES = {
+    "k": "kingdom", "p": "phylum", "c": "class", "o": "order",
+    "f": "family", "g": "genus", "s": "species", "t": "strain",
+}
+_PREFIXED_CLADE = re.compile(r"^([kpcofgst])__(.*)$")
 
-    ponytail: STAT lineage here is the table's own rank+name, not the full NCBI ancestry.
-    Full ancestry is askslm.taxonomy.lineage_table, which needs the ~300 MB ete3 database --
-    swap it in at this one call site when that is available on the build machine.
+
+def _lineage_of(source: Source, rows: pd.DataFrame) -> pd.DataFrame:
+    """Feature metadata: name + rank per feature. Never merged with sample metadata.
+
+    ponytail: no source here gives ANCESTRY, so neither does the biom. STAT has tax_id
+    without parents; MetaPhlAn/mOTUs have one rank per row without parents. Ancestry
+    needs either the ete3 NCBI database (askslm.taxonomy.lineage_table, ~300 MB) for STAT
+    or the metaphlan_clades crosswalk for the others. Both are single call sites here.
     """
     spec = source.spec()
     features = rows[spec.feature_column].astype(str)
-    if spec.lineage_column is not None:
-        lineage = pd.DataFrame({"lineage": rows[spec.lineage_column].astype(str)})
-    else:
+    if spec.lineage_column is None:
         lineage = pd.DataFrame({"name": rows["name"], "rank": rows["rank"]})
+    else:
+        lineage = _parsed_clades(rows[spec.lineage_column].astype(str))
     lineage.index = features
     return lineage[~lineage.index.duplicated()]
+
+
+def _parsed_clades(clades: pd.Series) -> pd.DataFrame:
+    """`c__Actinomycetia` -> name Actinomycetia, rank class. Unprefixed names pass through.
+
+    mOTUs species strings carry no rank prefix, so they keep the whole string as the name
+    and get no rank -- which is honest: every mOTUs row IS a species-level mOTU.
+    """
+    parsed = clades.str.extract(_PREFIXED_CLADE)
+    names = parsed[1].fillna(clades)
+    ranks = parsed[0].map(_RANK_PREFIXES).astype(object)
+    ranks = ranks.where(ranks.notna(), None)      # None, not NaN -- this lands in biom JSON
+    return pd.DataFrame({"name": names.values, "rank": ranks.values, "clade": clades.values})
 
 
 def _column_ids(spec, rows: pd.DataFrame) -> pd.Series:

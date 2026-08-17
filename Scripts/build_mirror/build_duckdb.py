@@ -23,8 +23,17 @@ import duckdb
 
 # Long-format profile tables: table name -> (glob pattern, environment regex marker).
 # metaphlan4 (all-levels) needs a glob that excludes the metaphlan4_species files.
+#
+# metalog_metaphlan4_species is deliberately NOT built. Measured against the real files
+# on 2026-08-17, in all four environments: ZERO samples appear only in the species table,
+# while 846 appear only in all-levels. It is a strict subset, so it would show +0 unique
+# in the plan render and mislead. A single-rank MetaPhlAn view is a row filter on
+# clade_name (HLD G.3.4), which the parsed `rank` in feature metadata now supports.
+#
+#   Human 79,514 / 78,668 · Animal 10,177 / 9,761 · Ocean 5,246 / 5,086
+#   Environmental 21,679 / 16,958      (all-levels / species, only-in-species = 0)
+#
 PROFILE_SPECS = {
-    "metalog_metaphlan4_species": ("*_metaphlan4_species_*.tsv.gz", "metaphlan4_species"),
     "metalog_metaphlan4": ("*_metaphlan4_[0-9]*.tsv.gz", "metaphlan4"),
     "metalog_motus3": ("*_motus3_*.tsv.gz", "motus3"),
     "metalog_spire_motus": ("*_spire_motus_*.tsv.gz", "spire_motus"),
@@ -171,7 +180,6 @@ class MirrorBuilder:
             assert multi == 0, f"{table}: {multi} sample_alias map to >1 biosample"
 
         self._report_stat_runs(con)
-        self._report_metaphlan_species_redundancy(con)
 
     def _report_stat_runs(self, con: duckdb.DuckDBPyConnection) -> None:
         """How much does the one-column-per-run decision (B.3) actually affect this data?
@@ -199,22 +207,6 @@ class MirrorBuilder:
         ).fetchone()[0]
         print(f"biosamples={biosamples} runs={runs} multi_run_biosamples={multi_run} "
               f"runs_with_no_biosample={orphan_runs}")
-
-    def _report_metaphlan_species_redundancy(self, con: duckdb.DuckDBPyConnection) -> None:
-        """Does metalog_metaphlan4_species cover SAMPLES the all-levels table lacks?
-
-        It has no Source in the package (HLD E.3) on the assumption it is a rank subset.
-        If this reports a non-zero unique count the assumption is wrong and it earns a
-        Source after all -- the one question the first real build has to answer.
-        """
-        print("-- metaphlan4_species vs metaphlan4 (all levels) --")
-        only_in_species = con.execute("""
-            SELECT count(*) FROM (SELECT DISTINCT sample_alias FROM metalog_metaphlan4_species)
-            ANTI JOIN (SELECT DISTINCT sample_alias FROM metalog_metaphlan4) USING (sample_alias)
-        """).fetchone()[0]
-        print(f"samples only in metaphlan4_species: {only_in_species}"
-              f"{'  <- NOT redundant; it needs a Source' if only_in_species else '  (redundant, as assumed)'}")
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)

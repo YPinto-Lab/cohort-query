@@ -240,9 +240,14 @@ def _create_motus(con: duckdb.DuckDBPyConnection) -> None:
 
 
 METAPHLAN_SAMPLES = SHARED[:5] + METALOG_ONLY[:1]
+# Verified against the real Metalog files 2026-08-17: clade_name holds ONE rank per row
+# with NO ancestry and no pipe separator -- every rank is a separate feature. The design
+# doc's "k__…|t__SGB…" full-lineage string does not exist in this data.
 METAPHLAN_CLADES = [
-    "k__Bacteria|p__Bacillota|c__Clostridia|s__Faecalibacterium_prausnitzii",
-    "k__Bacteria|p__Bacteroidota|c__Bacteroidia|s__Bacteroides_uniformis",
+    "k__Bacteria",
+    "p__Bacillota",
+    "s__Faecalibacterium_prausnitzii",
+    "t__SGB1871",
 ]
 
 MOTUS3_SAMPLES = SHARED[:6] + METALOG_ONLY[:2]

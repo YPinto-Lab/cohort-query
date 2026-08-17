@@ -26,6 +26,8 @@ def _build_fixture(tmp_path: Path) -> MirrorBuilder:
     _write_tsv_gz(profiles_dir / "human_metaphlan4_2026-06-07.tsv.gz", [
         ["sample_alias", "clade_name", "rel_abund"],
         ["s1", "t__SGB1", "0.5"],
+        ["s2", "t__SGB1", "0.5"],
+        ["s3_unknown", "t__SGB1", "0.5"],
     ])
     _write_tsv_gz(profiles_dir / "human_motus3_2026-06-07.tsv.gz", [
         ["sample_alias", "species", "rel_abund", "insert_count"],
@@ -70,14 +72,18 @@ def test_build_stamps_biosample_and_joins(tmp_path, capsys):
     assert rows == {"s1": "SAMN001", "s2": None}
 
     profile_rows = dict(con.execute(
-        "SELECT sample_alias, biosample FROM metalog_metaphlan4_species"
+        "SELECT sample_alias, biosample FROM metalog_metaphlan4"
     ).fetchall())
     assert profile_rows == {"s1": "SAMN001", "s2": None, "s3_unknown": None}
 
     environment = con.execute(
-        "SELECT DISTINCT environment FROM metalog_metaphlan4_species"
+        "SELECT DISTINCT environment FROM metalog_metaphlan4"
     ).fetchone()[0]
     assert environment == "human"
+
+    # the species table is a measured strict subset and is no longer built at all
+    built = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
+    assert "metalog_metaphlan4_species" not in built
 
     con.close()
 
