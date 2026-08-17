@@ -15,6 +15,18 @@
 # problem. What this build does instead is make the expensive scan happen ONCE
 # (stat_coverage) so queries never repeat it.
 #
+# Measured on this cluster, 2026-08-17, against sra_processed.duckdb:
+#
+#     single-acc count on tax_raw   1,217.7s  (20 min!)  ->    377 rows
+#     200-acc IN-list count            95.6s             -> 66,571 rows
+#
+# There are NO indexes on the source and `acc` is not clustered, so every query
+# full-scans 13.6B rows over NFS. (200 accs being faster than 1 is cold read vs
+# page cache, and the two queries were shaped differently -- don't over-read the
+# ratio; the order of magnitude is the point.) This is why stat_coverage is not
+# an optimisation but a precondition: ask()/preview must never touch tax_raw, or
+# the interactive loop is minutes per keystroke.
+#
 # Submit:  sbatch build_mirror.sbatch
 # Watch:   squeue -u $USER ; tail -f logs/mirror-<jobid>.out
 
