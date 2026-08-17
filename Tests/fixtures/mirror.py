@@ -68,17 +68,25 @@ def _create_sra_metadata(con: duckdb.DuckDBPyConnection) -> None:
     """)
     con.executemany(
         "INSERT INTO sra_metadata VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [_sra_metadata_row(biosample, index) for index, biosample in enumerate(_sra_biosamples())],
+        _sra_metadata_rows(),
     )
+
+
+def _sra_metadata_rows() -> list[tuple]:
+    """ONE ROW PER RUN, like the real table -- so a two-run biosample has two rows and
+    biosample -> runs is resolvable here without touching the huge taxonomy table."""
+    return [_sra_metadata_row(run, biosample, index)
+            for index, biosample in enumerate(_sra_biosamples())
+            for run in _runs_of(biosample)]
 
 
 def _sra_biosamples() -> list[str]:
     return SHARED + SRA_ONLY
 
 
-def _sra_metadata_row(biosample: str, index: int) -> tuple:
+def _sra_metadata_row(run: str, biosample: str, index: int) -> tuple:
     return (
-        _primary_run(biosample),
+        run,
         biosample,
         f"PRJNA{900 + index % 3}",
         "WGS",
