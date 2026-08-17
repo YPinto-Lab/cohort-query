@@ -2,37 +2,44 @@
 
 ## Project Overview
 
-Ask-SLM is a workbench that makes metagenomic analysis easy and reproducible. The user works
-entirely through a **web UI**, chatting with an **LLM agent** that builds and analyzes the study
-with them — from raw inputs to results — and answers questions about the data.
+Ask-SLM is a **read-only pip package** that turns a research question into a cross-study
+metagenomic feature table. The user asks in plain language ("fecal metagenomes from adults with
+IBD, Western countries"); an LLM translates that into SQL per metadata source; the package
+previews the cohort, and on confirmation materializes one `.biom`. Scope ends at the file —
+analysis is whatever the user already uses.
 
-The agent works by authoring and running Python against the `askslm` package and established
-libraries (biom, ete3, scikit-bio, scipy, pandas), standardizing everything into one structure:
-a **biom feature table** (counts + sample metadata + feature lineage).
+The user surface is an **interactive terminal app** (`questionary` + `rich`). Two verbs sit
+underneath it: `ask()` understands the question and previews the cohort cheaply; `run()`
+materializes the biom and is the only place profile sources are named. A saved plan replays
+without the LLM.
 
-Each study is a reproducible **workspace**: a plain folder of files on disk (Python scripts,
-`.biom` tables, CSVs, plots), organized into phases (build → transform → analyze). The disk is
-the source of truth; the web UI is the driver, not a walled garden. `Workspaces/ABX_new` is the
-canonical example. The domain today is metagenomics; the structure is general enough to extend.
+All data is read from **one prebuilt DuckDB mirror** of SRA × Metalog, opened read-only. The
+package never builds or writes it — `Scripts/build_mirror/` does, run once by the lab.
 
-Design source of truth: `Docs/feature-table-and-library-palette.html`.
+**Design source of truth:** `Docs/superpowers/specs/2026-06-17-askslm-architecture-hld-lld.html`
+(HLD/LLD) and its parent `2026-06-17-askslm-sra-metalog-cohort-design.html` (the why).
 
 ## Layout
 
 ```
-src/askslm/   the toolbox the agent calls (workspace phase tooling, metadata, taxonomy, accessors, cli)
-src/agent/    the LLM agent (run_python + session + registry)
-src/web/      the web UI — the only thing the user touches
-Workspaces/   runtime studies (git-ignored); ABX_new is canonical
+src/askslm/         the package (currently: the material that survived the pivot)
+  sra_schema.py     SRA column contracts — seeds SchemaCatalog's LLM prompt
+  taxonomy/         lineage_table — ete3 tax_id -> lineage, needed for STAT features
+Scripts/build_mirror/   the separate ETL that builds the DuckDB mirror
 Docs/ Tests/ Scripts/git-guard/
 ```
 
+The pre-pivot workspace/agent/web code was deleted; the HLD's seven-package layout
+(`sources/ translation/ plan/ cohort/ db/ cli/`) is not built yet.
+
 ## The feature table
 
-One `biom.Table` per community study: counts (features × samples) + sample metadata + feature
-metadata (lineage). Five operation kinds — ingest, build, transform, split, analyze — delegate to
-the library palette; Ask-SLM adds only the small logic libraries lack (chiefly `lineage_table`).
-We trust input and fail fast: no defensive validation outside the accessor boundary.
+One `biom.Table` per cohort: counts (features × samples) + sample metadata + feature metadata
+(lineage). Columns are keyed by **NCBI BioSample**, stamped onto every mirror table at build.
+One biom holds one **profiler family** (STAT / METAPHLAN / MOTUS) — sources sharing a feature
+namespace *and* an abundance estimator; cross-family pooling is rejected. Bioms ship each
+source's **native granularity** — no rank knob. We trust input and fail fast: no defensive
+validation past `config()`.
 
 ## Branching Policy (enforced)
 

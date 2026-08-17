@@ -1,16 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from pathlib import Path
 
 import pandas as pd
 from ete3 import NCBITaxa
-
-from askslm.accessors.taxonomy_file_accessor import TaxonomyFileAccessor
-
-
-def load(source: str | Path) -> pd.DataFrame:
-    return TaxonomyFileAccessor().read(Path(source))
 
 
 def lineage_table(tax_ids: Iterable[int]) -> pd.DataFrame:
