@@ -233,6 +233,35 @@ def test_ask_sends_the_real_schemas_to_the_backend(configured_with_recording_bac
     assert "subject_disease_status" in backend.prompt.schemas
 
 
+def test_invalid_generated_sql_becomes_plan_error_not_a_crash(configured):
+    """HLD H.1: invalid generated SQL -> Plan carries `error`; run() then refuses.
+
+    Distinct from the model DECLINING to translate (Translation.failure, tested
+    below) -- this is the model producing SQL that DuckDB itself rejects, e.g. an
+    ILIKE against a numeric column. Nothing on the ask() -> CohortDiscovery path
+    caught that before, so it surfaced as a raw duckdb.BinderException out of ask().
+    """
+    askslm.config(db=configured / "fixture.duckdb",
+                  database=DuckDbConnection(configured / "fixture.duckdb"),
+                  backend=CannedLlmBackend(Translation(
+                      interpretation="adults (age_years ILIKE 18)",
+                      queries=(
+                          SourceQuery(askslm.Source.SRA_METADATA,
+                                      "SELECT * FROM sra_metadata"),
+                          SourceQuery(askslm.Source.METALOG_METADATA,
+                                      "SELECT * FROM metalog_metadata "
+                                      "WHERE age_years ILIKE '%18%'"),
+                      ))))
+
+    plan = askslm.ask("adults with IBD")
+
+    assert plan.error is not None
+    assert "METALOG_METADATA" in plan.error
+    assert "~~*" in plan.error or "ILIKE" in plan.error or "BinderException" in plan.error
+    with pytest.raises(askslm.TranslationError):
+        plan.run(profile_sources=askslm.Source.METALOG_MOTUS3)
+
+
 def test_an_untranslatable_question_refuses_to_run(configured):
     askslm.config(db=configured / "fixture.duckdb",
                   database=DuckDbConnection(configured / "fixture.duckdb"),

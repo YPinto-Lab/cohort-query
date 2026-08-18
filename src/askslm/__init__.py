@@ -21,7 +21,7 @@ from pathlib import Path
 
 from askslm import runtime
 from askslm.build import BuildReport, Materialization
-from askslm.cohort import Accession, Cohort
+from askslm.cohort import Accession, Cohort, InvalidCohortQuery
 from askslm.plan import CohortPreview, Plan, TranslationError
 from askslm.ports import Database, LlmBackend
 from askslm.profiles import ProfileReader
@@ -51,7 +51,11 @@ def ask(question: str) -> Plan:
     translation = runtime.translator().translate(research_question)
     if translation.failure is not None:
         return Plan(research_question, translation, CohortPreview(), error=translation.failure)
-    return Plan(research_question, translation, _preview(translation))
+    try:
+        preview = _preview(translation)
+    except InvalidCohortQuery as error:
+        return Plan(research_question, translation, CohortPreview(), error=str(error))
+    return Plan(research_question, translation, preview)
 
 
 def _preview(translation: Translation) -> CohortPreview:

@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import NewType
 
+import duckdb
 import pandas as pd
 
 from askslm.ports import Database
@@ -17,6 +18,20 @@ from askslm.sources import Source
 from askslm.translation import SourceQuery
 
 Accession = NewType("Accession", str)
+
+
+class InvalidCohortQuery(RuntimeError):
+    """A metadata source's LLM-authored SQL failed against the mirror.
+
+    A sanctioned validation boundary: the model's SQL is untrusted input, so it is
+    the one place a database error is caught rather than left to crash ask() (HLD H.1).
+    Distinct from Translation.failure, which is the model declining to translate at
+    all -- this is SQL DuckDB itself rejects, e.g. ILIKE against a numeric column.
+    """
+
+    def __init__(self, source: Source, message: str):
+        super().__init__(f"{source.name}: {message}")
+        self.source = source
 
 
 @dataclass(frozen=True)
@@ -47,7 +62,11 @@ class CohortDiscovery:
         return Cohort({query.source: self._keys(query) for query in queries})
 
     def _keys(self, query: SourceQuery) -> frozenset[Accession]:
-        return accessions_of(self._database.query(query.sql))
+        try:
+            frame = self._database.query(query.sql)
+        except duckdb.Error as error:
+            raise InvalidCohortQuery(query.source, str(error)) from error
+        return accessions_of(frame)
 
 
 def accessions_of(frame: pd.DataFrame) -> frozenset[Accession]:
