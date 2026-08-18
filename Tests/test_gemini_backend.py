@@ -78,6 +78,27 @@ def test_json_wrapped_in_a_markdown_fence_is_still_parsed():
     assert translation.interpretation == "x"
 
 
+def test_a_fence_with_no_language_tag_is_still_parsed():
+    """Some models emit a bare ``` fence with no "json" after it. The stripping must not
+    assume the language tag is there."""
+    payload = '```\n{"interpretation": "x", "queries": [], "failure": null}\n```'
+
+    translation = GeminiBackend(StubClient(payload), model="test-model").translate(_prompt())
+
+    assert translation.interpretation == "x"
+
+
+def test_trailing_prose_after_the_closing_fence_is_ignored():
+    """A model that fences the JSON correctly can still add a sentence of commentary
+    after the closing fence. That trailing text must not break the parse."""
+    payload = ('```json\n{"interpretation": "x", "queries": [], "failure": null}\n```\n'
+              "Let me know if you'd like me to refine this further.")
+
+    translation = GeminiBackend(StubClient(payload), model="test-model").translate(_prompt())
+
+    assert translation.interpretation == "x"
+
+
 def test_an_unknown_source_name_is_a_loud_error():
     """Trust input, fail fast -- but a hallucinated source name would otherwise become a
     silently missing half of the cohort. (SRA_TAXONOMY is not usable here: it is a real
