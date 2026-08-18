@@ -33,6 +33,9 @@ from pathlib import Path
 
 import duckdb
 
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "Scripts" / "build_mirror"))
+from build_schema_catalog import SchemaCatalogBuilder
+
 SHARED = [f"SAMN{n:05d}" for n in range(1, 9)]            # in both databases
 SRA_ONLY = [f"SAMN{n:05d}" for n in range(9, 15)]         # SRA metadata only
 METALOG_ONLY = [f"SAMN{n:05d}" for n in range(15, 19)]    # Metalog metadata only
@@ -58,9 +61,6 @@ def build_fixture_mirror(path: Path) -> Path:
     # fixture does the same -- same code path, same table shape. max_distinct is small
     # here on purpose: the fixture must exercise BOTH the complete-vocabulary and the
     # truncated branch, and its columns have only a handful of values each.
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent / "Scripts" / "build_mirror"))
-    from build_schema_catalog import SchemaCatalogBuilder
-
     SchemaCatalogBuilder(path, max_distinct=5).build()
 
     return path

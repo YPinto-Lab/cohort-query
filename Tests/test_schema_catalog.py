@@ -5,14 +5,8 @@ strings actually stored in the data -- so the test that matters is that those
 strings are present, and that a high-cardinality column does not drag them in.
 """
 import json
-import sys
-from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "Scripts" / "build_mirror"))
-
-from build_schema_catalog import SchemaCatalogBuilder
 
 from fixtures.mirror import build_fixture_mirror
 
@@ -21,8 +15,9 @@ import duckdb
 
 @pytest.fixture(scope="module")
 def con(tmp_path_factory):
+    # build_fixture_mirror builds its own schema_catalog with max_distinct=5 (see
+    # Tests/fixtures/mirror.py) -- the cutoff the truncation tests below assert against.
     path = build_fixture_mirror(tmp_path_factory.mktemp("catalog") / "fixture.duckdb")
-    SchemaCatalogBuilder(path, max_distinct=5).build()
     connection = duckdb.connect(str(path), read_only=True)
     yield connection
     connection.close()
