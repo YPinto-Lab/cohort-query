@@ -8,7 +8,7 @@ import duckdb
 import pandas as pd
 
 from askslm.prompt import SYSTEM_INSTRUCTION
-from askslm.sources import Source
+from askslm.sources import Source, SourceKind
 from askslm.translation import SourceQuery, Translation, TranslationPrompt
 
 
@@ -104,8 +104,19 @@ def _unfenced(text: str) -> str:
 
 
 def _translation_of(payload: dict) -> Translation:
-    queries = tuple(SourceQuery(Source[entry["source"]], entry["sql"])
-                    for entry in payload.get("queries", []))
+    """This is the boundary where an external model's output enters the system, so it is
+    the one place a wrong-kind source name is checked: `by_source` is trusted to be
+    metadata-keyed everywhere downstream (HLD E.2), and a PROFILE source slipped in here
+    would have MetadataReconciler read a multi-billion-row taxonomy table as metadata --
+    silently, and without the check ever failing loudly again."""
+    queries = tuple(_source_query_of(entry) for entry in payload.get("queries", []))
     return Translation(interpretation=payload.get("interpretation", ""),
                        queries=queries,
                        failure=payload.get("failure"))
+
+
+def _source_query_of(entry: dict) -> SourceQuery:
+    source = Source[entry["source"]]
+    if source.kind() is not SourceKind.METADATA:
+        raise ValueError(f"model returned a non-metadata source: {source.name}")
+    return SourceQuery(source, entry["sql"])

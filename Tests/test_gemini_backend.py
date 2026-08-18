@@ -88,3 +88,14 @@ def test_an_unknown_source_name_is_a_loud_error():
 
     with pytest.raises(KeyError):
         GeminiBackend(StubClient(payload), model="test-model").translate(_prompt())
+
+
+def test_a_real_but_non_metadata_source_is_also_a_loud_error():
+    """SRA_TAXONOMY is a real Source, not a hallucination -- but it is a PROFILE source,
+    not METADATA. If it slipped through, MetadataReconciler would read a 13.6-billion-row
+    taxonomy table as if it were sample metadata: a silent wrong answer, not a crash."""
+    payload = json.dumps({"interpretation": "x", "failure": None,
+                          "queries": [{"source": "SRA_TAXONOMY", "sql": "SELECT 1"}]})
+
+    with pytest.raises(ValueError, match="SRA_TAXONOMY"):
+        GeminiBackend(StubClient(payload), model="test-model").translate(_prompt())
