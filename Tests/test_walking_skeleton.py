@@ -214,16 +214,12 @@ def configured_with_recording_backend(tmp_path):
     connection.close()
 
 
-class RecordingLlmBackend:
-    """Records the TranslationPrompt it was handed and returns a fixed Translation."""
-
-    def __init__(self, translation: Translation):
-        self._translation = translation
-        self.prompt = None
+class RecordingLlmBackend(CannedLlmBackend):
+    """CannedLlmBackend that also records the TranslationPrompt it was handed."""
 
     def translate(self, prompt):
         self.prompt = prompt
-        return self._translation
+        return super().translate(prompt)
 
 
 def test_ask_sends_the_real_schemas_to_the_backend(configured_with_recording_backend):
