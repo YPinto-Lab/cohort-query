@@ -89,6 +89,18 @@ def test_system_instruction_states_the_key_and_the_two_sources():
     assert "JOIN" in SYSTEM_INSTRUCTION          # to forbid it across the two sources
 
 
+def test_truncated_values_are_carved_out_of_the_only_shown_values_rule():
+    """'Use ONLY the values shown' and 'the list is truncated, prefer ILIKE' contradict
+    each other: obeying the first against a truncated column means writing
+    `organism IN (<the 200 shown values>)` against a 247,000-value column, which
+    silently drops every row outside the sample. The truncated case needs an
+    explicit carve-out: the shown values are spelling examples, not the full set."""
+    from askslm.prompt import SYSTEM_INSTRUCTION
+
+    assert "truncated" in SYSTEM_INSTRUCTION
+    assert "not the permitted set" in SYSTEM_INSTRUCTION or "not the full" in SYSTEM_INSTRUCTION
+
+
 def _block_for(rendered: str, column: str) -> str:
     """A column's line plus any indented continuation lines under it (the values
     suffix), since that suffix renders on its own line rather than the column's."""

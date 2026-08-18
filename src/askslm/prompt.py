@@ -25,7 +25,11 @@ WRITING PREDICATES
 - Use ONLY the values shown in the schema. They are the literal strings stored in
   the data, including any leading or trailing whitespace. Do not tidy them.
 - Where a column's values are listed in full, prefer exact equality or IN.
-- Where the schema says the list is truncated, prefer ILIKE '%pattern%'.
+- Where the schema says the list is truncated, the shown values are EXAMPLES of the
+  column's spelling convention, not the permitted set -- the real column has many
+  more. Do not write IN() against them. Prefer a pattern predicate instead:
+  ILIKE '%pattern%' for text, or a range/comparison predicate for a numeric or
+  date/time column.
 - For a column whose type ends in [], use list_contains(column, 'value').
   Equality against an array column matches nothing.
 - Emit SELECT statements only. The database is read-only.
