@@ -163,12 +163,13 @@ def test_names_both_metadata_tables_and_no_profile_table(catalog):
 
 
 def test_low_cardinality_columns_ship_their_real_values(catalog):
-    """'IBD' has to be matchable against the literal stored in the data. Given only a
-    column name the model invents a plausible spelling and gets zero rows back."""
+    """A question says "IBD"; the data says "Crohn's disease". The model can only bridge
+    that if it is shown the literal actually stored. Given only a column name it invents
+    a plausible spelling and gets zero rows back."""
     rendered = catalog.all()
 
     assert "subject_disease_status" in rendered
-    assert "IBD" in rendered
+    assert "Crohn's disease" in rendered          # the fixture's real value, not "IBD"
 
 
 def test_array_columns_are_flagged_so_equality_is_not_used(catalog):
