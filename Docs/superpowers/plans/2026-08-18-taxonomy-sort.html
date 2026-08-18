@@ -66,8 +66,8 @@
   <ul>
     <li><a href="#why">1. The measurement that justifies this</a></li>
     <li><a href="#blocker">2. Why this is not a blocker</a></li>
-    <li><a href="#gate0">3. Gate 0 — prove the split is even legal</a></li>
-    <li><a href="#shape">4. The shape: dimension + narrow sorted fact</a></li>
+    <li><a href="#gate0">3. Why the five descriptive columns are simply dropped</a></li>
+    <li><a href="#shape">4. The shape: one narrow sorted table</a></li>
     <li><a href="#budget">5. Space and time budget</a></li>
     <li><a href="#build">6. The build</a></li>
     <li><a href="#verify">7. Verification</a></li>
@@ -108,7 +108,8 @@ one-time offline cost is obviously worth paying — was correct.
   <tr><td><code>ask()</code> / preview / the interactive loop</td><td>No — reads <code>stat_coverage</code>, 0.0s today</td></tr>
   <tr><td>Translation + <code>SchemaCatalog</code> + the eval set</td><td>No — metadata tables only</td></tr>
   <tr><td>Plan persistence, the terminal app</td><td>No</td></tr>
-  <tr><td>STAT lineage via ete3</td><td>No — <code>tax_id</code> → lineage is local</td></tr>
+  <tr><td>STAT lineage via ete3</td><td>No — but the dependency runs the <em>other</em> way: the
+      sort's cutover needs <strong>it</strong> (§3.1)</td></tr>
   <tr><td>Tests</td><td>No — fixture mirror</td></tr>
   <tr><td><code>run()</code> materialising a real biom</td><td>Works today, just slow</td></tr>
 </table>
@@ -117,45 +118,76 @@ one-time offline cost is obviously worth paying — was correct.
 today is already correct, and the 21 minutes is a one-time cost the user has explicitly confirmed
 at the preview step. Development continues unblocked; this lands whenever space allows.</p>
 
-<h2 id="gate0">3. Gate 0 — prove the split is even legal</h2>
+<h2 id="gate0">3. Why the five descriptive columns are simply dropped</h2>
 
-<p>The whole plan rests on a claim that has <strong>not been verified</strong>: that
-<code>rank</code>, <code>name</code>, <code>ilevel</code>, <code>ileft</code> and
-<code>iright</code> are functionally dependent on <code>tax_id</code> — i.e. one taxon always
-carries the same name and the same nested-set bounds, everywhere in the table.</p>
-
-<div class="danger">
-<strong>Real risk, not a formality.</strong> NCBI's taxonomy is <em>versioned</em>. It gets
-renamed and restructured between releases — <em>Bacteroides</em> species have been moved to
-<em>Phocaeicola</em>, whole phyla were renamed in 2021 (<em>Firmicutes</em> →
-<em>Bacillota</em>), and nested-set bounds shift whenever the tree changes. If
-<code>tax_raw</code> was accumulated across STAT runs that used different taxonomy dumps, the
-same <code>tax_id</code> may legitimately carry two names or two <code>ileft</code> values.
-Collapsing them with <code>any_value()</code> would then <strong>silently pick one and discard
-the other</strong> — exactly the class of error we refused for multi-run biosamples.
+<div class="fix">
+<strong>Superseded 2026-08-18.</strong> An earlier draft of this plan proposed splitting
+<code>rank</code>, <code>name</code>, <code>ilevel</code>, <code>ileft</code>, <code>iright</code>
+into a <code>taxa</code> dimension table, gated behind a check that they are functionally
+dependent on <code>tax_id</code>. <strong>That whole apparatus is deleted.</strong> The user's
+standing practice makes it unnecessary: askslm resolves lineage from
+<strong>ete3's current NCBI taxonomy</strong>, keyed on <code>tax_id</code>. STAT's own
+descriptive columns are a stale snapshot and are not the source of truth for anything.
 </div>
 
-<pre><code><span class="com">-- one full scan, ~30 min. MUST return 0.</span>
-<span class="kw">SELECT</span> count(*) <span class="kw">FROM</span> (
-  <span class="kw">SELECT</span> tax_id
-  <span class="kw">FROM</span> sra.tax_raw
-  <span class="kw">GROUP BY</span> tax_id
-  <span class="kw">HAVING</span> count(<span class="kw">DISTINCT</span> rank)   &gt; 1
-      <span class="kw">OR</span> count(<span class="kw">DISTINCT</span> name)   &gt; 1
-      <span class="kw">OR</span> count(<span class="kw">DISTINCT</span> ilevel) &gt; 1
-      <span class="kw">OR</span> count(<span class="kw">DISTINCT</span> ileft)  &gt; 1
-      <span class="kw">OR</span> count(<span class="kw">DISTINCT</span> iright) &gt; 1
-);</code></pre>
+<p>That removes the only genuinely dangerous decision in this plan. NCBI's taxonomy is versioned —
+<em>Firmicutes</em> → <em>Bacillota</em>, <em>Bacteroides</em> → <em>Phocaeicola</em>, and the
+nested-set bounds shift whenever the tree is restructured. Preserving STAT's copy would have meant
+either carrying contradictory names or silently choosing one. We do neither: we keep
+<code>tax_id</code>, which is stable, and re-derive everything else at read time from a taxonomy
+that is actually current.</p>
 
-<p><strong>If it returns 0</strong> — proceed as written.</p>
+<h4>Verified against the code</h4>
 
-<p><strong>If it returns non-zero</strong> — stop and report the offending <code>tax_id</code>s
-before doing anything else. Do <em>not</em> pick a winner. The likely correct response is to key
-the dimension on <code>(tax_id, name)</code> or to carry a taxonomy-version column, which is a
-design question for the user, not a build detail. The sort itself still works either way; only
-the dimension's key changes.</p>
+<table>
+  <tr><th>Column</th><th>Read anywhere in askslm?</th><th>Verdict</th></tr>
+  <tr><td><code>ilevel</code>, <code>ileft</code>, <code>iright</code></td>
+      <td><strong>Never.</strong> Present only as field declarations in
+      <code>sra_schema.py:74-76</code>; no logic touches them.</td><td>drop</td></tr>
+  <tr><td><code>rank</code>, <code>name</code></td>
+      <td>One call site — <code>profiles.py:175</code>, building STAT feature metadata.</td>
+      <td>drop, <em>after</em> §3.1</td></tr>
+  <tr><td><code>acc</code>, <code>tax_id</code>, <code>self_count</code></td>
+      <td>Yes — the cohort key, the feature, and the value
+      (<code>sources.py:54</code>).</td><td><strong>keep</strong></td></tr>
+  <tr><td><code>total_count</code></td>
+      <td>Not currently read, but see §3.2.</td><td><strong>keep</strong></td></tr>
+</table>
 
-<h2 id="shape">4. The shape: dimension + narrow sorted fact</h2>
+<h3 id="ete3-prereq">3.1 Prerequisite: STAT lineage must come from ete3 first</h3>
+
+<div class="danger">
+<strong>This is a live correctness issue, independent of the sort.</strong>
+<code>profiles.py:175</code> currently does
+<code>pd.DataFrame({"name": rows["name"], "rank": rows["rank"]})</code> — it copies STAT's
+<em>stale</em> names straight into the biom's feature metadata. So today a biom can ship
+<em>Firmicutes</em> for a taxon NCBI now calls <em>Bacillota</em>. That contradicts the user's
+stated practice of always refreshing through ete3, and it is wrong whether or not we ever sort
+anything.
+</div>
+
+<p>The fix already exists as a planned component: <code>askslm.taxonomy.lineage_table</code>
+(ete3, ~300 MB database), currently an empty module. STAT's branch of <code>_lineage_of</code>
+must route through it, keyed on <code>tax_id</code>.</p>
+
+<p><strong>Ordering:</strong> ship the ete3 lineage change <em>before</em> the cutover in §8.
+Until it lands, dropping <code>name</code>/<code>rank</code> from the table would break
+<code>_lineage_of</code>. Once it lands, those columns are dead weight — which is exactly why
+this rewrite can discard them without losing anything.</p>
+
+<h3 id="total-count">3.2 Open question: keep <code>total_count</code>?</h3>
+
+<p><code>total_count</code> (subtree sum) is not read today; only <code>self_count</code> is.
+In principle a subtree sum is recomputable from <code>self_count</code> plus ete3 ancestry, so it
+<em>could</em> be dropped for a further saving.</p>
+
+<p><strong>Recommendation: keep it.</strong> It is one bit-packed integer column, the saving is
+modest, and discarding a number the researcher may want — when recomputing it depends on our
+ancestry code being right — is the kind of quiet data reduction we have refused elsewhere. The
+source file is untouched either way, so this is reversible; but there is no reason to spend the
+reversal.</p>
+
+<h2 id="shape">4. The shape: one narrow sorted table</h2>
 
 <p>Today every one of the 13.6 billion rows carries five columns that describe the
 <em>taxon</em>, not the <em>observation</em>:</p>
@@ -171,8 +203,14 @@ ileft        BIGINT    <span class="com">per TAX_ID</span>
 iright       BIGINT    <span class="com">per TAX_ID</span></code></pre>
 
 <p>With roughly 2.4M distinct <code>tax_id</code>s across 13.6B rows, each taxon's name and bounds
-are stored thousands of times over. Splitting them out is a plain normalisation, and it shrinks
-the scanned bytes before the sort even helps.</p>
+are stored thousands of times over — and per §3 they are stale, unread, and re-derived from ete3
+anyway. Dropping them shrinks the scanned bytes before the sort even helps. The target is a single
+table:</p>
+
+<pre><code>acc          VARCHAR
+tax_id       INTEGER
+total_count  BIGINT
+self_count   BIGINT      <span class="com">— sorted by acc</span></code></pre>
 
 <p>Then <code>ORDER BY acc</code> on the fact table does two things at once:</p>
 <ul>
@@ -193,7 +231,7 @@ than building an index — see §10.
   <tr><th>Item</th><th>Figure</th><th>Basis</th></tr>
   <tr><td>Source <code>sra_processed.duckdb</code></td><td>601 GB</td><td>measured</td></tr>
   <tr><td>Free on the share today</td><td>508 GB</td><td>measured after the mirror build</td></tr>
-  <tr><td>Output (fact + dimension)</td><td><strong>~100–200 GB, estimate</strong></td><td>4 of 9 columns, sorted + RLE. Unverified.</td></tr>
+  <tr><td>Output (one narrow sorted table)</td><td><strong>~100–200 GB, estimate</strong></td><td>4 of 9 columns, sorted + RLE. Unverified.</td></tr>
   <tr><td>Sort spill (transient)</td><td>up to ~1× the data being sorted</td><td>DuckDB external merge sort</td></tr>
   <tr><td><strong>Free space required to start</strong></td><td><strong>≥ 400 GB</strong></td><td>output + spill + headroom on a shared volume</td></tr>
   <tr><td>Wall clock</td><td>hours, not minutes</td><td>the 45-min mirror build did one cheap scan; this rewrites everything</td></tr>
@@ -219,18 +257,7 @@ byte-identical, opened <code>READ_ONLY</code>.
 <pre><code><span class="kw">ATTACH</span> <span class="str">'/private/pinto-lab/STAT/sra_processed.duckdb'</span> <span class="kw">AS</span> src (READ_ONLY);
 <span class="kw">ATTACH</span> <span class="str">'/private/pinto-lab/tools/just-ask/mirror/sra_taxonomy_sorted.duckdb'</span> <span class="kw">AS</span> dst;
 
-<span class="com">-- dimension: ~2.4M rows. any_value() is only safe because Gate 0 passed.</span>
-<span class="kw">CREATE TABLE</span> dst.taxa <span class="kw">AS</span>
-<span class="kw">SELECT</span> tax_id,
-       any_value(rank)   <span class="kw">AS</span> rank,
-       any_value(name)   <span class="kw">AS</span> name,
-       any_value(ilevel) <span class="kw">AS</span> ilevel,
-       any_value(ileft)  <span class="kw">AS</span> ileft,
-       any_value(iright) <span class="kw">AS</span> iright
-<span class="kw">FROM</span> src.tax_raw
-<span class="kw">GROUP BY</span> tax_id;
-
-<span class="com">-- fact: 13.6B rows, four columns, sorted. This is the expensive step.</span>
+<span class="com">-- one statement. The five descriptive columns are simply not selected (§3).</span>
 <span class="kw">CREATE TABLE</span> dst.tax_fact <span class="kw">AS</span>
 <span class="kw">SELECT</span> acc, tax_id, total_count, self_count
 <span class="kw">FROM</span> src.tax_raw
@@ -255,20 +282,22 @@ ever produce; "it finished without error" is not evidence.</p>
   <code>SELECT count(*) FROM dst.tax_fact</code> must equal
   <strong>13,613,810,995</strong>.</li>
 
-  <li><strong>Reconstruction is lossless</strong> — for a sample of accessions, rejoining the
-  dimension must reproduce the original rows <em>exactly</em>, both directions empty:
+  <li><strong>The kept columns are bit-identical</strong> — for a sample of accessions, the four
+  surviving columns must match the source <em>exactly</em>, both directions empty:
   <pre><code><span class="kw">WITH</span> rebuilt <span class="kw">AS</span> (
-  <span class="kw">SELECT</span> f.acc, f.tax_id, t.rank, t.name, f.total_count, f.self_count,
-         t.ilevel, t.ileft, t.iright
-  <span class="kw">FROM</span> dst.tax_fact f <span class="kw">JOIN</span> dst.taxa t <span class="kw">USING</span> (tax_id)
-  <span class="kw">WHERE</span> f.acc <span class="kw">IN</span> (<span class="kw">SELECT</span> unnest(?::VARCHAR[]))
+  <span class="kw">SELECT</span> acc, tax_id, total_count, self_count
+  <span class="kw">FROM</span> dst.tax_fact
+  <span class="kw">WHERE</span> acc <span class="kw">IN</span> (<span class="kw">SELECT</span> unnest(?::VARCHAR[]))
 ), original <span class="kw">AS</span> (
-  <span class="kw">SELECT</span> * <span class="kw">FROM</span> src.tax_raw <span class="kw">WHERE</span> acc <span class="kw">IN</span> (<span class="kw">SELECT</span> unnest(?::VARCHAR[]))
+  <span class="kw">SELECT</span> acc, tax_id, total_count, self_count
+  <span class="kw">FROM</span> src.tax_raw <span class="kw">WHERE</span> acc <span class="kw">IN</span> (<span class="kw">SELECT</span> unnest(?::VARCHAR[]))
 )
 <span class="kw">SELECT</span> (<span class="kw">SELECT</span> count(*) <span class="kw">FROM</span> (<span class="kw">SELECT</span> * <span class="kw">FROM</span> rebuilt <span class="kw">EXCEPT</span> <span class="kw">SELECT</span> * <span class="kw">FROM</span> original)) <span class="kw">AS</span> only_new,
        (<span class="kw">SELECT</span> count(*) <span class="kw">FROM</span> (<span class="kw">SELECT</span> * <span class="kw">FROM</span> original <span class="kw">EXCEPT</span> <span class="kw">SELECT</span> * <span class="kw">FROM</span> rebuilt)) <span class="kw">AS</span> only_old;
 <span class="com">-- both must be 0</span></code></pre>
-  Use the 16 accessions from the timing probe plus a random sample.</li>
+  Use the 16 accessions from the timing probe plus a random sample. <code>EXCEPT</code> removes
+  duplicates, so pair it with a plain <code>count(*)</code> comparison per accession — otherwise a
+  row duplicated by the rewrite would pass unnoticed.</li>
 
   <li><strong>Coverage is unchanged</strong> —
   <code>SELECT count(DISTINCT acc) FROM dst.tax_fact</code> must equal
@@ -286,23 +315,20 @@ ever produce; "it finished without error" is not evidence.</p>
 <code>sra</code>. So the cutover is two statements inside the mirror, and the old file is never
 touched:</p>
 
-<pre><code><span class="com">-- column order MUST match the original tax_raw: profiles.py issues SELECT t.*</span>
+<pre><code><span class="com">-- profiles.py issues SELECT t.*, so the view IS the contract. Four columns now.</span>
+<span class="com">-- Requires the ete3 lineage change (§3.1) to have shipped first.</span>
 <span class="kw">DROP VIEW</span> sra_taxonomy;
 <span class="kw">CREATE VIEW</span> sra_taxonomy <span class="kw">AS</span>
-<span class="kw">SELECT</span> f.acc, f.tax_id, t.rank, t.name, f.total_count, f.self_count,
-       t.ilevel, t.ileft, t.iright
-<span class="kw">FROM</span> sra.tax_fact f <span class="kw">JOIN</span> sra.taxa t <span class="kw">USING</span> (tax_id);
+<span class="kw">SELECT</span> acc, tax_id, total_count, self_count <span class="kw">FROM</span> sra.tax_fact;
 
 <span class="kw">UPDATE</span> mirror_config
 <span class="kw">SET</span> value = <span class="str">'/private/pinto-lab/tools/just-ask/mirror/sra_taxonomy_sorted.duckdb'</span>
 <span class="kw">WHERE</span> key = <span class="str">'sra_db_path'</span>;</code></pre>
 
 <p><code>sra_metadata</code> was <em>copied</em> into the mirror at build time, so nothing else
-depends on the old attachment — the new file only needs <code>tax_fact</code> and
-<code>taxa</code>.</p>
-
-<p>The <code>acc</code> filter pushes down into <code>tax_fact</code> before the join, and
-<code>taxa</code> is small enough to hash-join for free, so the view does not undo the pruning.</p>
+depends on the old attachment — the new file needs only <code>tax_fact</code>. Also update
+<code>sra_schema.py</code> to drop the five field declarations, so the contract matches what the
+mirror actually serves.</p>
 
 <p><strong>Rollback is one <code>UPDATE</code> and one <code>CREATE VIEW</code></strong> back to
 <code>sra.tax_raw</code>. Keep the old source file in place until the new path has served real
@@ -357,8 +383,8 @@ tight bounds. Bonus: each job is individually restartable, which a 40-hour monol
 </table>
 
 <hr>
-<p class="meta">Prerequisite: ≥400 GB free on <code>/private/pinto-lab</code>. Gate 0 must pass
-before any rewrite. Nothing here has been run.</p>
+<p class="meta">Prerequisites: ≥400 GB free on <code>/private/pinto-lab</code>, and the ete3
+lineage change (§3.1) shipped before cutover. Nothing here has been run.</p>
 
 </div>
 </body>
