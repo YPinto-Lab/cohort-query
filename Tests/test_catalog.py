@@ -1,4 +1,6 @@
 """The catalog is the model's only view of the data. What it omits, the model invents."""
+import re
+
 import pytest
 
 from askslm.adapters import DuckDbConnection
@@ -68,7 +70,8 @@ def test_truncated_numeric_columns_do_not_advise_ilike(catalog):
 
     block = _block_for(rendered, "age_years")
     assert "ILIKE" not in block
-    assert "22.0" in block                 # the sample values stay -- they show the scale
+    assert "Sample:" in block              # the sample values stay -- they show the scale
+    assert re.search(r'"\d+\.0"', block)   # a real age_years literal, not a text vocabulary
 
 
 def _line_for(rendered: str, column: str) -> str:
