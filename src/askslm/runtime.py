@@ -27,10 +27,13 @@ class Settings:
     db_path: Path
     llm: str = "canned"
     llm_key: str = ""
+    llm_model: str = "gemini-2.5-pro"
 
     def __post_init__(self):
         if not Path(self.db_path).exists():
             raise ValueError(f"database file not found: {self.db_path}")
+        if self.llm not in ("canned", "gemini"):
+            raise ValueError(f"unknown llm {self.llm!r}: expected 'canned' or 'gemini'")
 
 
 _settings: Settings | None = None
@@ -56,9 +59,21 @@ def database() -> Database:
 
 
 def backend() -> LlmBackend:
+    """An explicitly injected backend always wins -- that is how the tests pass a fake.
+    Otherwise the one named in Settings is constructed here, at the composition root."""
+    global _backend
     if _backend is None:
-        raise RuntimeError("no LlmBackend configured")
+        _backend = _named_backend(_require_settings())
     return _backend
+
+
+def _named_backend(settings: Settings) -> LlmBackend:
+    if settings.llm == "gemini":
+        from askslm.adapters import open_gemini
+
+        return open_gemini(settings.llm_key, settings.llm_model)
+    raise RuntimeError(
+        "no LlmBackend configured: pass backend=... or config(llm='gemini', llm_key=...)")
 
 
 def translator() -> Translator:

@@ -41,3 +41,16 @@ def test_the_backends_translation_is_returned_unchanged():
     translation = translator.translate(ResearchQuestion("anything"))
 
     assert translation.interpretation == "ok"
+
+
+def test_an_unknown_llm_name_fails_at_config_not_at_ask(tmp_path):
+    """Fail fast: a typo in llm= must not survive until the first question."""
+    import pytest
+
+    import askslm
+    from fixtures.mirror import build_fixture_mirror
+
+    path = build_fixture_mirror(tmp_path / "fixture.duckdb")
+
+    with pytest.raises(ValueError, match="unknown llm"):
+        askslm.config(db=path, llm="gemni", llm_key="x")
