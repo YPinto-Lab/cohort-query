@@ -43,8 +43,16 @@ def _agreement(left: set, right: set) -> float:
 
 
 def _overlap(by_source: dict[str, set]) -> set:
-    """Samples more than one source returned. With fewer than two sources there is no
-    overlap to speak of, and an empty set compares equal to an empty set."""
+    """Samples present in EVERY source (n-way intersection), not merely "more than
+    one" -- with fewer than two sources there is no overlap to speak of, and an
+    empty set compares equal to an empty set.
+
+    Today there are exactly two metadata sources, so "in every source" and "in more
+    than one source" are the same partition and this is correct as shipped. A third
+    metadata source would split them: does "shared" then mean the samples all three
+    agree on, or the samples any two overlap on? That call is unmade -- revisit this
+    function before trusting its output past two sources.
+    """
     sets = list(by_source.values())
     if len(sets) < 2:
         return set()
