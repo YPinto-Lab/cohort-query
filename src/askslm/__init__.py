@@ -44,8 +44,7 @@ def config(db: str | Path, llm: str = "canned", llm_key: str = "", **wiring) -> 
 def ask(question: str) -> Plan:
     """One LLM hop plus cheap COUNTs. Persists nothing yet -- see the status note above."""
     research_question = ResearchQuestion(question)
-    translation = runtime.backend().translate(
-        TranslationPrompt(question=research_question, schemas=""))
+    translation = runtime.translator().translate(research_question)
     if translation.failure is not None:
         return Plan(research_question, translation, CohortPreview(), error=translation.failure)
     return Plan(research_question, translation, _preview(translation))

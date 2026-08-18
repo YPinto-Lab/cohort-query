@@ -201,6 +201,42 @@ def test_a_metadata_source_cannot_be_used_as_a_profile_source(configured):
         plan.run(profile_sources=askslm.Source.SRA_METADATA)
 
 
+@pytest.fixture
+def configured_with_recording_backend(tmp_path):
+    """Same construction as `configured`, but with a backend that records the prompt it
+    was handed instead of returning a canned Translation -- so a test can assert on what
+    ask() actually sent, not just on what came back."""
+    path = build_fixture_mirror(tmp_path / "fixture.duckdb")
+    connection = DuckDbConnection(path)
+    backend = RecordingLlmBackend(IBD_TRANSLATION)
+    askslm.config(db=path, database=connection, backend=backend)
+    yield backend
+    connection.close()
+
+
+class RecordingLlmBackend:
+    """Records the TranslationPrompt it was handed and returns a fixed Translation."""
+
+    def __init__(self, translation: Translation):
+        self._translation = translation
+        self.prompt = None
+
+    def translate(self, prompt):
+        self.prompt = prompt
+        return self._translation
+
+
+def test_ask_sends_the_real_schemas_to_the_backend(configured_with_recording_backend):
+    """Regression: ask() used to hardcode schemas="" while the catalog sat unread in the
+    mirror. A backend that never sees the vocabularies invents literals."""
+    backend = configured_with_recording_backend
+
+    askslm.ask("adults with IBD")
+
+    assert "metalog_metadata" in backend.prompt.schemas
+    assert "subject_disease_status" in backend.prompt.schemas
+
+
 def test_an_untranslatable_question_refuses_to_run(configured):
     askslm.config(db=configured / "fixture.duckdb",
                   database=DuckDbConnection(configured / "fixture.duckdb"),

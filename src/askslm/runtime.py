@@ -11,10 +11,12 @@ from pathlib import Path
 
 from askslm.adapters import DuckDbConnection
 from askslm.build import BiomFactory, CohortBuilder
+from askslm.catalog import SchemaCatalog
 from askslm.cohort import CohortDiscovery
 from askslm.metadata import MetadataReader, MetadataReconciler
 from askslm.ports import Database, LlmBackend
 from askslm.profiles import ProfileReader, ProfileReconciler
+from askslm.translation import Translator
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,10 @@ def backend() -> LlmBackend:
     if _backend is None:
         raise RuntimeError("no LlmBackend configured")
     return _backend
+
+
+def translator() -> Translator:
+    return Translator(backend(), SchemaCatalog(database()))
 
 
 def cohort_builder() -> CohortBuilder:
