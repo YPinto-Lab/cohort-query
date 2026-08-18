@@ -9,8 +9,9 @@ Two verbs. ask() understands the question and previews the cohort cheaply -- one
 hop, no source choices, no biom presupposed. run() materializes and is the only place
 sources are named.
 
-STATUS: walking skeleton. The path below is real end to end (real DuckDB, real biom),
-but the LLM is a canned backend and there is no terminal app or plan persistence yet.
+STATUS: the question -> .biom path is real end to end, with a real LLM. Configure it
+with config(db=..., llm="gemini", llm_key=...); llm="canned" plus an injected backend
+is what the tests use. Still missing: the terminal app and plan persistence.
 
 Design: Docs/superpowers/specs/2026-06-17-askslm-architecture-hld-lld.html
 """
