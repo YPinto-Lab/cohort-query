@@ -59,6 +59,18 @@ def test_high_cardinality_columns_steer_the_model_away_from_equality(catalog):
     assert "values:" not in block
 
 
+def test_truncated_numeric_columns_do_not_advise_ilike(catalog):
+    """age_years is DOUBLE with 14 distinct values (truncated at the fixture's
+    max_distinct=5). DuckDB's ILIKE only binds VARCHAR: `age_years ILIKE '%18%'`
+    raises `BinderException: No function matches '~~*(DOUBLE, STRING_LITERAL)'`.
+    A model that obeys the catalog's advice writes exactly that query."""
+    rendered = catalog.all()
+
+    block = _block_for(rendered, "age_years")
+    assert "ILIKE" not in block
+    assert "22.0" in block                 # the sample values stay -- they show the scale
+
+
 def _line_for(rendered: str, column: str) -> str:
     return next(line for line in rendered.splitlines() if line.strip().startswith(column))
 

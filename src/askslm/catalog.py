@@ -60,5 +60,18 @@ def _values_suffix(row: pd.Series) -> str:
     values = json.dumps(json.loads(values_json), ensure_ascii=False)
     if bool(row["truncated"]):
         return (f"\n      {row['distinct_count']} distinct values, showing the most common."
-                f" Prefer ILIKE '%pattern%' over =. Sample: {values}")
+                f" {_predicate_advice(row['data_type'])} Sample: {values}")
     return f"\n      values: {values}"
+
+
+def _predicate_advice(data_type: str) -> str:
+    """DuckDB's ILIKE binds VARCHAR only -- `age_years ILIKE '%18%'` against a DOUBLE
+    column raises BinderException. A truncated numeric or date/time column needs a
+    range predicate instead; the sample values still show the unit and scale."""
+    if _is_text_type(data_type):
+        return "Prefer ILIKE '%pattern%' over =."
+    return "Prefer a range predicate (>=, <=, BETWEEN) over =."
+
+
+def _is_text_type(data_type: str) -> bool:
+    return str(data_type).startswith("VARCHAR")
