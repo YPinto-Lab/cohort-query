@@ -1,0 +1,58 @@
+"""Concrete implementations of the two ports. The only place third-party libs are touched."""
+from __future__ import annotations
+
+from pathlib import Path
+
+import duckdb
+import pandas as pd
+
+from askslm.translation import Translation, TranslationPrompt
+
+
+class DuckDbConnection:
+    """The mirror is opened READ-ONLY. Any write -- including a stray LLM INSERT -- is
+    refused by DuckDB itself rather than by validation we would have to write.
+
+    If the mirror records a `sra_db_path` in `mirror_config`, that database is attached
+    read-only too: `sra_taxonomy` is a view over its 13.6B-row table rather than a copy.
+    config(db=...) therefore still takes ONE path -- the second is read out of the
+    mirror, not asked of the caller. A fixture with no mirror_config just skips this.
+    """
+
+    def __init__(self, db_path: Path):
+        self._connection = duckdb.connect(str(db_path), read_only=True)
+        self._attach_sources()
+
+    def _attach_sources(self) -> None:
+        for alias, path in self._attachments():
+            self._connection.execute(f"ATTACH '{path}' AS {alias} (READ_ONLY)")
+
+    def _attachments(self) -> list[tuple[str, str]]:
+        tables = self._connection.execute("SHOW TABLES").fetchall()
+        if ("mirror_config",) not in tables:
+            return []
+        rows = self._connection.execute(
+            "SELECT value FROM mirror_config WHERE key = 'sra_db_path'").fetchall()
+        return [("sra", row[0]) for row in rows]
+
+    def query(self, sql: str, params: list | None = None) -> pd.DataFrame:
+        return self._connection.execute(sql, params or []).fetch_df()
+
+    def close(self) -> None:
+        self._connection.close()
+
+
+class CannedLlmBackend:
+    """A backend that returns a Translation it was handed.
+
+    ponytail: this is the walking skeleton's LLM. It exists so the whole
+    discover -> reconcile -> assemble path is exercised end to end before a real
+    provider is wired in; GeminiBackend implements the same port and replaces it
+    at the composition root with nothing else changing.
+    """
+
+    def __init__(self, translation: Translation):
+        self._translation = translation
+
+    def translate(self, prompt: TranslationPrompt) -> Translation:
+        return self._translation

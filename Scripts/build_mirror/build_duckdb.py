@@ -1,13 +1,17 @@
 """
 Builds the shared `askslm_mirror.duckdb` from the raw Metalog downloads and the
-SRA metadata/taxonomy CSVs. Run once (or on refresh), by the lab — never at
-package runtime. See Docs/superpowers/plans/2026-06-18-metalog-duckdb-build.md.
+existing SRA DuckDB. Run once (or on refresh), by the lab — never at package
+runtime. See Docs/superpowers/plans/2026-06-18-metalog-duckdb-build.md.
+
+The SRA side is ATTACHED, not re-ingested: `metadata_raw` (~39M rows) is copied in
+as `sra_metadata`, but `tax_raw` (~13.6 BILLION rows) is exposed as a VIEW named
+`sra_taxonomy`. Copying it would double hundreds of GB for no benefit. The mirror
+records the source path in `mirror_config` so the package re-attaches on connect.
 
 Usage:
     python Scripts/build_mirror/build_duckdb.py \
-        --metalog-dir ~/Desktop/Metalog \
-        --sra-metadata Workspaces/IBDProjects/inputs/metadata.csv \
-        --sra-taxonomy Workspaces/IBDProjects/inputs/taxonomy.csv \
+        --metalog-dir ~/Downloads/Metalog \
+        --sra-db /path/to/sra.duckdb \
         --out askslm_mirror.duckdb
 """
 from __future__ import annotations
@@ -19,8 +23,17 @@ import duckdb
 
 # Long-format profile tables: table name -> (glob pattern, environment regex marker).
 # metaphlan4 (all-levels) needs a glob that excludes the metaphlan4_species files.
+#
+# metalog_metaphlan4_species is deliberately NOT built. Measured against the real files
+# on 2026-08-17, in all four environments: ZERO samples appear only in the species table,
+# while 846 appear only in all-levels. It is a strict subset, so it would show +0 unique
+# in the plan render and mislead. A single-rank MetaPhlAn view is a row filter on
+# clade_name (HLD G.3.4), which the parsed `rank` in feature metadata now supports.
+#
+#   Human 79,514 / 78,668 · Animal 10,177 / 9,761 · Ocean 5,246 / 5,086
+#   Environmental 21,679 / 16,958      (all-levels / species, only-in-species = 0)
+#
 PROFILE_SPECS = {
-    "metalog_metaphlan4_species": ("*_metaphlan4_species_*.tsv.gz", "metaphlan4_species"),
     "metalog_metaphlan4": ("*_metaphlan4_[0-9]*.tsv.gz", "metaphlan4"),
     "metalog_motus3": ("*_motus3_*.tsv.gz", "motus3"),
     "metalog_spire_motus": ("*_spire_motus_*.tsv.gz", "spire_motus"),
@@ -30,24 +43,57 @@ PROFILE_SPECS = {
 class MirrorBuilder:
     """Builds and verifies the SRA x Metalog DuckDB mirror. One method per build step."""
 
-    def __init__(self, metalog_dir: Path, sra_metadata_csv: Path, sra_taxonomy_csv: Path, out_path: Path):
+    def __init__(self, metalog_dir: Path, sra_db: Path, out_path: Path,
+                 threads: int | None = None, memory_limit: str | None = None,
+                 temp_dir: Path | None = None):
         self.metalog_dir = metalog_dir
-        self.sra_metadata_csv = sra_metadata_csv
-        self.sra_taxonomy_csv = sra_taxonomy_csv
+        self.sra_db = sra_db
         self.out_path = out_path
+        self.threads = threads
+        self.memory_limit = memory_limit
+        self.temp_dir = temp_dir
 
     def build(self) -> None:
         out_path = self.out_path
         if out_path.exists():
             out_path.unlink()
         con = duckdb.connect(str(out_path))
+        self._configure(con)
+        con.execute(f"ATTACH '{self.sra_db}' AS sra (READ_ONLY)")
         self._load_profiles(con)
         self._load_metadata(con)
         self._load_sra(con)
         self._stamp_biosample(con)
+        self._stat_coverage(con)
         self._create_indexes(con)
         self._verify(con)
         con.close()
+
+    def _configure(self, con: duckdb.DuckDBPyConnection) -> None:
+        """Cluster settings. Scanning 13.6B rows spills, and the default temp directory
+        is /tmp -- small on a compute node, and shared. Point it at real storage."""
+        if self.threads:
+            con.execute(f"SET threads = {self.threads}")
+        if self.memory_limit:
+            con.execute(f"SET memory_limit = '{self.memory_limit}'")
+        if self.temp_dir:
+            Path(self.temp_dir).mkdir(parents=True, exist_ok=True)
+            con.execute(f"SET temp_directory = '{self.temp_dir}'")
+
+    def _stat_coverage(self, con: duckdb.DuckDBPyConnection) -> None:
+        """One row per run that STAT actually profiled -- the ONLY taxonomy-side build step.
+
+        Preview asks "how many cohort samples does STAT cover?". Against the real table
+        (13.6 BILLION rows) that is not a cheap count, so the scan is paid once here and
+        preview joins this instead.
+
+        This replaces stamping a biosample column onto sra_taxonomy, which would have
+        rewritten all 13.6B rows. It is unnecessary because a STAT biom column is a RUN
+        (HLD B.3): the read path is cohort biosamples -> run accessions via sra_metadata
+        (small, indexed) -> sra_taxonomy by its existing acc key. The big table is only
+        ever filtered by acc, never joined on biosample.
+        """
+        con.execute("CREATE TABLE stat_coverage AS SELECT DISTINCT acc FROM sra_taxonomy")
 
     def _load_profiles(self, con: duckdb.DuckDBPyConnection) -> None:
         profiles_dir = self.metalog_dir / "Taxonomic Profiles" / "*"
@@ -71,8 +117,18 @@ class MirrorBuilder:
         """)
 
     def _load_sra(self, con: duckdb.DuckDBPyConnection) -> None:
-        con.execute(f"CREATE TABLE sra_metadata AS SELECT * FROM read_csv_auto('{self.sra_metadata_csv}')")
-        con.execute(f"CREATE TABLE sra_taxonomy AS SELECT * FROM read_csv_auto('{self.sra_taxonomy_csv}')")
+        """Copy the metadata; do NOT copy the taxonomy.
+
+        sra_metadata is ~39M rows -- small enough to own, and it needs an index on
+        biosample that the source may not have. sra_taxonomy is ~13.6 BILLION rows;
+        copying it would double hundreds of GB for nothing, so it is a VIEW over the
+        attached source database. The view persists in the mirror file and resolves
+        whenever the package re-attaches (see mirror_config below).
+        """
+        con.execute("CREATE TABLE sra_metadata AS SELECT * FROM sra.metadata_raw")
+        con.execute("CREATE VIEW sra_taxonomy AS SELECT * FROM sra.tax_raw")
+        con.execute("CREATE TABLE mirror_config (key VARCHAR, value VARCHAR)")
+        con.execute("INSERT INTO mirror_config VALUES ('sra_db_path', ?)", [str(self.sra_db)])
 
     def _stamp_biosample(self, con: duckdb.DuckDBPyConnection) -> None:
         """Resolve the sample_alias -> biosample two-hop ONCE; every table gets a `biosample` column."""
@@ -90,18 +146,7 @@ class MirrorBuilder:
                 FROM metalog_metadata m
                 WHERE p.sample_alias = m.sample_alias
             """)
-        self._stamp_sra_taxonomy(con)
-
-    def _stamp_sra_taxonomy(self, con: duckdb.DuckDBPyConnection) -> None:
-        """STAT is keyed by RUN. Add biosample so it is reachable by the canonical key --
-        but keep acc, because a biom column is one run, not one biosample (HLD B.3)."""
-        con.execute("ALTER TABLE sra_taxonomy ADD COLUMN biosample TEXT")
-        con.execute("""
-            UPDATE sra_taxonomy t
-            SET biosample = s.biosample
-            FROM sra_metadata s
-            WHERE t.acc = s.acc
-        """)
+        # sra_taxonomy is deliberately NOT stamped -- see _stat_coverage.
 
     def _create_indexes(self, con: duckdb.DuckDBPyConnection) -> None:
         con.execute("CREATE INDEX idx_metalog_metadata_alias ON metalog_metadata (sample_alias)")
@@ -109,8 +154,9 @@ class MirrorBuilder:
         con.execute("CREATE INDEX idx_metalog_metadata_biosample ON metalog_metadata (biosample)")
         con.execute("CREATE INDEX idx_sra_metadata_biosample ON sra_metadata (biosample)")
         con.execute("CREATE INDEX idx_sra_metadata_acc ON sra_metadata (acc)")
-        con.execute("CREATE INDEX idx_sra_taxonomy_acc ON sra_taxonomy (acc)")
-        con.execute("CREATE INDEX idx_sra_taxonomy_biosample ON sra_taxonomy (biosample)")
+        # sra_taxonomy is a VIEW over the attached source -- cannot be indexed here.
+        # tax_raw is filtered only by its own `acc`, which the source database indexes.
+        con.execute("CREATE INDEX idx_stat_coverage_acc ON stat_coverage (acc)")
         for table in PROFILE_SPECS:
             con.execute(f"CREATE INDEX idx_{table}_alias ON {table} (sample_alias)")
             con.execute(f"CREATE INDEX idx_{table}_biosample ON {table} (biosample)")
@@ -151,52 +197,48 @@ class MirrorBuilder:
             assert multi == 0, f"{table}: {multi} sample_alias map to >1 biosample"
 
         self._report_stat_runs(con)
-        self._report_metaphlan_species_redundancy(con)
 
     def _report_stat_runs(self, con: duckdb.DuckDBPyConnection) -> None:
-        """How much does the one-column-per-run decision (B.3) actually affect this data?"""
+        """How much does the one-column-per-run decision (B.3) actually affect this data?
+
+        Reads stat_coverage joined to sra_metadata, never sra_taxonomy itself -- the
+        whole point of the precompute is that nothing has to touch 13.6B rows again.
+        """
         print("-- STAT runs per biosample --")
-        biosamples, runs = con.execute("""
+        profiled = """
+            SELECT m.biosample AS biosample, c.acc AS acc
+            FROM stat_coverage c LEFT JOIN sra_metadata m ON m.acc = c.acc
+        """
+        biosamples, runs = con.execute(f"""
             SELECT count(DISTINCT biosample), count(DISTINCT acc)
-            FROM sra_taxonomy WHERE biosample IS NOT NULL
+            FROM ({profiled}) WHERE biosample IS NOT NULL
         """).fetchone()
-        multi_run = con.execute("""
+        multi_run = con.execute(f"""
             SELECT count(*) FROM (
-                SELECT biosample FROM sra_taxonomy WHERE biosample IS NOT NULL
+                SELECT biosample FROM ({profiled}) WHERE biosample IS NOT NULL
                 GROUP BY biosample HAVING count(DISTINCT acc) > 1
             )
         """).fetchone()[0]
         orphan_runs = con.execute(
-            "SELECT count(DISTINCT acc) FROM sra_taxonomy WHERE biosample IS NULL"
+            f"SELECT count(DISTINCT acc) FROM ({profiled}) WHERE biosample IS NULL"
         ).fetchone()[0]
         print(f"biosamples={biosamples} runs={runs} multi_run_biosamples={multi_run} "
               f"runs_with_no_biosample={orphan_runs}")
 
-    def _report_metaphlan_species_redundancy(self, con: duckdb.DuckDBPyConnection) -> None:
-        """Does metalog_metaphlan4_species cover SAMPLES the all-levels table lacks?
-
-        It has no Source in the package (HLD E.3) on the assumption it is a rank subset.
-        If this reports a non-zero unique count the assumption is wrong and it earns a
-        Source after all -- the one question the first real build has to answer.
-        """
-        print("-- metaphlan4_species vs metaphlan4 (all levels) --")
-        only_in_species = con.execute("""
-            SELECT count(*) FROM (SELECT DISTINCT sample_alias FROM metalog_metaphlan4_species)
-            ANTI JOIN (SELECT DISTINCT sample_alias FROM metalog_metaphlan4) USING (sample_alias)
-        """).fetchone()[0]
-        print(f"samples only in metaphlan4_species: {only_in_species}"
-              f"{'  <- NOT redundant; it needs a Source' if only_in_species else '  (redundant, as assumed)'}")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--metalog-dir", type=Path, required=True)
-    parser.add_argument("--sra-metadata", type=Path, required=True)
-    parser.add_argument("--sra-taxonomy", type=Path, required=True)
+    parser.add_argument("--sra-db", type=Path, required=True,
+                        help="the existing SRA DuckDB holding metadata_raw and tax_raw")
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--threads", type=int, default=None)
+    parser.add_argument("--memory-limit", default=None, help="e.g. 400GB")
+    parser.add_argument("--temp-dir", type=Path, default=None,
+                        help="DuckDB spill directory -- NOT /tmp on a compute node")
     args = parser.parse_args()
 
-    MirrorBuilder(args.metalog_dir, args.sra_metadata, args.sra_taxonomy, args.out).build()
+    MirrorBuilder(args.metalog_dir, args.sra_db, args.out,
+                  args.threads, args.memory_limit, args.temp_dir).build()
 
 
 if __name__ == "__main__":

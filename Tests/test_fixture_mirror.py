@@ -101,12 +101,25 @@ def test_one_biosample_has_two_runs_that_become_two_columns(con):
     assert profiles[0][1] != profiles[1][1], "distinct profiles, so collapsing them would lose data"
 
 
-def test_sra_taxonomy_is_keyed_by_run_not_biosample(con):
-    """Locks in the defect found in HLD B.3 -- STAT cannot be read by the canonical key."""
+def test_sra_taxonomy_is_keyed_by_run_only_and_stat_coverage_stands_in_for_it(con):
+    """This assertion has now flipped twice, so the reasoning is worth recording.
+
+    First it asserted `biosample` was ABSENT (a defect: STAT unreachable by the canonical
+    key). Then PR #18 stamped it and this asserted it PRESENT. The real table then turned
+    out to be 13.6 BILLION rows, where that stamping means rewriting everything -- and
+    B.3's decision that a STAT column is a RUN makes it unnecessary: biosamples resolve
+    to runs via sra_metadata, and the huge table is only ever filtered by its own `acc`.
+
+    So `biosample` is absent again, on purpose this time, and `stat_coverage` carries the
+    one thing the stamping was really wanted for: cheap preview counts.
+    """
     columns = [row[0] for row in con.execute("DESCRIBE sra_taxonomy").fetchall()]
+    covered = _one(con, "SELECT count(*) FROM stat_coverage")
+    distinct_runs = _one(con, "SELECT count(DISTINCT acc) FROM sra_taxonomy")
 
     assert "acc" in columns
     assert "biosample" not in columns
+    assert covered == distinct_runs
 
 
 def test_profile_lineage_column_differs_per_source(con):

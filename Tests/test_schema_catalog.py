@@ -42,10 +42,32 @@ def test_low_cardinality_column_ships_its_real_values(con):
     assert diseases == ["Crohn's disease", "healthy control", "ulcerative colitis"]
 
 
-def test_high_cardinality_column_ships_names_only(con):
+def test_high_cardinality_column_ships_the_top_n_and_says_it_is_truncated(con):
+    """It used to ship nothing, which left the model guessing at organism (~247k in real
+    SRA). Top-N plus an explicit flag is enough, because the model is told to use ILIKE."""
     aliases = _values(con, "metalog_metadata", "sample_alias")
+    truncated, distinct = con.execute("""
+        SELECT truncated, distinct_count FROM schema_catalog
+        WHERE table_name = 'metalog_metadata' AND column_name = 'sample_alias'
+    """).fetchone()
 
-    assert aliases is None
+    assert truncated is True
+    assert distinct == 14
+    assert aliases is not None and len(aliases) == 5      # the max_distinct of this fixture
+
+
+def test_an_array_column_ships_its_ELEMENTS_and_records_its_type(con):
+    """geo_loc_name_sam is VARCHAR[]. Its vocabulary is the countries inside the arrays,
+    and the model needs the type to know it must use list_contains(), not =."""
+    countries = _values(con, "sra_metadata", "geo_loc_name_sam")
+    data_type = con.execute("""
+        SELECT data_type FROM schema_catalog
+        WHERE table_name = 'sra_metadata' AND column_name = 'geo_loc_name_sam'
+    """).fetchone()[0]
+
+    assert data_type.endswith("[]")
+    assert "Germany" in countries                          # an element, not a stringified array
+    assert not any(value.startswith("[") for value in countries)
 
 
 def test_catalog_covers_both_metadata_tables_and_no_profile_table(con):

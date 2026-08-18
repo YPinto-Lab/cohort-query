@@ -63,22 +63,31 @@ def _create_sra_metadata(con: duckdb.DuckDBPyConnection) -> None:
         CREATE TABLE sra_metadata (
             acc TEXT, biosample TEXT, bioproject TEXT, assay_type TEXT,
             organism TEXT, librarysource TEXT, platform TEXT,
-            geo_loc_name_country_calc TEXT, collection_date_sam TEXT, jattr TEXT
+            geo_loc_name_country_calc TEXT, collection_date_sam TEXT, jattr TEXT,
+            geo_loc_name_sam TEXT[]      -- the real table has NINE array columns
         )
     """)
     con.executemany(
-        "INSERT INTO sra_metadata VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [_sra_metadata_row(biosample, index) for index, biosample in enumerate(_sra_biosamples())],
+        "INSERT INTO sra_metadata VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        _sra_metadata_rows(),
     )
+
+
+def _sra_metadata_rows() -> list[tuple]:
+    """ONE ROW PER RUN, like the real table -- so a two-run biosample has two rows and
+    biosample -> runs is resolvable here without touching the huge taxonomy table."""
+    return [_sra_metadata_row(run, biosample, index)
+            for index, biosample in enumerate(_sra_biosamples())
+            for run in _runs_of(biosample)]
 
 
 def _sra_biosamples() -> list[str]:
     return SHARED + SRA_ONLY
 
 
-def _sra_metadata_row(biosample: str, index: int) -> tuple:
+def _sra_metadata_row(run: str, biosample: str, index: int) -> tuple:
     return (
-        _primary_run(biosample),
+        run,
         biosample,
         f"PRJNA{900 + index % 3}",
         "WGS",
@@ -88,6 +97,7 @@ def _sra_metadata_row(biosample: str, index: int) -> tuple:
         COUNTRIES[index % len(COUNTRIES)],
         f"2021-0{index % 9 + 1}-15",
         '{"host_age":"%d"}' % (25 + index),
+        [COUNTRIES[index % len(COUNTRIES)]],   # array: matched with list_contains, not =
     )
 
 
@@ -96,7 +106,15 @@ def _primary_run(biosample: str) -> str:
 
 
 def _create_sra_taxonomy(con: duckdb.DuckDBPyConnection) -> None:
-    """STAT profiles, keyed by RUN accession. SAMN00001 deliberately has two runs."""
+    """STAT profiles, keyed by RUN accession, with NO biosample column.
+
+    The real table is 13.6 billion rows, so stamping a biosample onto it would rewrite
+    the whole thing -- and it is unnecessary, because a STAT biom column is a run
+    (HLD B.3) and the cohort's biosamples resolve to runs through sra_metadata instead.
+    The fixture models that faithfully so the read path is exercised as it really is.
+
+    SAMN00001 deliberately has two runs.
+    """
     con.execute("""
         CREATE TABLE sra_taxonomy (
             acc TEXT, tax_id BIGINT, rank TEXT, name TEXT,
@@ -107,6 +125,9 @@ def _create_sra_taxonomy(con: duckdb.DuckDBPyConnection) -> None:
         "INSERT INTO sra_taxonomy VALUES (?, ?, ?, ?, ?, ?, ?)",
         _stat_rows(),
     )
+    # Precomputed at build in the real ETL: one row per run STAT actually profiled,
+    # so preview never counts over the huge table.
+    con.execute("CREATE TABLE stat_coverage AS SELECT DISTINCT acc FROM sra_taxonomy")
 
 
 def _stat_rows() -> list[tuple]:
@@ -128,10 +149,17 @@ def _runs_of(biosample: str) -> list[str]:
     return [_primary_run(biosample)]
 
 
-# tax_id, rank, name -- a few nodes at different ranks, so self_count is a real partition
+# tax_id, rank, name -- a few nodes at different ranks, so self_count is a real partition.
+#
+# The names here are deliberately STALE, because the real table's are: STAT ships a
+# snapshot of NCBI's taxonomy and NCBI renames taxa between releases. 1239 was
+# "Firmicutes" until the 2021 rename to "Bacillota", and 2 was "superkingdom" before
+# NCBI moved to "domain". askslm must ignore these columns entirely and re-derive every
+# label from tax_id via ete3, so the fixture keeps the outdated spellings on purpose --
+# a test that asserts the CURRENT name proves the stale column is not being read.
 STAT_TAXA = [
     (2, "superkingdom", "Bacteria"),
-    (1239, "phylum", "Bacillota"),
+    (1239, "phylum", "Firmicutes"),
     (561, "genus", "Escherichia"),
     (562, "species", "Escherichia coli"),
     (1680, "species", "Bifidobacterium adolescentis"),
@@ -219,9 +247,14 @@ def _create_motus(con: duckdb.DuckDBPyConnection) -> None:
 
 
 METAPHLAN_SAMPLES = SHARED[:5] + METALOG_ONLY[:1]
+# Verified against the real Metalog files 2026-08-17: clade_name holds ONE rank per row
+# with NO ancestry and no pipe separator -- every rank is a separate feature. The design
+# doc's "k__…|t__SGB…" full-lineage string does not exist in this data.
 METAPHLAN_CLADES = [
-    "k__Bacteria|p__Bacillota|c__Clostridia|s__Faecalibacterium_prausnitzii",
-    "k__Bacteria|p__Bacteroidota|c__Bacteroidia|s__Bacteroides_uniformis",
+    "k__Bacteria",
+    "p__Bacillota",
+    "s__Faecalibacterium_prausnitzii",
+    "t__SGB1871",
 ]
 
 MOTUS3_SAMPLES = SHARED[:6] + METALOG_ONLY[:2]
