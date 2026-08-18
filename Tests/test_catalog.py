@@ -63,6 +63,17 @@ def _line_for(rendered: str, column: str) -> str:
     return next(line for line in rendered.splitlines() if line.strip().startswith(column))
 
 
+def test_system_instruction_states_the_key_and_the_two_sources():
+    """The generated SQL is useless unless it returns the join key, and the model must
+    know it is writing TWO independent queries, not one join."""
+    from askslm.prompt import SYSTEM_INSTRUCTION
+
+    assert "biosample" in SYSTEM_INSTRUCTION
+    assert "sample_alias" in SYSTEM_INSTRUCTION
+    assert "SELECT" in SYSTEM_INSTRUCTION
+    assert "JOIN" in SYSTEM_INSTRUCTION          # to forbid it across the two sources
+
+
 def _block_for(rendered: str, column: str) -> str:
     """A column's line plus any indented continuation lines under it (the values
     suffix), since that suffix renders on its own line rather than the column's."""
