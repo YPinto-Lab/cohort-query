@@ -50,19 +50,21 @@ class SchemaCatalogBuilder:
             CREATE TABLE schema_catalog (
                 table_name TEXT,
                 column_name TEXT,
-                data_type TEXT,
+                data_type TEXT,           -- VARCHAR[] means list_contains(), not =
                 distinct_count BIGINT,
-                values_json TEXT          -- JSON array, or NULL when too high-cardinality
+                truncated BOOLEAN,        -- true: values_json is the top-N, not the whole set
+                values_json TEXT          -- JSON array of the REAL values, never cleaned
             )
         """)
 
     def _catalog_table(self, con: duckdb.DuckDBPyConnection, table: str) -> None:
         for column, data_type in self._columns(con, table):
             distinct_count = self._distinct_count(con, table, column)
-            values = self._values(con, table, column, distinct_count)
+            truncated = distinct_count > self.max_distinct
+            values = self._values(con, table, column, data_type, truncated)
             con.execute(
-                "INSERT INTO schema_catalog VALUES (?, ?, ?, ?, ?)",
-                [table, column, data_type, distinct_count, values],
+                "INSERT INTO schema_catalog VALUES (?, ?, ?, ?, ?, ?)",
+                [table, column, data_type, distinct_count, truncated, values],
             )
 
     def _columns(self, con: duckdb.DuckDBPyConnection, table: str) -> list[tuple[str, str]]:
@@ -72,21 +74,53 @@ class SchemaCatalogBuilder:
     def _distinct_count(self, con: duckdb.DuckDBPyConnection, table: str, column: str) -> int:
         return con.execute(f'SELECT count(DISTINCT "{column}") FROM {table}').fetchone()[0]
 
-    def _values(self, con: duckdb.DuckDBPyConnection, table: str,
-                column: str, distinct_count: int) -> str | None:
-        if distinct_count > self.max_distinct:
-            return None
+    def _values(self, con: duckdb.DuckDBPyConnection, table: str, column: str,
+                data_type: str, truncated: bool) -> str | None:
+        """Low cardinality ships the COMPLETE set; high cardinality ships the top-N.
+
+        A high-cardinality column used to ship nothing, which left the model guessing at
+        `organism` (~247k distinct in real SRA). The top-N plus an explicit `truncated`
+        flag is enough: the model is told to prefer ILIKE patterns, and
+        `organism ILIKE '%gut metagenome%'` needs no complete enumeration.
+
+        Values are shipped RAW. Real SRA has both 'WGS' and '\\n\\t\\t\\t\\tWGS\\n\\t\\t\\t'
+        in assay_type -- cleaning them here would hide that `= 'WGS'` silently drops rows.
+        """
+        if data_type.endswith("[]"):
+            return self._list_values(con, table, column, truncated)
+        if truncated:
+            rows = con.execute(
+                f'SELECT "{column}" FROM {table} WHERE "{column}" IS NOT NULL '
+                f'GROUP BY 1 ORDER BY count(*) DESC LIMIT {self.max_distinct}').fetchall()
+        else:
+            rows = con.execute(
+                f'SELECT DISTINCT "{column}" FROM {table} '
+                f'WHERE "{column}" IS NOT NULL ORDER BY 1').fetchall()
+        return json.dumps([str(row[0]) for row in rows])
+
+    def _list_values(self, con: duckdb.DuckDBPyConnection, table: str,
+                     column: str, truncated: bool) -> str:
+        """An array column's vocabulary is its ELEMENTS, not its distinct arrays.
+
+        geo_loc_name_sam is VARCHAR[]; the useful values are the countries inside it,
+        and the predicate is list_contains(geo_loc_name_sam, 'Israel').
+        """
         rows = con.execute(
-            f'SELECT DISTINCT "{column}" FROM {table} WHERE "{column}" IS NOT NULL ORDER BY 1'
-        ).fetchall()
+            f'SELECT element FROM {table}, unnest("{column}") AS t(element) '
+            f'WHERE element IS NOT NULL GROUP BY 1 ORDER BY count(*) DESC '
+            f'LIMIT {self.max_distinct}').fetchall()
         return json.dumps([str(row[0]) for row in rows])
 
     def _report(self, con: duckdb.DuckDBPyConnection) -> None:
-        total, with_values = con.execute("""
-            SELECT count(*), count(values_json) FROM schema_catalog
+        total, complete, truncated, arrays = con.execute("""
+            SELECT count(*),
+                   count(*) FILTER (WHERE values_json IS NOT NULL AND NOT truncated),
+                   count(*) FILTER (WHERE truncated),
+                   count(*) FILTER (WHERE data_type LIKE '%[]')
+            FROM schema_catalog
         """).fetchone()
-        print(f"schema_catalog: {total} columns, {with_values} with value vocabularies "
-              f"(cutoff {self.max_distinct} distinct)")
+        print(f"schema_catalog: {total} columns · {complete} with a COMPLETE vocabulary · "
+              f"{truncated} truncated to the top {self.max_distinct} · {arrays} array-typed")
 
 
 def main() -> None:

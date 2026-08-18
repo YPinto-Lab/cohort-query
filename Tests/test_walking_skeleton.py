@@ -95,6 +95,53 @@ def test_stat_columns_are_runs_and_carry_their_biosample(configured):
         assert table.metadata(column, axis="sample")["biosample"] == "SAMN00001"
 
 
+def test_stat_lineage_comes_from_ete3_not_the_stale_table_columns(configured):
+    """sra_taxonomy's own name/rank are a lagging snapshot of NCBI's taxonomy, so reading
+    them ships outdated names into the biom. The fixture stores tax_id 1239 as its old
+    name "Firmicutes"; NCBI renamed it "Bacillota" in 2021. The biom must say Bacillota.
+
+    Ancestry is the second half: the table has no parents at all, so a STAT feature can
+    only be projected to a rank if ete3 supplies the lineage."""
+    plan = askslm.ask("gut metagenomes")
+
+    table, _ = plan.run(profile_sources=askslm.Source.SRA_TAXONOMY)
+
+    phylum = table.metadata("1239", axis="observation")
+    assert phylum["name"] == "Bacillota"
+
+    coli = table.metadata("562", axis="observation")
+    assert coli["name"] == "Escherichia coli"
+    assert 561 in coli["lineage"]                 # its genus, which the table never gave us
+    assert coli["ranks"]["genus"] == 561
+
+
+def test_metaphlan_features_carry_a_parsed_rank(configured):
+    """Real clade_name is one rank per row with no ancestry (k__Bacteria, t__SGB1871),
+    so rank has to be parsed out of the prefix. Without it a MetaPhlAn biom mixes every
+    rank in one matrix with no way to tell them apart -- and a column sums to ~8, not 1."""
+    plan = askslm.ask("gut metagenomes")
+
+    table, _ = plan.run(profile_sources=askslm.Source.METALOG_METAPHLAN4_ALL)
+
+    ranks = {feature: table.metadata(feature, axis="observation")["rank"]
+             for feature in table.ids("observation")}
+    assert ranks["k__Bacteria"] == "kingdom"
+    assert ranks["t__SGB1871"] == "strain"
+    assert table.metadata("s__Faecalibacterium_prausnitzii",
+                          axis="observation")["name"] == "Faecalibacterium_prausnitzii"
+
+
+def test_motus_features_keep_their_whole_string_as_the_name(configured):
+    """mOTUs species carry no rank prefix, so nothing is parsed off them."""
+    plan = askslm.ask("gut metagenomes")
+
+    table, _ = plan.run(profile_sources=askslm.Source.METALOG_MOTUS3)
+
+    feature = "ref_mOTU_v3_00095 Escherichia coli"
+    assert table.metadata(feature, axis="observation")["name"] == feature
+    assert table.metadata(feature, axis="observation")["rank"] is None
+
+
 def test_metadata_winner_decides_shared_samples(configured):
     plan = askslm.ask("gut metagenomes")
 
@@ -115,6 +162,28 @@ def test_samples_no_named_source_covers_are_dropped_and_reported(configured):
     assert report.biosamples == 6                       # metaphlan covers 6 of the 20
     assert len(report.dropped) == 14
     assert "SAMN00009" in report.dropped                # SRA-only, no MetaPhlAn profile
+
+
+def test_the_written_biom_is_strict_valid_json(configured):
+    """Sparse metadata used to leave pandas NaN in the file. Python and biom both emit
+    and re-read NaN happily, so it is invisible from here -- but NaN is not valid JSON
+    and a strict parser (R's jsonlite, most non-Python tooling) rejects the file. Since
+    the .biom IS the product's output, this has to hold for every family."""
+    import json
+
+    plan = askslm.ask("gut metagenomes")
+
+    for name, source in [("motus", askslm.Source.METALOG_MOTUS3),
+                         ("stat", askslm.Source.SRA_TAXONOMY),
+                         ("metaphlan", askslm.Source.METALOG_METAPHLAN4_ALL)]:
+        out = configured / f"{name}.biom"
+        plan.run(profile_sources=source, out=out)
+
+        json.loads(out.read_text(), parse_constant=_reject_non_standard)
+
+
+def _reject_non_standard(value):
+    raise AssertionError(f"non-standard JSON constant in the biom: {value}")
 
 
 def test_cross_family_profile_sources_are_rejected_on_construction(configured):

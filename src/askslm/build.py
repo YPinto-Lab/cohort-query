@@ -53,6 +53,18 @@ def dropped(requested: frozenset[Accession], present: frozenset[Accession]) -> f
     return requested - present
 
 
+def _json_safe(frame: pd.DataFrame) -> pd.DataFrame:
+    """Missing values become null, not NaN.
+
+    `NaN` is not valid JSON. Python and biom both emit it happily and read it back, so
+    this is invisible from Python -- but a strict parser (R's jsonlite, most non-Python
+    tooling) rejects the file. Since a .biom is the product's entire output, and metadata
+    is sparse by nature (a sample missing `bmi`, a mOTUs feature having no rank), this
+    would have hit almost every real file.
+    """
+    return frame.astype(object).where(frame.notna(), None)
+
+
 class BiomFactory:
     """Assembles the biom: counts, lineage on the feature axis, metadata on the sample axis.
 
@@ -69,12 +81,13 @@ class BiomFactory:
         return table
 
     def _feature_metadata(self, matrix: ProfileMatrix) -> dict:
-        return {str(feature): row for feature, row in matrix.lineage.to_dict("index").items()}
+        return {str(feature): row
+                for feature, row in _json_safe(matrix.lineage).to_dict("index").items()}
 
     def _sample_metadata(self, matrix: ProfileMatrix, metadata: ReconciledMetadata) -> dict:
         """Each column carries its own id AND its biosample, so a STAT biom's run columns
         stay groupable by sample without the tool having grouped them (B.3)."""
-        rows = metadata.frame.to_dict("index")
+        rows = _json_safe(metadata.frame).to_dict("index")
         return {column: {**rows.get(biosample, {}), "biosample": biosample, "column_id": column}
                 for column, biosample in matrix.column_biosample.items()}
 
