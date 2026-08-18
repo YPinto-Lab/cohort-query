@@ -28,13 +28,36 @@ import duckdb
 METADATA_TABLES = ("sra_metadata", "metalog_metadata")
 DEFAULT_MAX_DISTINCT = 200
 
+# Two budgets, both added after MEASURING the real prompt at ~138,000 tokens per ask()
+# (2026-08-18). Schema linking exists to NARROW what the model sees; a prompt that size
+# does the opposite, and 41% of it was columns that teach the model nothing.
+#
+# IDENTIFIER_RATIO -- a column whose distinct count approaches its row count is a KEY or
+# free text, not a vocabulary. `jattr` had 39,065,549 distinct values in 39,100,115 rows
+# and shipped 119,263 chars, 21% of the whole prompt, to say nothing at all. Worse, it
+# carried a "Prefer ILIKE" hint, which invites `biosample ILIKE '%SAMN%'`.
+#
+# MAX_VALUE_CHARS -- a per-column cap, because cardinality alone does not bound size:
+# 200 long free-text values are as expensive as 20,000 short ones.
+DEFAULT_IDENTIFIER_RATIO = 0.4
+DEFAULT_MAX_VALUE_CHARS = 1200
+
+# Below this the ratio is noise, not evidence: in a 20-row table a perfectly good
+# 14-value vocabulary looks exactly like a primary key. The real tables are 39,100,115
+# and 157,483 rows, so this only ever exempts fixtures and toy mirrors.
+MIN_ROWS_FOR_RATIO = 10_000
+
 
 class SchemaCatalogBuilder:
     """Writes one row per column of every metadata table, with values when few enough."""
 
-    def __init__(self, db_path: Path, max_distinct: int = DEFAULT_MAX_DISTINCT):
+    def __init__(self, db_path: Path, max_distinct: int = DEFAULT_MAX_DISTINCT,
+                 identifier_ratio: float = DEFAULT_IDENTIFIER_RATIO,
+                 max_value_chars: int = DEFAULT_MAX_VALUE_CHARS):
         self.db_path = db_path
         self.max_distinct = max_distinct
+        self.identifier_ratio = identifier_ratio
+        self.max_value_chars = max_value_chars
 
     def build(self) -> None:
         con = duckdb.connect(str(self.db_path))
@@ -58,14 +81,28 @@ class SchemaCatalogBuilder:
         """)
 
     def _catalog_table(self, con: duckdb.DuckDBPyConnection, table: str) -> None:
+        rows = con.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
         for column, data_type in self._columns(con, table):
             distinct_count = self._distinct_count(con, table, column)
             truncated = distinct_count > self.max_distinct
-            values = self._values(con, table, column, data_type, truncated)
+            if self._is_identifier(distinct_count, rows):
+                values = None
+            else:
+                values = self._values(con, table, column, data_type, truncated)
             con.execute(
                 "INSERT INTO schema_catalog VALUES (?, ?, ?, ?, ?, ?)",
                 [table, column, data_type, distinct_count, truncated, values],
             )
+
+    def _is_identifier(self, distinct_count: int, rows: int) -> bool:
+        """A key or free text, not a vocabulary -- ship the column name and type, no values.
+
+        The model still sees the column and can still filter on it; what it loses is a
+        list of 200 accessions that taught it nothing and cost a fifth of the prompt.
+        """
+        if rows < MIN_ROWS_FOR_RATIO:
+            return False
+        return distinct_count / rows > self.identifier_ratio
 
     def _columns(self, con: duckdb.DuckDBPyConnection, table: str) -> list[tuple[str, str]]:
         rows = con.execute(f"DESCRIBE {table}").fetchall()
@@ -96,7 +133,18 @@ class SchemaCatalogBuilder:
             rows = con.execute(
                 f'SELECT DISTINCT "{column}" FROM {table} '
                 f'WHERE "{column}" IS NOT NULL ORDER BY 1').fetchall()
-        return json.dumps([str(row[0]) for row in rows])
+        return self._within_budget([str(row[0]) for row in rows])
+
+    def _within_budget(self, values: list[str]) -> str:
+        """Drop values from the tail until the JSON fits the per-column cap.
+
+        Values are ordered by frequency (or alphabetically when complete), so the tail is
+        the least useful. Dropping is silent by design: `truncated` already tells the model
+        the list is partial, and that is the only fact it needs to prefer ILIKE over IN.
+        """
+        while len(values) > 1 and len(json.dumps(values)) > self.max_value_chars:
+            values.pop()
+        return json.dumps(values)
 
     def _list_values(self, con: duckdb.DuckDBPyConnection, table: str,
                      column: str, truncated: bool) -> str:
@@ -127,9 +175,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=Path, required=True)
     parser.add_argument("--max-distinct", type=int, default=DEFAULT_MAX_DISTINCT,
-                        help="columns with more distinct values ship names only")
+                        help="columns with more distinct values ship the top-N, not all")
+    parser.add_argument("--identifier-ratio", type=float, default=DEFAULT_IDENTIFIER_RATIO,
+                        help="distinct/rows above this means a key or free text: no values")
+    parser.add_argument("--max-value-chars", type=int, default=DEFAULT_MAX_VALUE_CHARS,
+                        help="per-column cap on the rendered values")
     args = parser.parse_args()
-    SchemaCatalogBuilder(args.db, args.max_distinct).build()
+    SchemaCatalogBuilder(args.db, args.max_distinct,
+                         args.identifier_ratio, args.max_value_chars).build()
 
 
 if __name__ == "__main__":
