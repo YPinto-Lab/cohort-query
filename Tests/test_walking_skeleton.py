@@ -42,6 +42,26 @@ def test_ask_previews_the_cohort_partition(configured):
     assert plan.error is None
 
 
+def test_a_source_omitted_from_the_translation_contributes_nothing(configured):
+    """Confirms the prompt's new "omit a source that cannot express the question" rule
+    is safe to follow: Cohort.by_source is built from whatever queries it is handed, so
+    a source with no SourceQuery at all just never appears -- union/shared read only the
+    sources present, and no code path indexes by_source[a_source_that_was_never_asked]."""
+    askslm.config(db=configured / "fixture.duckdb",
+                  database=DuckDbConnection(configured / "fixture.duckdb"),
+                  backend=CannedLlmBackend(Translation(
+                      interpretation="SRA only -- Metalog has no matching field",
+                      queries=(SourceQuery(askslm.Source.SRA_METADATA,
+                                           "SELECT * FROM sra_metadata"),))))
+
+    plan = askslm.ask("human tumour RNA-seq")
+
+    assert plan.error is None
+    assert set(plan.preview.by_metadata_source) == {askslm.Source.SRA_METADATA}
+    assert plan.preview.union == plan.preview.by_metadata_source[askslm.Source.SRA_METADATA]
+    assert plan.preview.shared == 0
+
+
 def test_run_writes_a_biom_unioning_two_same_family_sources(configured):
     out = configured / "motus.biom"
     plan = askslm.ask("gut metagenomes")

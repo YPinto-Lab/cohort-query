@@ -101,6 +101,18 @@ def test_truncated_values_are_carved_out_of_the_only_shown_values_rule():
     assert "not the permitted set" in SYSTEM_INSTRUCTION or "not the full" in SYSTEM_INSTRUCTION
 
 
+def test_a_source_that_cannot_express_the_question_is_omitted_not_guessed():
+    """Cohort.union() unions every source's results, so a dutiful-but-spurious query
+    against a source with nothing relevant ADDS unrelated samples to the cohort --
+    e.g. Metalog has no field for "human tumour RNA-seq", and a Metalog query that
+    returns anything at all corrupts an SRA-only cohort. The prompt must tell the
+    model to omit that source's query entirely rather than approximate one."""
+    from askslm.prompt import SYSTEM_INSTRUCTION
+
+    assert "omit" in SYSTEM_INSTRUCTION.lower()
+    assert "union" in SYSTEM_INSTRUCTION.lower()
+
+
 def _block_for(rendered: str, column: str) -> str:
     """A column's line plus any indented continuation lines under it (the values
     suffix), since that suffix renders on its own line rather than the column's."""
