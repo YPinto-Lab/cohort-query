@@ -7,6 +7,13 @@ name = "ask-slm"
 version = "0.1.0"
 description = "Ask-SLM: build a cross-study metagenomic feature table from a research question."
 requires-python = ">=3.12"
+dependencies = [
+    "duckdb>=1.5",
+    "pandas>=3.0",
+    "biom-format>=2.1",
+    "ete3>=3.1",
+    "google-genai>=2.6",
+]
 
 # No [project.scripts] yet — the `askslm` entry point comes back with the terminal app
 # (askslm.cli.session:main). Pointing it at a deleted module would break `pip install -e .`.

@@ -42,6 +42,26 @@ def test_ask_previews_the_cohort_partition(configured):
     assert plan.error is None
 
 
+def test_a_source_omitted_from_the_translation_contributes_nothing(configured):
+    """Confirms the prompt's new "omit a source that cannot express the question" rule
+    is safe to follow: Cohort.by_source is built from whatever queries it is handed, so
+    a source with no SourceQuery at all just never appears -- union/shared read only the
+    sources present, and no code path indexes by_source[a_source_that_was_never_asked]."""
+    askslm.config(db=configured / "fixture.duckdb",
+                  database=DuckDbConnection(configured / "fixture.duckdb"),
+                  backend=CannedLlmBackend(Translation(
+                      interpretation="SRA only -- Metalog has no matching field",
+                      queries=(SourceQuery(askslm.Source.SRA_METADATA,
+                                           "SELECT * FROM sra_metadata"),))))
+
+    plan = askslm.ask("human tumour RNA-seq")
+
+    assert plan.error is None
+    assert set(plan.preview.by_metadata_source) == {askslm.Source.SRA_METADATA}
+    assert plan.preview.union == plan.preview.by_metadata_source[askslm.Source.SRA_METADATA]
+    assert plan.preview.shared == 0
+
+
 def test_run_writes_a_biom_unioning_two_same_family_sources(configured):
     out = configured / "motus.biom"
     plan = askslm.ask("gut metagenomes")
@@ -199,6 +219,67 @@ def test_a_metadata_source_cannot_be_used_as_a_profile_source(configured):
 
     with pytest.raises(ValueError, match="PROFILE source"):
         plan.run(profile_sources=askslm.Source.SRA_METADATA)
+
+
+@pytest.fixture
+def configured_with_recording_backend(tmp_path):
+    """Same construction as `configured`, but with a backend that records the prompt it
+    was handed instead of returning a canned Translation -- so a test can assert on what
+    ask() actually sent, not just on what came back."""
+    path = build_fixture_mirror(tmp_path / "fixture.duckdb")
+    connection = DuckDbConnection(path)
+    backend = RecordingLlmBackend(IBD_TRANSLATION)
+    askslm.config(db=path, database=connection, backend=backend)
+    yield backend
+    connection.close()
+
+
+class RecordingLlmBackend(CannedLlmBackend):
+    """CannedLlmBackend that also records the TranslationPrompt it was handed."""
+
+    def translate(self, prompt):
+        self.prompt = prompt
+        return super().translate(prompt)
+
+
+def test_ask_sends_the_real_schemas_to_the_backend(configured_with_recording_backend):
+    """Regression: ask() used to hardcode schemas="" while the catalog sat unread in the
+    mirror. A backend that never sees the vocabularies invents literals."""
+    backend = configured_with_recording_backend
+
+    askslm.ask("adults with IBD")
+
+    assert "metalog_metadata" in backend.prompt.schemas
+    assert "subject_disease_status" in backend.prompt.schemas
+
+
+def test_invalid_generated_sql_becomes_plan_error_not_a_crash(configured):
+    """HLD H.1: invalid generated SQL -> Plan carries `error`; run() then refuses.
+
+    Distinct from the model DECLINING to translate (Translation.failure, tested
+    below) -- this is the model producing SQL that DuckDB itself rejects, e.g. an
+    ILIKE against a numeric column. Nothing on the ask() -> CohortDiscovery path
+    caught that before, so it surfaced as a raw duckdb.BinderException out of ask().
+    """
+    askslm.config(db=configured / "fixture.duckdb",
+                  database=DuckDbConnection(configured / "fixture.duckdb"),
+                  backend=CannedLlmBackend(Translation(
+                      interpretation="adults (age_years ILIKE 18)",
+                      queries=(
+                          SourceQuery(askslm.Source.SRA_METADATA,
+                                      "SELECT * FROM sra_metadata"),
+                          SourceQuery(askslm.Source.METALOG_METADATA,
+                                      "SELECT * FROM metalog_metadata "
+                                      "WHERE age_years ILIKE '%18%'"),
+                      ))))
+
+    plan = askslm.ask("adults with IBD")
+
+    assert plan.error is not None
+    assert "METALOG_METADATA" in plan.error
+    assert "~~*" in plan.error or "ILIKE" in plan.error or "BinderException" in plan.error
+    with pytest.raises(askslm.TranslationError):
+        plan.run(profile_sources=askslm.Source.METALOG_MOTUS3)
 
 
 def test_an_untranslatable_question_refuses_to_run(configured):

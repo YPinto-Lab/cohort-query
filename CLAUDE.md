@@ -24,8 +24,12 @@ package never builds or writes it — `Scripts/build_mirror/` does, run once by 
 ```
 src/askslm/         the package (currently: the material that survived the pivot)
   sra_schema.py     SRA column contracts — seeds SchemaCatalog's LLM prompt
+  catalog.py        schema_catalog -> prompt text (columns + REAL value vocabularies)
+  prompt.py         the system instruction, isolated so eval can attribute prompt diffs
+  translation.py    Translator: question + schemas -> Translation
   taxonomy/         lineage_table — ete3 tax_id -> lineage, needed for STAT features
 Scripts/build_mirror/   the separate ETL that builds the DuckDB mirror
+Scripts/eval/       the translation eval set + execution-accuracy scorer (H.3)
 Docs/ Tests/ Scripts/git-guard/
 ```
 

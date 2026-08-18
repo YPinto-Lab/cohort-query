@@ -18,9 +18,24 @@ Scope ends at the `.biom` — open it in whatever you already use.
 
 ## Status
 
-**Pre-implementation.** The pre-pivot workspace/agent/web codebase has been removed and the new
-package is not built yet. What is in `src/askslm/` today is the material the new design reuses:
-`sra_schema.py` (SRA column contracts) and `taxonomy.lineage_table` (ete3 tax_id → lineage).
+**Walking skeleton.** The question -> `.biom` path is real end to end: a real LLM (Gemini)
+translates the question into SQL per metadata source, the cohort is previewed against the real
+mirror, and `run()` materializes a real biom. Still missing: the terminal app and plan
+persistence — see the usage snippet below for how to drive it in the meantime.
+
+```python
+import os
+import askslm
+
+askslm.config(db="askslm_mirror.duckdb", llm="gemini", llm_key=os.environ["GEMINI_KEY"])
+plan = askslm.ask("fecal metagenomes from adults with IBD, Western countries")
+print(plan)
+table, report = plan.run(profile_sources=askslm.Source.METALOG_MOTUS3, out="cohort.biom")
+```
+
+`llm="canned"` plus an injected backend is what the test suite uses instead of live Gemini calls.
+Translation accuracy against the eval set in `Scripts/eval/` has not yet been measured — that
+script needs the real mirror and a live API key, so it has never been run.
 
 The design is complete and reviewed:
 
@@ -55,4 +70,6 @@ python Scripts/build_mirror/build_duckdb.py \
 python -m pytest Tests -q
 ```
 
-Currently empty — the suite went with the deleted code. New tests land with the walking skeleton.
+Runs against a generated fixture mirror and a canned LLM backend — no live database or API key
+needed. `Scripts/eval/run_eval.py` is the separate, un-gated measurement against the real mirror
+and a real Gemini key; it is not part of this suite.

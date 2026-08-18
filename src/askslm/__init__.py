@@ -9,8 +9,9 @@ Two verbs. ask() understands the question and previews the cohort cheaply -- one
 hop, no source choices, no biom presupposed. run() materializes and is the only place
 sources are named.
 
-STATUS: walking skeleton. The path below is real end to end (real DuckDB, real biom),
-but the LLM is a canned backend and there is no terminal app or plan persistence yet.
+STATUS: the question -> .biom path is real end to end, with a real LLM. Configure it
+with config(db=..., llm="gemini", llm_key=...); llm="canned" plus an injected backend
+is what the tests use. Still missing: the terminal app and plan persistence.
 
 Design: Docs/superpowers/specs/2026-06-17-askslm-architecture-hld-lld.html
 """
@@ -20,7 +21,7 @@ from pathlib import Path
 
 from askslm import runtime
 from askslm.build import BuildReport, Materialization
-from askslm.cohort import Accession, Cohort
+from askslm.cohort import Accession, Cohort, InvalidCohortQuery
 from askslm.plan import CohortPreview, Plan, TranslationError
 from askslm.ports import Database, LlmBackend
 from askslm.profiles import ProfileReader
@@ -36,19 +37,25 @@ __all__ = [
 ]
 
 
-def config(db: str | Path, llm: str = "canned", llm_key: str = "", **wiring) -> None:
-    """Configure once. Fails fast if the database is missing."""
-    runtime.configure(runtime.Settings(db_path=Path(db), llm=llm, llm_key=llm_key), **wiring)
+def config(db: str | Path, llm: str = "canned", llm_key: str = "",
+           llm_model: str = "gemini-2.5-flash", **wiring) -> None:
+    """Configure once. Fails fast if the database is missing or the llm name is unknown."""
+    runtime.configure(
+        runtime.Settings(db_path=Path(db), llm=llm, llm_key=llm_key, llm_model=llm_model),
+        **wiring)
 
 
 def ask(question: str) -> Plan:
     """One LLM hop plus cheap COUNTs. Persists nothing yet -- see the status note above."""
     research_question = ResearchQuestion(question)
-    translation = runtime.backend().translate(
-        TranslationPrompt(question=research_question, schemas=""))
+    translation = runtime.translator().translate(research_question)
     if translation.failure is not None:
         return Plan(research_question, translation, CohortPreview(), error=translation.failure)
-    return Plan(research_question, translation, _preview(translation))
+    try:
+        preview = _preview(translation)
+    except InvalidCohortQuery as error:
+        return Plan(research_question, translation, CohortPreview(), error=str(error))
+    return Plan(research_question, translation, preview)
 
 
 def _preview(translation: Translation) -> CohortPreview:

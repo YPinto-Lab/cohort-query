@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from askslm.ports import LlmBackend
 from askslm.sources import Source
 
 
@@ -33,3 +34,22 @@ class Translation:
     interpretation: str                    # the English restatement shown as show-your-work
     queries: tuple[SourceQuery, ...]       # one per METADATA source
     failure: str | None = None             # the model could not translate; a sentence, not a trace
+
+
+class Translator:
+    """Question + schemas -> Translation. The one network step, kept pure.
+
+    Invalid SQL is NOT caught here: it surfaces when CohortDiscovery runs the
+    queries (HLD H.1), where DuckDB's own error is caught and turned into
+    Plan.error. A Translation may also come back carrying `failure` -- the model
+    saying it could not translate at all -- which reaches the user as Plan.error
+    too, but that is a separate condition raised earlier, on the ask() side.
+    """
+
+    def __init__(self, backend: LlmBackend, catalog):
+        self._backend = backend
+        self._catalog = catalog
+
+    def translate(self, question: ResearchQuestion) -> Translation:
+        return self._backend.translate(
+            TranslationPrompt(question=question, schemas=self._catalog.all()))
