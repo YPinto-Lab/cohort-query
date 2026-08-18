@@ -1,12 +1,15 @@
 """Concrete implementations of the two ports. The only place third-party libs are touched."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import duckdb
 import pandas as pd
 
-from askslm.translation import Translation, TranslationPrompt
+from askslm.prompt import SYSTEM_INSTRUCTION
+from askslm.sources import Source
+from askslm.translation import SourceQuery, Translation, TranslationPrompt
 
 
 class DuckDbConnection:
@@ -56,3 +59,53 @@ class CannedLlmBackend:
 
     def translate(self, prompt: TranslationPrompt) -> Translation:
         return self._translation
+
+
+class GeminiBackend:
+    """The real LlmBackend. Same port as CannedLlmBackend, so nothing below it changes.
+
+    The client is injected rather than constructed here: that is what lets the tests
+    exercise every branch of the parsing with no API key and no network.
+    """
+
+    def __init__(self, client, model: str):
+        self._client = client
+        self._model = model
+
+    def translate(self, prompt: TranslationPrompt) -> Translation:
+        response = self._client.models.generate_content(
+            model=self._model,
+            contents=_prompt_text(prompt),
+            config={"system_instruction": SYSTEM_INSTRUCTION,
+                    "response_mime_type": "application/json"})
+        return _translation_of(json.loads(_unfenced(response.text)))
+
+
+def open_gemini(api_key: str, model: str) -> GeminiBackend:
+    """Constructed at the composition root; imported lazily so `import askslm` does not
+    require google-genai for anyone using the canned backend."""
+    from google import genai
+
+    return GeminiBackend(genai.Client(api_key=api_key), model)
+
+
+def _prompt_text(prompt: TranslationPrompt) -> str:
+    return (f"SCHEMA\n{prompt.schemas}\n\n"
+            f"QUESTION\n{prompt.question.text}\n")
+
+
+def _unfenced(text: str) -> str:
+    """Models fence their JSON even when told to return JSON only."""
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    body = stripped.split("\n", 1)[1]
+    return body.rsplit("```", 1)[0].strip()
+
+
+def _translation_of(payload: dict) -> Translation:
+    queries = tuple(SourceQuery(Source[entry["source"]], entry["sql"])
+                    for entry in payload.get("queries", []))
+    return Translation(interpretation=payload.get("interpretation", ""),
+                       queries=queries,
+                       failure=payload.get("failure"))
