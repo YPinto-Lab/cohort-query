@@ -22,7 +22,7 @@ from pathlib import Path
 from askslm import runtime
 from askslm.build import BuildReport, Materialization
 from askslm.cohort import Accession, Cohort, InvalidCohortQuery
-from askslm.plan import CohortPreview, Plan, TranslationError
+from askslm.plan import CohortPreview, Plan, TranslationError, load_plan
 from askslm.ports import Database, LlmBackend
 from askslm.profiles import ProfileReader
 from askslm.sources import ProfilerFamily, Source, SourceKind, Unit
@@ -34,6 +34,7 @@ __all__ = [
     "Plan", "CohortPreview", "BuildReport", "Materialization",
     "Translation", "SourceQuery", "ResearchQuestion", "TranslationPrompt",
     "Cohort", "Accession", "Database", "LlmBackend", "TranslationError",
+    "load_plan",
 ]
 
 
@@ -45,17 +46,20 @@ def config(db: str | Path, llm: str = "canned", llm_key: str = "",
         **wiring)
 
 
-def ask(question: str) -> Plan:
-    """One LLM hop plus cheap COUNTs. Persists nothing yet -- see the status note above."""
+def ask(question: str, save: str | Path | None = None) -> Plan:
+    """One LLM hop plus cheap COUNTs. Pass save= to also persist the plan as JSON."""
     research_question = ResearchQuestion(question)
     translation = runtime.translator().translate(research_question)
     if translation.failure is not None:
-        return Plan(research_question, translation, CohortPreview(), error=translation.failure)
-    try:
-        preview = _preview(translation)
-    except InvalidCohortQuery as error:
-        return Plan(research_question, translation, CohortPreview(), error=str(error))
-    return Plan(research_question, translation, preview)
+        plan = Plan(research_question, translation, CohortPreview(), error=translation.failure)
+    else:
+        try:
+            plan = Plan(research_question, translation, _preview(translation))
+        except InvalidCohortQuery as error:
+            plan = Plan(research_question, translation, CohortPreview(), error=str(error))
+    if save is not None:
+        plan.save(save)
+    return plan
 
 
 def _preview(translation: Translation) -> CohortPreview:
