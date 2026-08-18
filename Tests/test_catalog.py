@@ -46,5 +46,31 @@ def test_array_columns_are_flagged_so_equality_is_not_used(catalog):
     assert "list_contains" in line
 
 
+def test_high_cardinality_columns_steer_the_model_away_from_equality(catalog):
+    """collection_date_sam has 9 distinct values against the fixture's max_distinct=5, so
+    it ships as a top-N sample rather than a complete vocabulary. If this branch silently
+    regressed to rendering it like a complete list, the model would trust `=` against a
+    literal that happens to be missing from the sample -- and get zero rows, believing
+    the vocabulary was exhaustive."""
+    rendered = catalog.all()
+
+    block = _block_for(rendered, "collection_date_sam")
+    assert "ILIKE" in block
+    assert "values:" not in block
+
+
 def _line_for(rendered: str, column: str) -> str:
     return next(line for line in rendered.splitlines() if line.strip().startswith(column))
+
+
+def _block_for(rendered: str, column: str) -> str:
+    """A column's line plus any indented continuation lines under it (the values
+    suffix), since that suffix renders on its own line rather than the column's."""
+    lines = rendered.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.strip().startswith(column))
+    block = [lines[start]]
+    for line in lines[start + 1:]:
+        if not line.startswith("      "):
+            break
+        block.append(line)
+    return "\n".join(block)

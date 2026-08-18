@@ -13,7 +13,7 @@ import json
 import pandas as pd
 
 from askslm.ports import Database
-from askslm.sources import Source, SourceKind
+from askslm.sources import Source, metadata_sources
 
 _ARRAY_HINT = "  -- ARRAY: use list_contains(column, 'value'), never ="
 
@@ -32,7 +32,7 @@ class SchemaCatalog:
     def all(self) -> str:
         """Every METADATA source, in one block. The profile tables are deliberately
         absent -- the LLM never writes their SQL (HLD E.2)."""
-        return "\n\n".join(self._render(source) for source in _metadata_sources())
+        return "\n\n".join(self._render(source) for source in metadata_sources())
 
     def _render(self, source: Source) -> str:
         table = source.spec().table
@@ -42,10 +42,6 @@ class SchemaCatalog:
         lines = [f"TABLE {table}   (source: {source.name})"]
         lines.extend(_column_line(row) for _, row in rows.iterrows())
         return "\n".join(lines)
-
-
-def _metadata_sources() -> list[Source]:
-    return [source for source in Source if source.kind() is SourceKind.METADATA]
 
 
 def _column_line(row: pd.Series) -> str:
