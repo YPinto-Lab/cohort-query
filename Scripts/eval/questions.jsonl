@@ -1,0 +1,19 @@
+// The eval set. Gold SQL is authored BY THE DOMAIN OWNER -- only they know that
+// "adults with IBD" means these cells of subject_disease_status and this age cutoff.
+// Draft against the live schema, correct by hand; the corrected version is truth.
+// Target 15-20 questions drawn from REAL research questions, not invented ones.
+// At least one MUST be a non-metagenome question (askslm is a search tool, not a
+// metagenomics-only tool) so the no-scoping decision is enforced by a test.
+//
+// WARNING -- the three rows below are UNVERIFIED FORMAT EXAMPLES, not a validated
+// eval set. Their gold SQL was written against the real mirror's schema without the
+// ability to check actual column values (cell contents of subject_disease_status,
+// the real age-cutoff convention, etc.), because that mirror lives only on the lab
+// server. They exist to show the file's shape and prove the scorer works -- do not
+// treat their scores as a measurement of translator quality. The real 15-20
+// questions, with gold SQL verified against live data, are authored by the domain
+// owner (the researcher), because only they know which cells and cutoffs the
+// English maps to.
+{"question": "stool samples from adults with IBD", "gold": {"METALOG_METADATA": "SELECT biosample, sample_alias FROM metalog_metadata WHERE subject_disease_status = 'IBD' AND age_years >= 18"}}
+{"question": "healthy controls from Israel", "gold": {"METALOG_METADATA": "SELECT biosample, sample_alias FROM metalog_metadata WHERE subject_disease_status = 'healthy' AND geographic_location = 'Israel'"}}
+{"question": "human tumour RNA-seq runs, for viral reads", "gold": {"SRA_METADATA": "SELECT biosample FROM sra_metadata WHERE organism = 'Homo sapiens' AND librarysource = 'TRANSCRIPTOMIC'"}}
