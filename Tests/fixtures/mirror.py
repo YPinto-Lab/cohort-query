@@ -53,6 +53,16 @@ def build_fixture_mirror(path: Path) -> Path:
     _create_metaphlan(con)
     _create_motus(con)
     con.close()
+
+    # The real mirror gets its catalog from a separate pass over a finished file, so the
+    # fixture does the same -- same code path, same table shape. max_distinct is small
+    # here on purpose: the fixture must exercise BOTH the complete-vocabulary and the
+    # truncated branch, and its columns have only a handful of values each.
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent / "Scripts" / "build_mirror"))
+    from build_schema_catalog import SchemaCatalogBuilder
+
+    SchemaCatalogBuilder(path, max_distinct=5).build()
+
     return path
 
 

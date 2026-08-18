@@ -136,3 +136,12 @@ def test_metadata_has_low_cardinality_columns_for_the_value_vocabularies(con):
 
     assert diseases == 3
     assert countries == 4
+
+
+def test_fixture_carries_a_schema_catalog_so_ask_can_prompt(con):
+    """ask() reads schema_catalog on every call. A fixture without one is not a mirror."""
+    rows = con.execute(
+        "SELECT count(*) FROM schema_catalog WHERE table_name = 'metalog_metadata'"
+    ).fetchone()[0]
+
+    assert rows > 0
