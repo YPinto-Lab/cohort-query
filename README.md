@@ -11,7 +11,18 @@ $ askslm
 ? What now? (↑/↓)
   › Run it
     Refine the question
-    Choose profile sources
+    Show the SQL and overlap
+    Save plan and quit
+    Quit
+```
+
+First run asks for the database path and a Gemini API key once, and remembers them in
+`~/.askslm/config.toml` (or set `ASKSLM_DB`/`ASKSLM_LLM_KEY` — the environment always wins, so
+the lab server and CI never see a prompt). "Save plan and quit" writes the question, its
+translation, and the cohort preview as JSON; replay it without touching the LLM:
+
+```bash
+askslm run plans/ibd-western.json
 ```
 
 Scope ends at the `.biom` — open it in whatever you already use.
@@ -20,17 +31,26 @@ Scope ends at the `.biom` — open it in whatever you already use.
 
 **Walking skeleton.** The question -> `.biom` path is real end to end: a real LLM (Gemini)
 translates the question into SQL per metadata source, the cohort is previewed against the real
-mirror, and `run()` materializes a real biom. Still missing: the terminal app and plan
-persistence — see the usage snippet below for how to drive it in the meantime.
+mirror, `run()` materializes a real biom, and the `$ askslm` terminal app and plan persistence
+(above) both exist and are hand-verified against the fixture mirror. What's still rough: the
+terminal app is not unit-tested (it's thin glue over `ask()`/`run()`, verified by driving it, not
+by a test suite), and Translation accuracy against the eval set has not yet been measured — see
+below.
+
+The two verbs underneath the terminal app are also usable directly from Python:
 
 ```python
 import os
 import askslm
 
 askslm.config(db="askslm_mirror.duckdb", llm="gemini", llm_key=os.environ["GEMINI_KEY"])
-plan = askslm.ask("fecal metagenomes from adults with IBD, Western countries")
+plan = askslm.ask("fecal metagenomes from adults with IBD, Western countries", save="plans/ibd.json")
 print(plan)
 table, report = plan.run(profile_sources=askslm.Source.METALOG_MOTUS3, out="cohort.biom")
+
+# later, no LLM hop:
+replayed = askslm.load_plan("plans/ibd.json")
+table, report = replayed.run(profile_sources=askslm.Source.METALOG_MOTUS3, out="cohort.biom")
 ```
 
 `llm="canned"` plus an injected backend is what the test suite uses instead of live Gemini calls.

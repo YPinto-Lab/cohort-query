@@ -11,7 +11,11 @@ sources are named.
 
 STATUS: the question -> .biom path is real end to end, with a real LLM. Configure it
 with config(db=..., llm="gemini", llm_key=...); llm="canned" plus an injected backend
-is what the tests use. Still missing: the terminal app and plan persistence.
+is what the tests use. The terminal app (`$ askslm`, src/askslm/cli/session.py) and
+plan persistence (Plan.save / load_plan) now exist too, hand-verified by scripting
+questionary end to end against the fixture mirror. Still rough: session.py is glue,
+not unit-tested -- it is verified by running it, not by a test suite; Translation
+accuracy against the eval set in Scripts/eval/ has not yet been measured.
 
 Design: Docs/superpowers/specs/2026-06-17-askslm-architecture-hld-lld.html
 """

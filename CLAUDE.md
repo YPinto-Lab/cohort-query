@@ -27,6 +27,11 @@ src/askslm/         the package (currently: the material that survived the pivot
   catalog.py        schema_catalog -> prompt text (columns + REAL value vocabularies)
   prompt.py         the system instruction, isolated so eval can attribute prompt diffs
   translation.py    Translator: question + schemas -> Translation
+  plan.py           Plan (the reviewable, re-runnable artifact); save/load_plan JSON round-trip
+  settings_file.py  where config() gets its args: env -> ~/.askslm/config.toml -> first-run prompt
+  cli/              the terminal app; questionary/rich live here and nowhere else
+    render.py       pure formatting (preview line, narrow warning, overlap rows) — unit tested
+    session.py      the loop: `$ askslm` and `askslm run plan.json`; glue, verified by running it
   taxonomy/         lineage_table — ete3 tax_id -> lineage, needed for STAT features
 Scripts/build_mirror/   the separate ETL that builds the DuckDB mirror
 Scripts/eval/       the translation eval set + execution-accuracy scorer (H.3)
