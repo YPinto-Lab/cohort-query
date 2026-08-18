@@ -13,10 +13,12 @@ dependencies = [
     "biom-format>=2.1",
     "ete3>=3.1",
     "google-genai>=2.6",
+    "questionary>=2.0",
+    "rich>=13.0",
 ]
 
-# No [project.scripts] yet — the `askslm` entry point comes back with the terminal app
-# (askslm.cli.session:main). Pointing it at a deleted module would break `pip install -e .`.
+[project.scripts]
+askslm = "askslm.cli.session:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
