@@ -95,6 +95,26 @@ def test_stat_columns_are_runs_and_carry_their_biosample(configured):
         assert table.metadata(column, axis="sample")["biosample"] == "SAMN00001"
 
 
+def test_stat_lineage_comes_from_ete3_not_the_stale_table_columns(configured):
+    """sra_taxonomy's own name/rank are a lagging snapshot of NCBI's taxonomy, so reading
+    them ships outdated names into the biom. The fixture stores tax_id 1239 as its old
+    name "Firmicutes"; NCBI renamed it "Bacillota" in 2021. The biom must say Bacillota.
+
+    Ancestry is the second half: the table has no parents at all, so a STAT feature can
+    only be projected to a rank if ete3 supplies the lineage."""
+    plan = askslm.ask("gut metagenomes")
+
+    table, _ = plan.run(profile_sources=askslm.Source.SRA_TAXONOMY)
+
+    phylum = table.metadata("1239", axis="observation")
+    assert phylum["name"] == "Bacillota"
+
+    coli = table.metadata("562", axis="observation")
+    assert coli["name"] == "Escherichia coli"
+    assert 561 in coli["lineage"]                 # its genus, which the table never gave us
+    assert coli["ranks"]["genus"] == 561
+
+
 def test_metaphlan_features_carry_a_parsed_rank(configured):
     """Real clade_name is one rank per row with no ancestry (k__Bacteria, t__SGB1871),
     so rank has to be parsed out of the prefix. Without it a MetaPhlAn biom mixes every

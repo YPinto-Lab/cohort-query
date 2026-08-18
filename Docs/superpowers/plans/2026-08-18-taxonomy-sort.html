@@ -109,7 +109,7 @@ one-time offline cost is obviously worth paying — was correct.
   <tr><td>Translation + <code>SchemaCatalog</code> + the eval set</td><td>No — metadata tables only</td></tr>
   <tr><td>Plan persistence, the terminal app</td><td>No</td></tr>
   <tr><td>STAT lineage via ete3</td><td>No — but the dependency runs the <em>other</em> way: the
-      sort's cutover needs <strong>it</strong> (§3.1)</td></tr>
+      sort's cutover needed <strong>it</strong> (§3.1, now done)</td></tr>
   <tr><td>Tests</td><td>No — fixture mirror</td></tr>
   <tr><td><code>run()</code> materialising a real biom</td><td>Works today, just slow</td></tr>
 </table>
@@ -156,24 +156,28 @@ that is actually current.</p>
 
 <h3 id="ete3-prereq">3.1 Prerequisite: STAT lineage must come from ete3 first</h3>
 
-<div class="danger">
-<strong>This is a live correctness issue, independent of the sort.</strong>
-<code>profiles.py:175</code> currently does
-<code>pd.DataFrame({"name": rows["name"], "rank": rows["rank"]})</code> — it copies STAT's
-<em>stale</em> names straight into the biom's feature metadata. So today a biom can ship
-<em>Firmicutes</em> for a taxon NCBI now calls <em>Bacillota</em>. That contradicts the user's
-stated practice of always refreshing through ete3, and it is wrong whether or not we ever sort
-anything.
+<div class="fix">
+<strong>DONE 2026-08-18.</strong> This was a live correctness issue, independent of the sort:
+<code>_lineage_of</code> copied STAT's <em>stale</em> <code>name</code>/<code>rank</code> straight
+into biom feature metadata, so a biom could ship <em>Firmicutes</em> for a taxon NCBI now calls
+<em>Bacillota</em>. STAT now routes through <code>askslm.taxonomy.lineage_table</code> (ete3),
+keyed on <code>tax_id</code>.
 </div>
 
-<p>The fix already exists as a planned component: <code>askslm.taxonomy.lineage_table</code>
-(ete3, ~300 MB database), currently an empty module. STAT's branch of <code>_lineage_of</code>
-must route through it, keyed on <code>tax_id</code>.</p>
+<p>The biom gained real ancestry as a side effect — the table has no parent links at all, so
+before this a STAT feature could not be projected to a rank. Features now carry
+<code>lineage</code> (the full ancestor chain) and <code>ranks</code> (rank → ancestor taxid),
+which is what <code>StatProfile.relative_abundance(rank)</code> needs.</p>
 
-<p><strong>Ordering:</strong> ship the ete3 lineage change <em>before</em> the cutover in §8.
-Until it lands, dropping <code>name</code>/<code>rank</code> from the table would break
-<code>_lineage_of</code>. Once it lands, those columns are dead weight — which is exactly why
-this rewrite can discard them without losing anything.</p>
+<p><strong>Guarded by a test that fails on the old behaviour.</strong>
+<code>Tests/fixtures/mirror.py</code> now stores tax_id 1239 under its outdated name
+<em>Firmicutes</em> on purpose — mirroring the real table — and
+<code>test_stat_lineage_comes_from_ete3_not_the_stale_table_columns</code> asserts the biom says
+<em>Bacillota</em>. Reverting to the column read fails with
+<code>assert 'Firmicutes' == 'Bacillota'</code>.</p>
+
+<p><strong>Consequence for this plan:</strong> the <code>name</code>/<code>rank</code> columns now
+have no reader, so §8 can drop them without breaking anything.</p>
 
 <h3 id="total-count">3.2 Open question: keep <code>total_count</code>?</h3>
 
@@ -383,8 +387,8 @@ tight bounds. Bonus: each job is individually restartable, which a 40-hour monol
 </table>
 
 <hr>
-<p class="meta">Prerequisites: ≥400 GB free on <code>/private/pinto-lab</code>, and the ete3
-lineage change (§3.1) shipped before cutover. Nothing here has been run.</p>
+<p class="meta">Remaining prerequisite: ≥400 GB free on <code>/private/pinto-lab</code>.
+The ete3 lineage change (§3.1) has shipped. The rewrite itself has not been run.</p>
 
 </div>
 </body>

@@ -149,10 +149,17 @@ def _runs_of(biosample: str) -> list[str]:
     return [_primary_run(biosample)]
 
 
-# tax_id, rank, name -- a few nodes at different ranks, so self_count is a real partition
+# tax_id, rank, name -- a few nodes at different ranks, so self_count is a real partition.
+#
+# The names here are deliberately STALE, because the real table's are: STAT ships a
+# snapshot of NCBI's taxonomy and NCBI renames taxa between releases. 1239 was
+# "Firmicutes" until the 2021 rename to "Bacillota", and 2 was "superkingdom" before
+# NCBI moved to "domain". askslm must ignore these columns entirely and re-derive every
+# label from tax_id via ete3, so the fixture keeps the outdated spellings on purpose --
+# a test that asserts the CURRENT name proves the stale column is not being read.
 STAT_TAXA = [
     (2, "superkingdom", "Bacteria"),
-    (1239, "phylum", "Bacillota"),
+    (1239, "phylum", "Firmicutes"),
     (561, "genus", "Escherichia"),
     (562, "species", "Escherichia coli"),
     (1680, "species", "Bifidobacterium adolescentis"),

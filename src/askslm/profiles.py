@@ -14,6 +14,7 @@ import pandas as pd
 from askslm.cohort import Accession, key_column
 from askslm.ports import Database
 from askslm.sources import ProfilerFamily, Source
+from askslm.taxonomy import lineage_table
 
 
 @dataclass(frozen=True)
@@ -164,19 +165,31 @@ _PREFIXED_CLADE = re.compile(r"^([kpcofgst])__(.*)$")
 def _lineage_of(source: Source, rows: pd.DataFrame) -> pd.DataFrame:
     """Feature metadata: name + rank per feature. Never merged with sample metadata.
 
-    ponytail: no source here gives ANCESTRY, so neither does the biom. STAT has tax_id
-    without parents; MetaPhlAn/mOTUs have one rank per row without parents. Ancestry
-    needs either the ete3 NCBI database (askslm.taxonomy.lineage_table, ~300 MB) for STAT
-    or the metaphlan_clades crosswalk for the others. Both are single call sites here.
+    STAT gets full ancestry from ete3 (see _ncbi_lineage). MetaPhlAn/mOTUs still get one
+    rank per row without parents -- their `clade_name` carries no ancestry, and the
+    metaphlan_clades crosswalk that would supply it is roadmap, not built.
     """
     spec = source.spec()
-    features = rows[spec.feature_column].astype(str)
     if spec.lineage_column is None:
-        lineage = pd.DataFrame({"name": rows["name"], "rank": rows["rank"]})
-    else:
-        lineage = _parsed_clades(rows[spec.lineage_column].astype(str))
-    lineage.index = features
+        return _ncbi_lineage(rows[spec.feature_column])
+    lineage = _parsed_clades(rows[spec.lineage_column].astype(str))
+    lineage.index = rows[spec.feature_column].astype(str)
     return lineage[~lineage.index.duplicated()]
+
+
+def _ncbi_lineage(tax_ids: pd.Series) -> pd.DataFrame:
+    """STAT features ARE NCBI tax_ids, so every label is re-derived from ete3's CURRENT
+    taxonomy -- name, rank, and the full ancestry the table cannot give us.
+
+    Deliberately NOT sra_taxonomy's own `name`/`rank` columns. STAT's taxonomy is a
+    snapshot that lags NCBI, which renames and restructures between releases
+    (Firmicutes -> Bacillota, Bacteroides -> Phocaeicola, and the nested-set bounds shift
+    with it). Reading those columns shipped outdated names into the biom. The tax_id is
+    the stable key; nothing else in that table is trustworthy.
+    """
+    lineage = lineage_table(tax_ids.unique())
+    lineage.index = lineage.index.astype(str)
+    return lineage
 
 
 def _parsed_clades(clades: pd.Series) -> pd.DataFrame:
