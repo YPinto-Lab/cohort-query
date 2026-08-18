@@ -110,7 +110,7 @@ def _translation_of(payload: dict) -> Translation:
     would have MetadataReconciler read a multi-billion-row taxonomy table as metadata --
     silently, and without the check ever failing loudly again."""
     queries = tuple(_source_query_of(entry) for entry in payload.get("queries", []))
-    return Translation(interpretation=payload.get("interpretation", ""),
+    return Translation(interpretation=payload.get("interpretation") or "",
                        queries=queries,
                        failure=payload.get("failure"))
 

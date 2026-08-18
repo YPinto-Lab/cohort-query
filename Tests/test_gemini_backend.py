@@ -68,6 +68,19 @@ def test_a_refusal_becomes_a_failure_sentence_with_no_queries():
     assert translation.failure == "no metadata field records how a subject felt"
 
 
+def test_an_explicit_null_interpretation_becomes_an_empty_string():
+    """Observed live: on a refusal Gemini returns `"interpretation": null`, and
+    dict.get(key, "") returns None for a key that IS present with a null value -- so
+    Translation.interpretation, typed str, silently held None."""
+    payload = json.dumps({"interpretation": None, "queries": [],
+                          "failure": "no metadata field records sample type"})
+
+    translation = GeminiBackend(StubClient(payload), model="test-model").translate(_prompt())
+
+    assert translation.interpretation == ""
+    assert translation.failure == "no metadata field records sample type"
+
+
 def test_json_wrapped_in_a_markdown_fence_is_still_parsed():
     """Models fence their JSON even when told not to. Stripping it is one line here and
     an unexplained crash otherwise."""

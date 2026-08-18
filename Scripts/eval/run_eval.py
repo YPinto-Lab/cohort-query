@@ -63,7 +63,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=Path, required=True, help="the real mirror")
     parser.add_argument("--key", required=True, help="Gemini API key")
-    parser.add_argument("--model", default="gemini-2.5-pro")
+    parser.add_argument("--model", default="gemini-2.5-flash")
     args = parser.parse_args()
 
     import askslm

@@ -27,7 +27,7 @@ class Settings:
     db_path: Path
     llm: str = "canned"
     llm_key: str = ""
-    llm_model: str = "gemini-2.5-pro"
+    llm_model: str = "gemini-2.5-flash"
 
     def __post_init__(self):
         if not Path(self.db_path).exists():
