@@ -34,6 +34,7 @@ from pathlib import Path
 import duckdb
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "Scripts" / "build_mirror"))
+from build_attribute_index import AttributeIndexBuilder
 from build_schema_catalog import SchemaCatalogBuilder
 
 SHARED = [f"SAMN{n:05d}" for n in range(1, 9)]            # in both databases
@@ -62,6 +63,7 @@ def build_fixture_mirror(path: Path) -> Path:
     # here on purpose: the fixture must exercise BOTH the complete-vocabulary and the
     # truncated branch, and its columns have only a handful of values each.
     SchemaCatalogBuilder(path, max_distinct=5).build()
+    AttributeIndexBuilder(path).build()
 
     return path
 

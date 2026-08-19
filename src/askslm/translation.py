@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from askslm.attributes import render as render_attributes
 from askslm.ports import LlmBackend
 from askslm.sources import Source
 
@@ -46,10 +47,17 @@ class Translator:
     too, but that is a separate condition raised earlier, on the ask() side.
     """
 
-    def __init__(self, backend: LlmBackend, catalog):
+    def __init__(self, backend: LlmBackend, catalog, attributes):
         self._backend = backend
         self._catalog = catalog
+        self._attributes = attributes
 
     def translate(self, question: ResearchQuestion) -> Translation:
         return self._backend.translate(
-            TranslationPrompt(question=question, schemas=self._catalog.all()))
+            TranslationPrompt(question=question, schemas=self._schemas(question)))
+
+    def _schemas(self, question: ResearchQuestion) -> str:
+        attribute_block = render_attributes(self._attributes.matching(question.text))
+        if not attribute_block:
+            return self._catalog.all()
+        return f"{self._catalog.all()}\n\n{attribute_block}"
