@@ -64,6 +64,10 @@ class CannedLlmBackend:
         words of the question, which is what the tests exercise."""
         return []
 
+    def repair(self, sql: str, error: str, columns: str) -> str:
+        """No model, nothing to repair with."""
+        return sql
+
     def translate(self, prompt: TranslationPrompt) -> Translation:
         return self._translation
 
@@ -75,6 +79,13 @@ class GeminiBackend:
     exercise every branch of the parsing with no API key and no network.
     """
 
+    # Free-tier quota is counted PER MODEL (GenerateRequestsPerDayPerProjectPerModel),
+    # and gemini-2.5-flash allows 20 requests a DAY. Translation is the hard task and
+    # keeps that budget to itself; expansion and repair are trivial and run on a
+    # different model, which is both cheaper and a SEPARATE quota pool -- so one
+    # question costs one request from each, not two from the same one.
+    HELPER_MODEL = "gemini-2.5-flash-lite"
+
     def __init__(self, client, model: str):
         self._client = client
         self._model = model
@@ -84,7 +95,7 @@ class GeminiBackend:
         not take down ask()."""
         try:
             response = self._client.models.generate_content(
-                model=self._model, contents=question,
+                model=self.HELPER_MODEL, contents=question,
                 config={"system_instruction": EXPANSION_INSTRUCTION,
                         "response_mime_type": "application/json",
                         "automatic_function_calling": {"disable": True}})
@@ -92,6 +103,25 @@ class GeminiBackend:
         except Exception:
             return []
         return [str(term).lower() for term in terms][:MAX_TERMS]
+
+    def repair(self, sql: str, error: str, columns: str) -> str:
+        """One targeted retry. Never raises -- a failed repair leaves the original SQL
+        and the original error, which is what the user would have seen anyway."""
+        instruction = (
+            "You are given SQL that a DuckDB database REJECTED, the exact error, and "
+            "the real columns of the table. Return corrected SQL only -- no prose, no "
+            "markdown fence. Use ONLY the listed columns. Keep the query's intent and "
+            "its SELECT list unchanged. If a column the query wants does not exist, "
+            "drop that condition rather than inventing a replacement.")
+        try:
+            response = self._client.models.generate_content(
+                model=self.HELPER_MODEL,
+                contents=f"ERROR\n{error}\n\nCOLUMNS\n{columns}\n\nSQL\n{sql}",
+                config={"system_instruction": instruction,
+                        "automatic_function_calling": {"disable": True}})
+            return _unfenced(response.text) or sql
+        except Exception:
+            return sql
 
     def translate(self, prompt: TranslationPrompt) -> Translation:
         response = self._client.models.generate_content(

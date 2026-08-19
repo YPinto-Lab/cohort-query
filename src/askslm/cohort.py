@@ -32,6 +32,7 @@ class InvalidCohortQuery(RuntimeError):
     def __init__(self, source: Source, message: str):
         super().__init__(f"{source.name}: {message}")
         self.source = source
+        self.message = message      # the raw database text, for the repair prompt
 
 
 @dataclass(frozen=True)

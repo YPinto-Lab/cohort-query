@@ -60,10 +60,50 @@ def ask(question: str, save: str | Path | None = None) -> Plan:
         try:
             plan = Plan(research_question, translation, _preview(translation))
         except InvalidCohortQuery as error:
-            plan = Plan(research_question, translation, CohortPreview(), error=str(error))
+            plan = _repaired(research_question, translation, error)
     if save is not None:
         plan.save(save)
     return plan
+
+
+def _repaired(question: ResearchQuestion, translation: Translation,
+              error: InvalidCohortQuery) -> Plan:
+    """One retry, using the database's own error text.
+
+    Four rounds of prompt tuning each fixed one class of bad SQL and revealed the next.
+    Handing the model the rejection instead is the standard text-to-SQL answer and it
+    generalises: DuckDB names the offending column and even suggests candidates, which
+    is better information than any rule we could write in advance.
+
+    A second failure is reported as-is. There is no third attempt -- if the model cannot
+    fix its own SQL with the error in front of it, looping will not help.
+    """
+    fixed = runtime.backend().repair(
+        sql=_sql_for(translation, error.source),
+        error=error.message,
+        columns=_columns_of(error.source))
+    retried = _with_sql(translation, error.source, fixed)
+    try:
+        return Plan(question, retried, _preview(retried))
+    except InvalidCohortQuery as second:
+        return Plan(question, retried, CohortPreview(), error=str(second))
+
+
+def _sql_for(translation: Translation, source: Source) -> str:
+    return next(query.sql for query in translation.queries if query.source is source)
+
+
+def _with_sql(translation: Translation, source: Source, sql: str) -> Translation:
+    queries = tuple(SourceQuery(query.source, sql) if query.source is source else query
+                    for query in translation.queries)
+    return Translation(interpretation=translation.interpretation, queries=queries,
+                       failure=translation.failure)
+
+
+def _columns_of(source: Source) -> str:
+    frame = runtime.database().query(f"DESCRIBE {source.spec().table}")
+    return ", ".join(f"{name} {kind}" for name, kind
+                     in zip(frame["column_name"], frame["column_type"]))
 
 
 def _preview(translation: Translation) -> CohortPreview:

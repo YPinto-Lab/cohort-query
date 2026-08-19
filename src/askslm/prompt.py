@@ -37,8 +37,10 @@ WRITING PREDICATES
   more. Do not write IN() against them. Prefer a pattern predicate instead:
   ILIKE '%pattern%' for text, or a range/comparison predicate for a numeric or
   date/time column.
-- For a column whose type ends in [], use list_contains(column, 'value').
-  Equality against an array column matches nothing.
+- For a column whose type ends in [], NEITHER `=` NOR `ILIKE` works -- both raise
+  a Binder Error and kill the whole query. Exact match:
+  list_contains(column, 'value'). Pattern match:
+  array_to_string(column, ' ') ILIKE '%pattern%'.
 - Emit SELECT statements only. The database is read-only.
 - Some SRA fields are not columns. They live in the JSON column `jattr` and are
   listed under "SRA PER-SAMPLE ATTRIBUTES" when the question names one. Read them
