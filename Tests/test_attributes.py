@@ -17,10 +17,9 @@ class _FakeDatabase:
         self._rows = rows          # list of (key, occurrences, samples_json)
 
     def query(self, sql, params=None):
-        patterns, limit = params
-        terms = [pattern.strip("%") for pattern in patterns]
-        matched = [row for row in self._rows
-                  if any(term in row[0].lower() for term in terms)]
+        pattern, limit = params          # one term per call: the budget is per-term
+        term = pattern.strip("%")
+        matched = [row for row in self._rows if term in row[0].lower()]
         matched.sort(key=_occurrences, reverse=True)
         return pd.DataFrame(matched[:limit],
                             columns=["key", "occurrences", "samples_json"])
@@ -81,3 +80,15 @@ def test_a_key_with_no_sampled_value_renders_without_crashing():
 
     assert "lonely_key" in block
     assert "e.g." not in block
+
+
+def test_a_broad_term_cannot_crowd_out_a_precise_one():
+    """The bug this budget exists to prevent. "fecal" matches many low-value keys; with
+    one global ranking they filled every slot and evicted fecalcalprotectin_run, which is
+    the key the researcher meant. Each term gets its own slots instead."""
+    noise = [(f"fecal_noise_{n}_sam", 5000 + n, None) for n in range(20)]
+    index = AttributeIndex(_FakeDatabase(noise + [("fecalcalprotectin_run", 134, None)]))
+
+    found = index.matching("fecal metagenomic with calprotectin")
+
+    assert "fecalcalprotectin_run" in found
