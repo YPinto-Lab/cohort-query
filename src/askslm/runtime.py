@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from askslm.adapters import DuckDbConnection
+from askslm.attributes import AttributeIndex
 from askslm.build import BiomFactory, CohortBuilder
 from askslm.catalog import SchemaCatalog
 from askslm.cohort import CohortDiscovery
@@ -77,7 +78,7 @@ def _named_backend(settings: Settings) -> LlmBackend:
 
 
 def translator() -> Translator:
-    return Translator(backend(), SchemaCatalog(database()))
+    return Translator(backend(), SchemaCatalog(database()), AttributeIndex(database()))
 
 
 def cohort_builder() -> CohortBuilder:

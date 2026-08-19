@@ -35,6 +35,12 @@ WRITING PREDICATES
 - For a column whose type ends in [], use list_contains(column, 'value').
   Equality against an array column matches nothing.
 - Emit SELECT statements only. The database is read-only.
+- Some SRA fields are not columns. They live in the JSON column `jattr` and are
+  listed under "SRA PER-SAMPLE ATTRIBUTES" when the question names one. Read them
+  with json_extract_string(jattr, '$.<key>'). Their values are strings, so compare
+  numbers with TRY_CAST(json_extract_string(jattr, '$.<key>') AS DOUBLE).
+  If a question names a measurement and no such attribute is listed, it is genuinely
+  absent -- say so in `failure` rather than inventing a column.
 
 WHEN A SOURCE CANNOT EXPRESS PART OF THE QUESTION
 The caller unions every source's results, so a query against a source with nothing
