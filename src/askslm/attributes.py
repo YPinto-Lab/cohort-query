@@ -13,7 +13,8 @@ import pandas as pd
 from askslm.ports import Database
 
 MIN_TERM = 5           # "with", "and", "the" match half the index and teach nothing
-MAX_KEYS = 25           # a question about one phenotype should not import a hundred
+PER_TERM = 12          # each term gets its OWN slots -- see matching()
+MAX_KEYS = 60          # ~1,100 tokens against a ~40,000-token prompt
 
 
 class AttributeIndex:
@@ -23,18 +24,33 @@ class AttributeIndex:
         self._database = database
 
     def matching(self, question: str) -> dict[str, tuple[int, str | None]]:
-        """key -> (occurrences, samples_json), for keys a term of the question names."""
-        terms = _terms(question)
-        if not terms:
-            return {}
-        patterns = [f"%{term}%" for term in terms]
+        """key -> (occurrences, samples_json), for keys a term of the question names.
+
+        The budget is per TERM, not global, and that is the whole point. Ranking every
+        match together by frequency lets a broad term evict a precise one: "IBD fecal
+        metagenomic with calprotectin" filled all 25 slots with fecal_color2_sam,
+        fecal_date_sam, fecal_donor_id_sam ... and dropped fecalcalprotectin_run, the key
+        the researcher actually meant. Per-term slots mean a rare exact match cannot be
+        crowded out by a common vague one.
+        """
+        found: dict[str, tuple[int, str | None]] = {}
+        for term in _terms(question):
+            for key, row in self._for_term(term).items():
+                found.setdefault(key, row)
+        return dict(sorted(found.items(), key=_by_occurrences)[:MAX_KEYS])
+
+    def _for_term(self, term: str) -> dict[str, tuple[int, str | None]]:
         rows = self._database.query(
             "SELECT key, occurrences, samples_json FROM attribute_keys "
-            "WHERE list_bool_or(list_transform(?::VARCHAR[], "
-            "                   x -> lower(key) LIKE x)) "
-            "ORDER BY occurrences DESC LIMIT ?", [patterns, MAX_KEYS])
+            "WHERE lower(key) LIKE ? ORDER BY occurrences DESC LIMIT ?",
+            [f"%{term}%", PER_TERM])
         return {row.key: (row.occurrences, row.samples_json)
                 for row in rows.itertuples(index=False)}
+
+
+def _by_occurrences(item: tuple[str, tuple[int, str | None]]) -> int:
+    """Named, because the house style forbids lambda."""
+    return -item[1][0]
 
 
 def _terms(question: str) -> list[str]:
