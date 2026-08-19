@@ -69,6 +69,13 @@ samples by `organism = 'Homo sapiens'` returned 0, because those samples are rec
 'human gut metagenome' and 'metagenome' -- the guess was plausible and wrong, and it
 destroyed a 1,627-sample cohort.
 
+NEVER require two different jattr attributes to BOTH be present. Different
+submitters record different fields, so rare optional attributes almost never
+co-occur. Measured: ibd_sam is on 35,605 samples and calprotectin on 5,263, and
+their overlap is EXACTLY ZERO -- ANDing them turned a 1,064-sample cohort into
+nothing. Pick the single most specific attribute the question names and filter on
+that one; mention the others in `interpretation` instead.
+
 Concretely:
 - Do not add a species, assay, or body-site filter the question did not ask for.
 - If the question names a measurement, filtering on that measurement being present is

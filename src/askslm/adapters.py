@@ -7,6 +7,8 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
+from askslm.expansion import MAX_TERMS
+from askslm.expansion import SYSTEM_INSTRUCTION as EXPANSION_INSTRUCTION
 from askslm.prompt import SYSTEM_INSTRUCTION
 from askslm.sources import Source, SourceKind
 from askslm.translation import SourceQuery, Translation, TranslationPrompt
@@ -57,6 +59,11 @@ class CannedLlmBackend:
     def __init__(self, translation: Translation):
         self._translation = translation
 
+    def expand(self, question: str) -> list[str]:
+        """No model behind this backend, so no synonyms -- retrieval falls back to the
+        words of the question, which is what the tests exercise."""
+        return []
+
     def translate(self, prompt: TranslationPrompt) -> Translation:
         return self._translation
 
@@ -71,6 +78,20 @@ class GeminiBackend:
     def __init__(self, client, model: str):
         self._client = client
         self._model = model
+
+    def expand(self, question: str) -> list[str]:
+        """Never raises: a failed expansion must degrade to plain lexical matching,
+        not take down ask()."""
+        try:
+            response = self._client.models.generate_content(
+                model=self._model, contents=question,
+                config={"system_instruction": EXPANSION_INSTRUCTION,
+                        "response_mime_type": "application/json",
+                        "automatic_function_calling": {"disable": True}})
+            terms = json.loads(_unfenced(response.text)).get("terms", [])
+        except Exception:
+            return []
+        return [str(term).lower() for term in terms][:MAX_TERMS]
 
     def translate(self, prompt: TranslationPrompt) -> Translation:
         response = self._client.models.generate_content(

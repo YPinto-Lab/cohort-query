@@ -5,7 +5,7 @@ import duckdb
 import pandas as pd
 import pytest
 
-from askslm.attributes import AttributeIndex, render
+from askslm.attributes import GENERIC_KEYS, AttributeIndex, render
 from fixtures.mirror import build_fixture_mirror
 
 
@@ -17,11 +17,13 @@ class _FakeDatabase:
         self._rows = rows          # list of (key, occurrences, samples_json)
 
     def query(self, sql, params=None):
-        pattern, limit = params          # one term per call: the budget is per-term
-        term = pattern.strip("%")
+        """Two shapes: the generic-term count, and the per-term key lookup."""
+        term = params[0].strip("%")
         matched = [row for row in self._rows if term in row[0].lower()]
+        if "count(*)" in sql:
+            return pd.DataFrame({"n": [len(matched)]})
         matched.sort(key=_occurrences, reverse=True)
-        return pd.DataFrame(matched[:limit],
+        return pd.DataFrame(matched[:params[1]],
                             columns=["key", "occurrences", "samples_json"])
 
 
@@ -92,3 +94,31 @@ def test_a_broad_term_cannot_crowd_out_a_precise_one():
     found = index.matching("fecal metagenomic with calprotectin")
 
     assert "fecalcalprotectin_run" in found
+
+
+class _StubExpander:
+    def __init__(self, terms):
+        self._terms = terms
+
+    def expand(self, question):
+        return self._terms
+
+
+def test_model_synonyms_reach_keys_the_question_wording_cannot():
+    """The point of expansion. A researcher writes "calprotectin"; the submitting lab
+    wrote host_calpro_sam. Measured on the real mirror: `calpro` reaches 25 keys across
+    8,539 runs that the literal word never touches."""
+    index = AttributeIndex(_FakeDatabase([("host_calpro_sam", 117, None)]),
+                           expander=_StubExpander(["calpro"]))
+
+    assert "host_calpro_sam" in index.matching("fecal samples with calprotectin")
+
+
+def test_a_generic_term_is_dropped_by_measurement_not_by_trust():
+    """`dna` matches 698 keys across 1,067,427 runs on the real mirror and would fill the
+    whole budget with noise. The instruction tells the model not to emit generic terms;
+    this drops them anyway when it does."""
+    rows = [(f"dna_thing_{n}_sam", 100, None) for n in range(GENERIC_KEYS + 5)]
+    index = AttributeIndex(_FakeDatabase(rows), expander=_StubExpander(["dna"]))
+
+    assert index.matching("stool samples") == {}
