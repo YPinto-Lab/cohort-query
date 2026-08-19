@@ -34,6 +34,8 @@ class Settings:
             raise ValueError(f"database file not found: {self.db_path}")
         if self.llm not in ("canned", "gemini"):
             raise ValueError(f"unknown llm {self.llm!r}: expected 'canned' or 'gemini'")
+        if self.llm == "gemini" and not self.llm_key:
+            raise ValueError("no API key: gemini needs one (HLD H.1)")
 
 
 _settings: Settings | None = None

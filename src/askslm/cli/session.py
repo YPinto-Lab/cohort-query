@@ -32,19 +32,62 @@ def main() -> None:
 
 
 def _configure() -> None:
+    """Ask until it works. A mistyped path must produce a sentence and another prompt,
+    never a traceback -- HLD C.0.1 makes this the one place the app catches its own
+    fail-fast validation instead of letting it reach the user.
+
+    Nothing is written until config() accepts, so a typo or a Ctrl-C cannot leave a
+    broken file behind that poisons every later run.
+    """
     settings = stored_settings()
-    if not settings.get("db") or not settings.get("llm_key"):
-        console.print("No configuration found. Two questions, once.")
-        settings = _ask_for_settings()
-        write_settings(CONFIG_PATH, **settings)
-        console.print(f"[green]saved to {CONFIG_PATH}[/green]")
-    askslm.config(db=settings["db"], llm="gemini", llm_key=settings["llm_key"])
+    prompted = False
+    while True:
+        missing = [name for name in ("db", "llm_key") if not settings.get(name)]
+        if missing:
+            settings.update(_ask_for(missing))
+            prompted = True
+        try:
+            askslm.config(db=settings["db"], llm="gemini", llm_key=settings["llm_key"])
+        except ValueError as error:
+            console.print(f"[red]{error}[/red]")
+            settings.pop(_culprit(error), None)
+            prompted = True
+            continue
+        if prompted:
+            write_settings(CONFIG_PATH, **settings)
+            console.print(f"[green]saved to {CONFIG_PATH}[/green]")
+        return
 
 
-def _ask_for_settings() -> dict:
-    db = questionary.path("Path to the SRA x Metalog database").ask()
-    llm_key = questionary.password("Gemini API key").ask()
-    return {"db": db, "llm_key": llm_key}
+def _culprit(error: ValueError) -> str:
+    """Which answer to ask for again. Re-asking for a path the user already got right
+    because their key was wrong is the sort of thing that makes people stop using a tool."""
+    return "db" if "database file" in str(error) else "llm_key"
+
+
+def _ask_for(missing: list[str]) -> dict:
+    """Only what is actually missing.
+
+    A site that pins the database path -- a launcher on the lab server, say -- should
+    leave the user answering one question, not two. Re-asking for a path the machine
+    already knows is how a "two questions, once" flow becomes two questions, always.
+    """
+    ask = {"db": _ask_db, "llm_key": _ask_key}
+    answers = {}
+    for name in missing:
+        value = ask[name]()
+        if value is None:              # Ctrl-C or EOF: leave no config behind
+            raise SystemExit(0)
+        answers[name] = value.strip()  # a tab-completed path arrives with a trailing space
+    return answers
+
+
+def _ask_db() -> str:
+    return questionary.path("Path to the SRA x Metalog database").ask()
+
+
+def _ask_key() -> str:
+    return questionary.password("Gemini API key").ask()
 
 
 def _session() -> None:
