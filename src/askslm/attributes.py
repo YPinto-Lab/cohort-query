@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 
+import pandas as pd
+
 from askslm.ports import Database
 
 MIN_TERM = 5           # "with", "and", "the" match half the index and teach nothing
@@ -43,7 +45,12 @@ def _terms(question: str) -> list[str]:
 
 def render(matches: dict[str, tuple[int, str | None]]) -> str:
     """The prompt block. Empty when nothing matched -- silence is correct, an empty
-    heading would imply the model should have used something."""
+    heading would imply the model should have used something.
+
+    `samples` is checked with pd.isna, not truthiness: a NULL from DuckDB arrives as a
+    float NaN, and NaN is TRUTHY. 58,196 of the real mirror's 94,450 keys have no sampled
+    value, so `if samples` sent NaN into json.loads and crashed on the first real query.
+    """
     if not matches:
         return ""
     lines = ["SRA PER-SAMPLE ATTRIBUTES matching this question",
@@ -51,6 +58,6 @@ def render(matches: dict[str, tuple[int, str | None]]) -> str:
              "  Read one with json_extract_string(jattr, '$.<key>').",
              "  Values are STRINGS -- wrap numbers in TRY_CAST(... AS DOUBLE)."]
     for key, (occurrences, samples) in matches.items():
-        shown = f"  e.g. {json.loads(samples)}" if samples else ""
+        shown = "" if pd.isna(samples) else f"  e.g. {json.loads(samples)}"
         lines.append(f"  {key}   ({occurrences} runs){shown}")
     return "\n".join(lines)

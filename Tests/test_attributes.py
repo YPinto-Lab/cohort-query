@@ -5,7 +5,7 @@ import duckdb
 import pandas as pd
 import pytest
 
-from askslm.attributes import AttributeIndex
+from askslm.attributes import AttributeIndex, render
 from fixtures.mirror import build_fixture_mirror
 
 
@@ -71,3 +71,13 @@ def test_short_and_common_words_do_not_match_everything():
     index = AttributeIndex(_FakeDatabase([("with_something", 10, None)]))
 
     assert index.matching("samples with a disease") == {}
+
+
+def test_a_key_with_no_sampled_value_renders_without_crashing():
+    """DuckDB NULL arrives from pandas as float NaN, and NaN is TRUTHY -- so a plain
+    `if samples` check sent NaN into json.loads. 58,196 of the real mirror's 94,450 keys
+    have no sampled value, so this fired on the very first real query."""
+    block = render({"lonely_key": (7, float("nan"))})
+
+    assert "lonely_key" in block
+    assert "e.g." not in block
