@@ -15,13 +15,15 @@ from askslm.ports import Database
 MIN_TERM = 5           # "with", "and", "the" match half the index and teach nothing
 PER_TERM = 12          # each term gets its OWN slots -- see matching()
 MAX_KEYS = 60          # ~1,100 tokens against a ~40,000-token prompt
+GENERIC_KEYS = 120     # a term matching more keys than this describes everything
 
 
 class AttributeIndex:
     """Looks up `attribute_keys`, the ETL-built census of every jattr key."""
 
-    def __init__(self, database: Database):
+    def __init__(self, database: Database, expander=None):
         self._database = database
+        self._expander = expander
 
     def matching(self, question: str) -> dict[str, tuple[int, str | None]]:
         """key -> (occurrences, samples_json), for keys a term of the question names.
@@ -34,10 +36,30 @@ class AttributeIndex:
         crowded out by a common vague one.
         """
         found: dict[str, tuple[int, str | None]] = {}
-        for term in _terms(question):
+        for term in self._search_terms(question):
             for key, row in self._for_term(term).items():
                 found.setdefault(key, row)
         return dict(sorted(found.items(), key=_by_occurrences)[:MAX_KEYS])
+
+    def _search_terms(self, question: str) -> list[str]:
+        """The question's own words, plus whatever the model says a field name for this
+        might be called -- `calpro` and `s100a8` for calprotectin, which a substring
+        search on the literal word never reaches.
+
+        Generic terms are dropped by MEASUREMENT, not by trusting the instruction not to
+        emit them: `dna` matches 698 keys across 1,067,427 runs and would fill the whole
+        budget with noise. A term that matches nothing costs nothing, so over-generation
+        of SPECIFIC terms is harmless.
+        """
+        expanded = self._expander.expand(question) if self._expander else []
+        candidates = sorted(set(_terms(question)) | set(expanded))
+        return [term for term in candidates if not self._is_generic(term)]
+
+    def _is_generic(self, term: str) -> bool:
+        matched = self._database.query(
+            "SELECT count(*) AS n FROM attribute_keys WHERE lower(key) LIKE ?",
+            [f"%{term}%"])
+        return int(matched["n"][0]) > GENERIC_KEYS
 
     def _for_term(self, term: str) -> dict[str, tuple[int, str | None]]:
         rows = self._database.query(

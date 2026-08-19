@@ -80,7 +80,8 @@ def _named_backend(settings: Settings) -> LlmBackend:
 
 
 def translator() -> Translator:
-    return Translator(backend(), SchemaCatalog(database()), AttributeIndex(database()))
+    return Translator(backend(), SchemaCatalog(database()),
+                      AttributeIndex(database(), expander=backend()))
 
 
 def cohort_builder() -> CohortBuilder:

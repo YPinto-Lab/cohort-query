@@ -24,3 +24,11 @@ class Database(Protocol):
 class LlmBackend(Protocol):
     def translate(self, prompt: "TranslationPrompt") -> "Translation":
         """Turn a research question plus schemas into one SQL per metadata source."""
+
+    def expand(self, question: str) -> list[str]:
+        """Field-name fragments to search the attribute index with.
+
+        A separate, tiny call: a sentence in, a few words out, no schema attached.
+        A backend with no model behind it returns [] and retrieval falls back to the
+        words of the question itself.
+        """
