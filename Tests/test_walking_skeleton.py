@@ -294,3 +294,47 @@ def test_an_untranslatable_question_refuses_to_run(configured):
     assert plan.error is not None
     with pytest.raises(askslm.TranslationError, match="felt unwell"):
         plan.run(profile_sources=askslm.Source.METALOG_MOTUS3)
+
+
+def test_bad_sql_is_repaired_once_and_the_cohort_survives(configured):
+    """Four rounds of prompt tuning each fixed one class of bad SQL and revealed the
+    next. Handing the model the database's own rejection generalises instead: DuckDB
+    names the offending column, which beats any rule written in advance."""
+    broken = Translation(
+        interpretation="x",
+        queries=(SourceQuery(askslm.Source.METALOG_METADATA,
+                             "SELECT biosample FROM metalog_metadata WHERE nope = 1"),))
+
+    class RepairingBackend(CannedLlmBackend):
+        def repair(self, sql, error, columns):
+            assert "nope" in error                  # the model is told what was wrong
+            assert "sample_alias" in columns        # ...and what actually exists
+            return "SELECT biosample FROM metalog_metadata"
+
+    connection = DuckDbConnection(configured / "fixture.duckdb")
+    askslm.config(db=configured / "fixture.duckdb", database=connection,
+                  backend=RepairingBackend(broken))
+
+    plan = askslm.ask("anything")
+
+    assert plan.error is None
+    assert plan.preview.union > 0
+    connection.close()
+
+
+def test_a_second_failure_is_reported_rather_than_looping(configured):
+    """No third attempt. If the model cannot fix its own SQL with the error in front of
+    it, looping burns the user's quota without converging."""
+    broken = Translation(
+        interpretation="x",
+        queries=(SourceQuery(askslm.Source.METALOG_METADATA,
+                             "SELECT biosample FROM metalog_metadata WHERE nope = 1"),))
+
+    connection = DuckDbConnection(configured / "fixture.duckdb")
+    askslm.config(db=configured / "fixture.duckdb", database=connection,
+                  backend=CannedLlmBackend(broken))     # repair() returns sql unchanged
+
+    plan = askslm.ask("anything")
+
+    assert plan.error is not None and "nope" in plan.error
+    connection.close()

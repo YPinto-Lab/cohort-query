@@ -15,7 +15,9 @@ import pandas as pd
 from askslm.ports import Database
 from askslm.sources import Source, metadata_sources
 
-_ARRAY_HINT = "  -- ARRAY: use list_contains(column, 'value'), never ="
+_ARRAY_HINT = ("  -- ARRAY: exact -> list_contains(col, 'v'); "
+               "pattern -> array_to_string(col, ' ') ILIKE '%v%'. "
+               "Plain = AND plain ILIKE both raise a Binder Error.")
 
 
 class SchemaCatalog:

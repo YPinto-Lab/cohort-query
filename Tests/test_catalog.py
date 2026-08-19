@@ -124,3 +124,25 @@ def _block_for(rendered: str, column: str) -> str:
             break
         block.append(line)
     return "\n".join(block)
+
+
+def test_the_array_hint_forbids_ilike_not_just_equality(catalog):
+    """The first hint said "use list_contains, never =" -- so the model dutifully avoided
+    `=` and reached for ILIKE, which also raises a Binder Error on VARCHAR[] and killed
+    the whole query. Forbidding one wrong operator just redirects to the other."""
+    line = _line_for(catalog.all(), "geo_loc_name_sam")
+
+    assert "list_contains" in line
+    assert "array_to_string" in line          # the pattern-matching form
+    assert "ILIKE" in line                    # named as also-forbidden bare
+
+
+def test_the_array_hint_forbids_ilike_not_just_equality(catalog):
+    """The first hint said "use list_contains, never =" -- so the model dutifully avoided
+    `=` and reached for ILIKE, which also raises a Binder Error on VARCHAR[] and killed
+    the whole query. Forbidding one wrong operator just redirects to the other."""
+    line = _line_for(catalog.all(), "geo_loc_name_sam")
+
+    assert "list_contains" in line
+    assert "array_to_string" in line          # the pattern-matching form
+    assert "ILIKE" in line                    # named as also-forbidden bare

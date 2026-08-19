@@ -25,6 +25,15 @@ class LlmBackend(Protocol):
     def translate(self, prompt: "TranslationPrompt") -> "Translation":
         """Turn a research question plus schemas into one SQL per metadata source."""
 
+    def repair(self, sql: str, error: str, columns: str) -> str:
+        """Rewrite SQL the database rejected, given its own error text.
+
+        Cheaper and far more reliable than another prompt rule: DuckDB names the
+        offending column and even suggests candidates, so one targeted retry fixes
+        what four rounds of prompt tuning did not. A backend with no model returns
+        the SQL unchanged.
+        """
+
     def expand(self, question: str) -> list[str]:
         """Field-name fragments to search the attribute index with.
 
