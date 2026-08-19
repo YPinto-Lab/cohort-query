@@ -77,7 +77,12 @@ class GeminiBackend:
             model=self._model,
             contents=_prompt_text(prompt),
             config={"system_instruction": SYSTEM_INSTRUCTION,
-                    "response_mime_type": "application/json"})
+                    "response_mime_type": "application/json",
+                    # We pass no tools, so automatic function calling has nothing to do
+                    # -- but it is ON by default, and the SDK then warns on every call
+                    # that AFC belongs in Chat.send_message. Saying "off" states the
+                    # intent and removes the warning at its cause.
+                    "automatic_function_calling": {"disable": True}})
         return _translation_of(json.loads(_unfenced(response.text)))
 
 
