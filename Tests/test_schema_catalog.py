@@ -5,8 +5,13 @@ strings actually stored in the data -- so the test that matters is that those
 strings are present, and that a high-cardinality column does not drag them in.
 """
 import json
+import sys
+from pathlib import Path
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "Scripts" / "build_mirror"))
+from build_schema_catalog import SchemaCatalogBuilder
 
 from fixtures.mirror import build_fixture_mirror
 
@@ -92,3 +97,35 @@ def test_distinct_count_is_recorded_even_when_values_are_omitted(con):
     """).fetchone()[0]
 
     assert count == 14
+
+
+def test_an_identifier_column_ships_no_values():
+    """Measured 2026-08-18: `jattr` had 39,065,549 distinct values in 39,100,115 rows and
+    spent 119,263 chars -- 21% of the entire prompt -- listing 200 JSON blobs that teach
+    the model nothing. A column whose distinct count approaches its row count is a key or
+    free text, not a vocabulary."""
+    builder = SchemaCatalogBuilder(Path("unused.duckdb"))
+
+    assert builder._is_identifier(distinct_count=39_065_549, rows=39_100_115)
+    assert not builder._is_identifier(distinct_count=271_406, rows=39_100_115)
+
+
+def test_the_ratio_is_ignored_on_a_table_too_small_to_judge():
+    """In a 20-row fixture a perfectly good 14-value vocabulary looks exactly like a
+    primary key. Below the floor the ratio is noise, and applying it silently strips the
+    values every test depends on."""
+    builder = SchemaCatalogBuilder(Path("unused.duckdb"))
+
+    assert not builder._is_identifier(distinct_count=14, rows=20)
+
+
+def test_values_are_dropped_from_the_tail_until_they_fit_the_budget():
+    """Cardinality alone does not bound size: 200 long free-text values cost more than
+    20,000 short ones. Values arrive frequency-ordered, so the tail is the least useful."""
+    builder = SchemaCatalogBuilder(Path("unused.duckdb"), max_value_chars=40)
+
+    kept = json.loads(builder._within_budget([f"value-{n}" for n in range(50)]))
+
+    assert len(kept) < 50
+    assert kept[0] == "value-0"
+    assert len(json.dumps(kept)) <= 40
