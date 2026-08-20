@@ -21,6 +21,15 @@ SIRIUS_EXTENSION_PATH = "/private/pinto-lab/anna/sirius/build/sirius.duckdb_exte
 _logger = logging.getLogger(__name__)
 
 
+def _log_safely(message: str, *args) -> None:
+    """expand()/repair() are documented as never raising -- a broken log handler
+    (full disk, bad formatter) must not turn that into a lie."""
+    try:
+        _logger.info(message, *args)
+    except Exception:
+        pass
+
+
 def _sql_literal(value) -> str:
     if isinstance(value, list):
         return "[" + ", ".join(_sql_literal(item) for item in value) + "]"
@@ -142,11 +151,11 @@ class GeminiBackend:
                         "automatic_function_calling": {"disable": True}})
             terms = json.loads(_unfenced(response.text)).get("terms", [])
         except Exception:
-            _logger.info("expand (%.2fs) failed for question=%r",
-                         time.monotonic() - start, question)
+            _log_safely("expand (%.2fs) failed for question=%r",
+                       time.monotonic() - start, question)
             return []
-        _logger.info("expand (%.2fs)\nQUESTION: %s\nRESPONSE: %s",
-                    time.monotonic() - start, question, response.text)
+        _log_safely("expand (%.2fs)\nQUESTION: %s\nRESPONSE: %s",
+                   time.monotonic() - start, question, response.text)
         return [str(term).lower() for term in terms][:MAX_TERMS]
 
     def repair(self, sql: str, error: str, columns: str) -> str:
@@ -167,10 +176,10 @@ class GeminiBackend:
                         "automatic_function_calling": {"disable": True}})
             fixed = _unfenced(response.text) or sql
         except Exception:
-            _logger.info("repair (%.2fs) failed for sql=%r", time.monotonic() - start, sql)
+            _log_safely("repair (%.2fs) failed for sql=%r", time.monotonic() - start, sql)
             return sql
-        _logger.info("repair (%.2fs)\nSQL: %s\nERROR: %s\nFIXED: %s",
-                    time.monotonic() - start, sql, error, fixed)
+        _log_safely("repair (%.2fs)\nSQL: %s\nERROR: %s\nFIXED: %s",
+                   time.monotonic() - start, sql, error, fixed)
         return fixed
 
     def translate(self, prompt: TranslationPrompt) -> Translation:
