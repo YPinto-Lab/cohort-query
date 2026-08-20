@@ -1,6 +1,7 @@
 """Response parsing only. No network: the client is stubbed, because a test that needs
 an API key is a test that does not run."""
 import json
+import logging
 
 import pytest
 
@@ -133,3 +134,13 @@ def test_a_real_but_non_metadata_source_is_also_a_loud_error():
 
     with pytest.raises(ValueError, match="SRA_TAXONOMY"):
         GeminiBackend(StubClient(payload), model="test-model").translate(_prompt())
+
+
+def test_translate_logs_the_prompt_and_the_response(caplog):
+    payload = json.dumps({"interpretation": "x", "queries": [], "failure": None})
+    caplog.set_level(logging.INFO, logger="askslm.adapters")
+
+    GeminiBackend(StubClient(payload), model="test-model").translate(_prompt())
+
+    assert any("adults with IBD" in record.message for record in caplog.records)
+    assert any(payload in record.message for record in caplog.records)

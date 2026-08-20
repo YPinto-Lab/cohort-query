@@ -5,10 +5,12 @@ database file holding 13.6 billion rows. config(db=...) still takes one path, so
 connection has to find the second one itself. If this breaks, every STAT query fails
 with "table not found" against the real mirror while passing against the fixture.
 """
+import logging
+
 import duckdb
 import pytest
 
-from askslm.adapters import DuckDbConnection
+from askslm.adapters import DuckDbConnection, _gpu_wrapped
 
 
 @pytest.fixture
@@ -60,3 +62,59 @@ def test_the_mirror_is_read_only(split_mirror):
         connection.query("CREATE TABLE injected (x INTEGER)")
 
     connection.close()
+
+
+def test_gpu_mode_wraps_the_sql_in_gpu_processing():
+    sql, params = _gpu_wrapped("SELECT 1", [], gpu=True)
+    assert sql == "SELECT * FROM gpu_processing($$ SELECT 1 $$)"
+    assert params == []
+
+
+def test_cpu_mode_leaves_the_sql_and_params_unchanged():
+    sql, params = _gpu_wrapped("SELECT 1", ["x"], gpu=False)
+    assert sql == "SELECT 1"
+    assert params == ["x"]
+
+
+def test_gpu_mode_inlines_a_scalar_param_instead_of_binding_it():
+    sql, params = _gpu_wrapped("SELECT * FROM t WHERE k = ?", ["v"], gpu=True)
+    assert sql == "SELECT * FROM gpu_processing($$ SELECT * FROM t WHERE k = 'v' $$)"
+    assert params == []
+
+
+def test_gpu_mode_inlines_a_list_param_as_a_sql_array_literal():
+    sql, params = _gpu_wrapped(
+        "SELECT * FROM t WHERE acc IN (SELECT unnest(?::VARCHAR[]))",
+        [["a", "b"]], gpu=True)
+    assert "['a', 'b']" in sql
+    assert params == []
+
+
+def test_gpu_mode_escapes_single_quotes_in_an_inlined_param():
+    sql, params = _gpu_wrapped("SELECT * FROM t WHERE k = ?", ["o'brien"], gpu=True)
+    assert "o''brien" in sql
+
+
+def test_gpu_mode_fails_fast_when_the_extension_is_missing(tmp_path):
+    plain = tmp_path / "plain.duckdb"
+    connection = duckdb.connect(str(plain))
+    connection.execute("CREATE TABLE t (x INTEGER)")
+    connection.close()
+
+    with pytest.raises(duckdb.Error):
+        DuckDbConnection(plain, gpu=True)
+
+
+def test_query_logs_the_sql_and_row_count(caplog, tmp_path):
+    db_path = tmp_path / "t.duckdb"
+    raw = duckdb.connect(str(db_path))
+    raw.execute("CREATE TABLE t (x INTEGER)")
+    raw.execute("INSERT INTO t VALUES (1), (2)")
+    raw.close()
+    caplog.set_level(logging.INFO, logger="askslm.adapters")
+
+    connection = DuckDbConnection(db_path)
+    connection.query("SELECT * FROM t")
+    connection.close()
+
+    assert any("SELECT * FROM t" in record.message for record in caplog.records)

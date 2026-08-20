@@ -29,6 +29,7 @@ class Settings:
     llm: str = "canned"
     llm_key: str = ""
     llm_model: str = "gemini-2.5-flash"
+    gpu: bool = False
 
     def __post_init__(self):
         if not Path(self.db_path).exists():
@@ -57,7 +58,8 @@ def configure(settings: Settings, database: Database | None = None,
 def database() -> Database:
     global _database
     if _database is None:
-        _database = DuckDbConnection(_require_settings().db_path)
+        settings = _require_settings()
+        _database = DuckDbConnection(settings.db_path, gpu=settings.gpu)
     return _database
 
 

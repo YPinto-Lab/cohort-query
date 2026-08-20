@@ -43,10 +43,11 @@ __all__ = [
 
 
 def config(db: str | Path, llm: str = "canned", llm_key: str = "",
-           llm_model: str = "gemini-2.5-flash", **wiring) -> None:
+           llm_model: str = "gemini-2.5-flash", gpu: bool = False, **wiring) -> None:
     """Configure once. Fails fast if the database is missing or the llm name is unknown."""
     runtime.configure(
-        runtime.Settings(db_path=Path(db), llm=llm, llm_key=llm_key, llm_model=llm_model),
+        runtime.Settings(db_path=Path(db), llm=llm, llm_key=llm_key,
+                        llm_model=llm_model, gpu=gpu),
         **wiring)
 
 

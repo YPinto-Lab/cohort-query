@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 from pathlib import Path
 
 import duckdb
@@ -14,6 +16,45 @@ from askslm.sources import Source, SourceKind
 from askslm.translation import SourceQuery, Translation, TranslationPrompt
 
 
+SIRIUS_EXTENSION_PATH = "/private/pinto-lab/anna/sirius/build/sirius.duckdb_extension"
+
+_logger = logging.getLogger(__name__)
+
+
+def _log_safely(message: str, *args) -> None:
+    """expand()/repair() are documented as never raising -- a broken log handler
+    (full disk, bad formatter) must not turn that into a lie."""
+    try:
+        _logger.info(message, *args)
+    except Exception:
+        pass
+
+
+def _sql_literal(value) -> str:
+    if isinstance(value, list):
+        return "[" + ", ".join(_sql_literal(item) for item in value) + "]"
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _inlined(sql: str, params: list) -> str:
+    for value in params:
+        sql = sql.replace("?", _sql_literal(value), 1)
+    return sql
+
+
+def _gpu_wrapped(sql: str, params: list, gpu: bool) -> tuple[str, list]:
+    """gpu_processing() takes SQL as a dollar-quoted string literal, so a `?` inside
+    it is just text to DuckDB's outer parser, not a bind parameter -- params have to
+    be inlined as literals before wrapping, or every parameterized query (which is
+    most of the profile/cohort reads GPU mode targets) throws a parameter mismatch."""
+    if not gpu:
+        return sql, params
+    if params:
+        sql = _inlined(sql, params)
+        params = []
+    return f"SELECT * FROM gpu_processing($$ {sql} $$)", params
+
+
 class DuckDbConnection:
     """The mirror is opened READ-ONLY. Any write -- including a stray LLM INSERT -- is
     refused by DuckDB itself rather than by validation we would have to write.
@@ -24,9 +65,13 @@ class DuckDbConnection:
     mirror, not asked of the caller. A fixture with no mirror_config just skips this.
     """
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, gpu: bool = False):
         self._connection = duckdb.connect(str(db_path), read_only=True)
         self._attach_sources()
+        self._gpu = gpu
+        if gpu:
+            self._connection.execute(f"LOAD '{SIRIUS_EXTENSION_PATH}'")
+            self._connection.execute("SELECT gpu_buffer_init()")
 
     def _attach_sources(self) -> None:
         for alias, path in self._attachments():
@@ -41,7 +86,11 @@ class DuckDbConnection:
         return [("sra", row[0]) for row in rows]
 
     def query(self, sql: str, params: list | None = None) -> pd.DataFrame:
-        return self._connection.execute(sql, params or []).fetch_df()
+        wrapped_sql, wrapped_params = _gpu_wrapped(sql, params or [], self._gpu)
+        start = time.monotonic()
+        frame = self._connection.execute(wrapped_sql, wrapped_params).fetch_df()
+        _logger.info("SQL (%.2fs, %d rows): %s", time.monotonic() - start, len(frame), sql)
+        return frame
 
     def close(self) -> None:
         self._connection.close()
@@ -93,6 +142,7 @@ class GeminiBackend:
     def expand(self, question: str) -> list[str]:
         """Never raises: a failed expansion must degrade to plain lexical matching,
         not take down ask()."""
+        start = time.monotonic()
         try:
             response = self._client.models.generate_content(
                 model=self.HELPER_MODEL, contents=question,
@@ -101,7 +151,11 @@ class GeminiBackend:
                         "automatic_function_calling": {"disable": True}})
             terms = json.loads(_unfenced(response.text)).get("terms", [])
         except Exception:
+            _log_safely("expand (%.2fs) failed for question=%r",
+                       time.monotonic() - start, question)
             return []
+        _log_safely("expand (%.2fs)\nQUESTION: %s\nRESPONSE: %s",
+                   time.monotonic() - start, question, response.text)
         return [str(term).lower() for term in terms][:MAX_TERMS]
 
     def repair(self, sql: str, error: str, columns: str) -> str:
@@ -113,17 +167,23 @@ class GeminiBackend:
             "markdown fence. Use ONLY the listed columns. Keep the query's intent and "
             "its SELECT list unchanged. If a column the query wants does not exist, "
             "drop that condition rather than inventing a replacement.")
+        start = time.monotonic()
         try:
             response = self._client.models.generate_content(
                 model=self.HELPER_MODEL,
                 contents=f"ERROR\n{error}\n\nCOLUMNS\n{columns}\n\nSQL\n{sql}",
                 config={"system_instruction": instruction,
                         "automatic_function_calling": {"disable": True}})
-            return _unfenced(response.text) or sql
+            fixed = _unfenced(response.text) or sql
         except Exception:
+            _log_safely("repair (%.2fs) failed for sql=%r", time.monotonic() - start, sql)
             return sql
+        _log_safely("repair (%.2fs)\nSQL: %s\nERROR: %s\nFIXED: %s",
+                   time.monotonic() - start, sql, error, fixed)
+        return fixed
 
     def translate(self, prompt: TranslationPrompt) -> Translation:
+        start = time.monotonic()
         response = self._client.models.generate_content(
             model=self._model,
             contents=_prompt_text(prompt),
@@ -134,6 +194,8 @@ class GeminiBackend:
                     # that AFC belongs in Chat.send_message. Saying "off" states the
                     # intent and removes the warning at its cause.
                     "automatic_function_calling": {"disable": True}})
+        _logger.info("translate (%.2fs)\nPROMPT: %s\nRESPONSE: %s",
+                    time.monotonic() - start, prompt.question.text, response.text)
         return _translation_of(json.loads(_unfenced(response.text)))
 
 
