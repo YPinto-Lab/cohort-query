@@ -42,10 +42,12 @@
 
 <header class="doc">
   <h1>Session run-directory, logging &amp; run UX <span class="badge">accepted 2026-08-20</span></h1>
-  <p class="sub">Every question gets a folder on disk; every run leaves a log; "Run it" stops
-  looking like it hung.</p>
-  <p class="meta">2026-08-20 · touches only <code>src/askslm/cli/session.py</code> and
-  <code>src/askslm/build.py</code> · no change to the public API surface</p>
+  <p class="sub">Every question gets a folder on disk; every run leaves a log; "Run it" submits a
+  real SLURM job instead of running on the login node, and survives your terminal closing.</p>
+  <p class="meta">2026-08-20 · touches <code>src/askslm/cli/session.py</code>,
+  <code>src/askslm/build.py</code>, <code>src/askslm/adapters.py</code>, <code>src/askslm/runtime.py</code>,
+  and adds <code>src/askslm/cli/worker.py</code> · no change to <code>Plan</code>/<code>Materialization</code>'s
+  public shape</p>
 </header>
 
 <h2>1. The problem this fixes</h2>
@@ -63,6 +65,17 @@ you manually choose to <code>Save plan and quit</code>, and there is no record a
 LLM was actually sent or what SQL actually ran — the only way to find out is
 <code>Show the SQL and overlap</code>, and only for the current plan, only while the session is
 still open.</p>
+
+<div class="danger">
+<strong>Worse than the missing feedback: "Run it" runs on the SLURM login node.</strong>
+<code>askslm</code> is invoked directly at a <code>[user@slurm-login1]$</code> prompt, and today
+<code>plan.run(...)</code> executes <code>CohortBuilder.build</code> — DuckDB reads over a
+multi-hundred-GB mirror — right there in that shell, on shared login-node CPU, with no
+<code>tmux</code>/<code>screen</code>, and no job scheduler involved at all. A closed terminal or
+a dropped SSH connection kills the build outright, and every login-node build competes with
+everyone else's interactive `ssh` sessions on a node that isn't meant to run compute. This is the
+part of the redesign that matters most: "Run it" has to become a real SLURM job.
+</div>
 
 <h2>2. Plan folder: one per question</h2>
 
@@ -143,19 +156,31 @@ narrow warning, per-source SQL, and the overlap table together, and
   <tr><td><code>Discard</code></td>
       <td>Deletes the current plan folder (<code>plan.json</code>, <code>log.txt</code>, any
       <code>cohort.biom</code> already written) and drops straight into a blank "Ask new
-      question" prompt — for a cohort that turned out to be junk.</td></tr>
+      question" prompt — for a cohort that turned out to be junk. If a SLURM job submitted from
+      this folder (§7) is still running — you can reach here via "Run it" → "Back to menu" while
+      it's still going — <code>Discard</code> <code>scancel</code>s it first.</td></tr>
   <tr><td><code>Save plan and quit</code></td>
       <td><strong>Removed.</strong> Redundant now that a successful plan is always already on
       disk.</td></tr>
 </table>
 
-<h3>5.1 Replay (<code>askslm run plan.json</code>) gets the same loop</h3>
+<h3>5.1 <code>askslm run</code> is renamed <code>askslm load</code></h3>
+
+<p>The subcommand that replays a saved plan with no LLM hop is renamed:
+<code>askslm run plans/&lt;ts&gt;/plan.json</code> becomes
+<code>askslm load plans/&lt;ts&gt;/plan.json</code>. This is purely a rename at the
+<code>main()</code> dispatch in <code>session.py</code> — it disambiguates the CLI verb from the
+in-session <code>Run it</code> menu choice, which now means something with real weight (submit a
+SLURM job) rather than "replay a file." <code>Plan.run(...)</code>, the Python API method, is
+untouched — this only renames the shell-level subcommand.</p>
+
+<h3>5.2 <code>askslm load</code> gets the same menu — and reattaches to a running job</h3>
 
 <p><code>_replay()</code> currently builds once and exits — no menu at all. It now creates its
 own timestamped <code>plans/&lt;ts&gt;/</code> folder for <code>log.txt</code> and the default
-<code>cohort.biom</code> target (the loaded <code>plan.json</code> stays wherever it was; replay
-does not rewrite or move it), then after <code>_run</code> completes, loops on a menu scoped to
-what replay can actually do — there is no question to refine, so no LLM-related choices appear:</p>
+<code>cohort.biom</code> target (the loaded <code>plan.json</code> stays wherever it was; loading
+does not rewrite or move it), then loops on a menu scoped to what a loaded plan can actually do —
+there is no question to refine, so no LLM-related choices appear:</p>
 
 <pre><code>? What now?
  » Run it
@@ -163,10 +188,18 @@ what replay can actually do — there is no question to refine, so no LLM-relate
    Quit</code></pre>
 
 <p><code>Run it</code> lets you rebuild the same loaded plan with a different feature
-space/source combination without re-invoking <code>askslm run</code> from the shell.
-<code>Discard</code> deletes <em>this replay's</em> log folder (and any biom it wrote) — never the
+space/source combination without re-invoking <code>askslm load</code> from the shell.
+<code>Discard</code> deletes <em>this load's</em> folder (and any biom it wrote) — never the
 original <code>plan.json</code> path, which is a caller-owned input, not something this run
-created.</p>
+created; if a job is still running in that folder, <code>Discard</code> cancels it first
+(<code>scancel</code>) rather than deleting files out from under a live SLURM job.</p>
+
+<p><strong>This is also how you open the Run progress view from another terminal</strong> — the
+whole reason a login-node process must not be the thing tracking job state.
+<code>askslm load plans/&lt;ts&gt;/plan.json</code> checks that folder for <code>job.id</code>: if
+a job was submitted from it and is still running, loading drops straight into the live watch view
+(§7.2) instead of the menu above, from any shell, any time, with no session state carried over —
+everything needed to find the job and tail its log lives in the plan folder itself.</p>
 
 <h2>6. Skip a menu that has only one answer</h2>
 
@@ -193,46 +226,147 @@ same header that already announces the output path:</p>
 <p>When a prompt has more than one real choice, it is asked exactly as today — this only removes
 the click when there was never a decision to make.</p>
 
-<h2>7. Run progress</h2>
-
-<p><code>CohortBuilder.build</code> (<code>build.py</code>) takes one new optional argument,
-<code>on_step: Callable[[str], None] | None = None</code>, called with a short label immediately
-before each of its three existing phases: discovering the cohort, reading the profile matrix,
-assembling and writing the biom. Nothing about the phases themselves changes — this is a callback
-inserted between three lines that already ran in this order.</p>
-
-<p><code>_run</code> in <code>session.py</code> prints the resolved output path before starting,
-then a line per step with elapsed time as each completes:</p>
-
-<pre><code>Building cohort -> plans/20260820_143012/cohort.biom
-  [1/3] discovering cohort...        12.4s
-  [2/3] reading profile matrix...    done
-  [3/3] assembling + writing biom... done
-Wrote plans/20260820_143012/cohort.biom (2.1 GB)</code></pre>
+<h2>7. "Run it" submits a SLURM job</h2>
 
 <p>The default "Write to" answer in the source-picking prompt changes from
-<code>feature_table.biom</code> to <code>&lt;plan folder&gt;/cohort.biom</code>; typing a
-different path still overrides it.</p>
+<code>feature_table.biom</code> to <code>&lt;plan folder&gt;/cohort.biom</code>. Once family,
+sources, and output path are settled, <code>_run</code> asks one more thing before submitting:</p>
+
+<pre><code>? Use GPU acceleration for this build? (y/N)</code></pre>
+
+<p>defaulting to No. This is a per-build choice, not a session-wide setting (§7.1) — a small
+mOTUs cohort gains nothing from reserving a GPU node; a large STAT build might.</p>
+
+<h3>7.0 The worker: a new, small, LLM-free entrypoint</h3>
+
+<p>A new module, <code>src/askslm/cli/worker.py</code>, is what the SLURM job actually runs —
+<code>python -m askslm.cli.worker --plan &lt;plan.json&gt; --family &lt;name&gt; --sources
+&lt;a,b,c&gt; --out &lt;path&gt; --db &lt;mirror&gt; [--gpu]</code>. It loads the plan, calls
+<code>askslm.config(db=..., gpu=...)</code> — <strong>no <code>llm=</code> is needed</strong>,
+because <code>runtime.cohort_builder()</code> only ever touches <code>database()</code>, never
+<code>backend()</code> (verified against <code>runtime.py</code>) — attaches the same file-handler
+logging as the interactive session (§3) to <code>&lt;plan folder&gt;/log.txt</code>, and calls
+<code>CohortBuilder.build</code> with an <code>on_step</code> callback that logs a line before each
+of the three phases (discovering the cohort, reading the profile matrix, assembling and writing
+the biom). It writes <code>status.txt</code> as <code>RUNNING</code> on start and
+<code>DONE</code>/<code>FAILED</code> on exit, and a final <code>report.txt</code> — the
+<code>BuildReport</code>'s <code>str()</code> — next to the biom.</p>
+
+<h3>7.1 GPU mode: wiring in Anna's Sirius extension</h3>
+
+<p>Anna's benchmark (§ below) already has a working GPU pipeline on this cluster: a custom-built
+DuckDB extension at <code>/private/pinto-lab/anna/sirius/build/sirius.duckdb_extension</code>
+that adds <code>gpu_buffer_init()</code> and a <code>gpu_processing($$ ... $$)</code> table
+function. <code>DuckDbConnection</code> (<code>adapters.py</code>) gets one new constructor
+argument, <code>gpu: bool = False</code>:</p>
+
+<pre><code><span class="kw">class</span> DuckDbConnection:
+    <span class="kw">def</span> __init__(self, db_path, gpu=<span class="kw">False</span>):
+        self._connection = duckdb.connect(str(db_path), read_only=<span class="kw">True</span>)
+        self._attach_sources()
+        self._gpu = gpu
+        <span class="kw">if</span> gpu:
+            self._connection.execute(f<span class="str">"LOAD '{SIRIUS_EXTENSION_PATH}'"</span>)
+            self._connection.execute(<span class="str">"SELECT gpu_buffer_init()"</span>)
+
+    <span class="kw">def</span> query(self, sql, params=<span class="kw">None</span>):
+        q = f<span class="str">"SELECT * FROM gpu_processing($$ {sql} $$)"</span> <span class="kw">if</span> self._gpu <span class="kw">else</span> sql
+        <span class="kw">return</span> self._connection.execute(q, params <span class="kw">or</span> []).fetch_df()</code></pre>
+
+<p><code>runtime.Settings</code> gains a matching <code>gpu: bool = False</code> field, threaded
+through <code>config(db=..., gpu=...)</code> to <code>database()</code>'s
+<code>DuckDbConnection(...)</code> construction. Every query on that connection is wrapped
+uniformly when GPU mode is on — discovery, profile reads, metadata reads alike — rather than
+picking and choosing which queries "deserve" it; the interactive session's own connection is
+never GPU-mode, only a worker's is, so this never affects the fast attribute/preview queries a
+live session depends on. <strong>Fails fast, not silently:</strong> if <code>gpu=True</code> and
+the extension file is missing, the worker's <code>LOAD</code> raises immediately rather than
+quietly falling back to CPU — a GPU job that silently ran on CPU would look successful and cost
+2 minutes to discover it wasn't.</p>
+
+<div class="note">
+<code>/private/pinto-lab/anna/sirius/...</code> is Anna's own home-directory build, not a
+tools-owned path. This is a known fragility, accepted for now: revisit if she moves or rebuilds
+it and the path stops resolving.
+</div>
+
+<h3>7.2 The sbatch templates</h3>
+
+<p>Modeled directly on the existing <code>Scripts/build_mirror/build_mirror.sbatch</code> and on
+Anna's own working jobs (<code>run_duckdb.sh</code>, <code>run_sirius.sh</code> at
+<code>/private/pinto-lab/anna/</code>) rather than invented numbers:</p>
+
+<table>
+  <tr><th></th><th>Partition</th><th>CPUs</th><th>Mem</th><th>Time</th><th>Extra</th></tr>
+  <tr><td>CPU (default)</td><td><code>cpu192G-48h</code></td><td>8</td><td>48G</td><td>2:00:00</td><td>—</td></tr>
+  <tr><td>GPU (<code>--gpu</code>)</td><td><code>H200-12h</code></td><td>16</td><td>128G</td><td>2:00:00</td><td><code>--gres=gpu:1</code></td></tr>
+</table>
+
+<p>Both scale down from Anna's proven numbers (18cpu/64G/4h CPU; 48cpu/1T/4h GPU) — hers ran a
+full 39M-row unfiltered join, a cohort build reads an already-discovered, cohort-scoped set of
+biosamples off <code>stat_coverage</code>. Revisit with real timing once a few real builds have
+run. <code>--output</code>/<code>--error</code> go to
+<code>&lt;plan folder&gt;/slurm-%j.out</code>/<code>.err</code> — SLURM/scheduler-level messages
+(OOM kill, node failure) — kept separate from the worker's own <code>log.txt</code>, which the
+worker writes itself via the same logging setup as the interactive session, so both processes
+never race to append the same file.</p>
+
+<p><code>_run</code> writes the chosen template to <code>&lt;plan folder&gt;/job.sbatch</code>,
+runs <code>sbatch</code>, parses the job id from its stdout (<code>"Submitted batch job
+&lt;id&gt;"</code>), and writes it to <code>&lt;plan folder&gt;/job.id</code>:</p>
+
+<pre><code>Submitted SLURM job 4213765 (cpu192G-48h)
+  squeue:  squeue -j 4213765
+  log:     tail -f plans/20260820_143012/log.txt
+? Watch progress now, or back to menu?
+ » Watch progress
+   Back to menu</code></pre>
+
+<h3>7.3 The watch view</h3>
+
+<p>One function, shared by "Watch progress" here and by reattaching via <code>askslm load</code>
+(§5.2): reads <code>job.id</code>, polls <code>squeue -j &lt;id&gt;</code> every few seconds, and
+tails <code>log.txt</code> underneath it, refreshing in place. <code>Ctrl-C</code> returns to the
+menu without touching the job — watching is read-only, closing the view never cancels anything.
+When <code>status.txt</code> flips to <code>DONE</code> or <code>FAILED</code> (or the job drops
+out of <code>squeue</code> entirely — finished jobs do), the view prints the final
+<code>report.txt</code> and returns to the menu on its own.</p>
+
+<pre><code>job 4213765 · RUNNING · queued 0:04:12
+  [1/3] discovering cohort...        12.4s
+  [2/3] reading profile matrix...    running (0:02:31)
+Ctrl-C to stop watching (job keeps running)</code></pre>
 
 <h2>8. Deliberate limits</h2>
 
 <ul>
-  <li><strong>Still synchronous.</strong> The terminal blocks for the whole build, same as today.
-  A background/return-to-menu-immediately design was considered and explicitly rejected for this
-  round — the progress lines are judged sufficient; revisit only if a build actually needs to run
-  unattended.</li>
-  <li><strong>No log rotation or size cap.</strong> One question, one short session, one log file
-  — not a long-running service. Add a cap only if a real log is ever observed to be a problem.</li>
+  <li><strong>No automatic retry.</strong> A <code>FAILED</code> job is surfaced as-is in the
+  watch view and <code>report.txt</code>/<code>log.txt</code>; resubmitting means choosing
+  <code>Run it</code> again. No backoff, no retry count to configure.</li>
+  <li><strong>No poller/daemon.</strong> Status is read on demand (by the watch view or the next
+  <code>askslm load</code>), never pushed. If a job is cancelled outside askslm entirely (a bare
+  <code>scancel</code> from another session), <code>status.txt</code> just stays
+  <code>RUNNING</code> until something reads <code>squeue</code> and notices it's gone — an
+  acceptable gap, not a service worth building.</li>
+  <li><strong>GPU mode has no fallback.</strong> Missing extension = hard failure, by design
+  (§7.1) — never a silent CPU run that looks like a GPU run.</li>
+  <li><strong>No log rotation or size cap.</strong> One question, one build, one log file — not a
+  long-running service. Add a cap only if a real log is ever observed to be a problem.</li>
   <li><strong><code>plans/</code> is never garbage-collected automatically</strong> except via an
-  explicit <code>Discard</code>. Old folders accumulate; that is the intended trail, not a leak.</li>
-  <li><strong>Replay never writes a second <code>plan.json</code>.</strong> Its fresh
-  <code>plans/&lt;ts&gt;/</code> folder exists only for <code>log.txt</code> and the default biom
-  path — the plan itself lives at whatever path the caller passed to <code>askslm run</code>, and
-  replay never copies or rewrites it.</li>
+  explicit <code>Discard</code> (which now also <code>scancel</code>s a live job first, §5.2). Old
+  folders accumulate; that is the intended trail, not a leak.</li>
+  <li><strong><code>askslm load</code> never writes a second <code>plan.json</code>.</strong> Its
+  fresh <code>plans/&lt;ts&gt;/</code> folder exists only for <code>log.txt</code>,
+  <code>job.id</code>/<code>status.txt</code>, and the default biom path — the plan itself lives
+  at whatever path the caller passed in, and loading never copies or rewrites it.</li>
 </ul>
 
 <hr>
-<p class="meta">Implementation plan: to be written next via the writing-plans skill.</p>
+<p class="meta">Job settings sourced from <code>/private/pinto-lab/anna/run_duckdb.sh</code>,
+<code>run_sirius.sh</code>, <code>CPU_query_duckdb.py</code>, <code>GPU_query_duckdb.py</code>
+(read 2026-08-20) and her Research Project report ("Using SRA STAT, LOGAN, and DuckDB...",
+Bar-Ilan/OUI, July 2026), §2.4/3.1. Implementation plan: to be written next via the
+writing-plans skill.</p>
 
 </div>
 </body>
