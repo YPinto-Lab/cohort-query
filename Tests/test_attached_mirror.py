@@ -63,9 +63,41 @@ def test_the_mirror_is_read_only(split_mirror):
 
 
 def test_gpu_mode_wraps_the_sql_in_gpu_processing():
-    assert (_gpu_wrapped("SELECT 1", gpu=True)
-           == "SELECT * FROM gpu_processing($$ SELECT 1 $$)")
+    sql, params = _gpu_wrapped("SELECT 1", [], gpu=True)
+    assert sql == "SELECT * FROM gpu_processing($$ SELECT 1 $$)"
+    assert params == []
 
 
-def test_cpu_mode_leaves_the_sql_unchanged():
-    assert _gpu_wrapped("SELECT 1", gpu=False) == "SELECT 1"
+def test_cpu_mode_leaves_the_sql_and_params_unchanged():
+    sql, params = _gpu_wrapped("SELECT 1", ["x"], gpu=False)
+    assert sql == "SELECT 1"
+    assert params == ["x"]
+
+
+def test_gpu_mode_inlines_a_scalar_param_instead_of_binding_it():
+    sql, params = _gpu_wrapped("SELECT * FROM t WHERE k = ?", ["v"], gpu=True)
+    assert sql == "SELECT * FROM gpu_processing($$ SELECT * FROM t WHERE k = 'v' $$)"
+    assert params == []
+
+
+def test_gpu_mode_inlines_a_list_param_as_a_sql_array_literal():
+    sql, params = _gpu_wrapped(
+        "SELECT * FROM t WHERE acc IN (SELECT unnest(?::VARCHAR[]))",
+        [["a", "b"]], gpu=True)
+    assert "['a', 'b']" in sql
+    assert params == []
+
+
+def test_gpu_mode_escapes_single_quotes_in_an_inlined_param():
+    sql, params = _gpu_wrapped("SELECT * FROM t WHERE k = ?", ["o'brien"], gpu=True)
+    assert "o''brien" in sql
+
+
+def test_gpu_mode_fails_fast_when_the_extension_is_missing(tmp_path):
+    plain = tmp_path / "plain.duckdb"
+    connection = duckdb.connect(str(plain))
+    connection.execute("CREATE TABLE t (x INTEGER)")
+    connection.close()
+
+    with pytest.raises(duckdb.Error):
+        DuckDbConnection(plain, gpu=True)

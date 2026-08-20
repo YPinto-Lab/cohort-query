@@ -17,10 +17,29 @@ from askslm.translation import SourceQuery, Translation, TranslationPrompt
 SIRIUS_EXTENSION_PATH = "/private/pinto-lab/anna/sirius/build/sirius.duckdb_extension"
 
 
-def _gpu_wrapped(sql: str, gpu: bool) -> str:
+def _sql_literal(value) -> str:
+    if isinstance(value, list):
+        return "[" + ", ".join(_sql_literal(item) for item in value) + "]"
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _inlined(sql: str, params: list) -> str:
+    for value in params:
+        sql = sql.replace("?", _sql_literal(value), 1)
+    return sql
+
+
+def _gpu_wrapped(sql: str, params: list, gpu: bool) -> tuple[str, list]:
+    """gpu_processing() takes SQL as a dollar-quoted string literal, so a `?` inside
+    it is just text to DuckDB's outer parser, not a bind parameter -- params have to
+    be inlined as literals before wrapping, or every parameterized query (which is
+    most of the profile/cohort reads GPU mode targets) throws a parameter mismatch."""
     if not gpu:
-        return sql
-    return f"SELECT * FROM gpu_processing($$ {sql} $$)"
+        return sql, params
+    if params:
+        sql = _inlined(sql, params)
+        params = []
+    return f"SELECT * FROM gpu_processing($$ {sql} $$)", params
 
 
 class DuckDbConnection:
@@ -54,8 +73,8 @@ class DuckDbConnection:
         return [("sra", row[0]) for row in rows]
 
     def query(self, sql: str, params: list | None = None) -> pd.DataFrame:
-        return self._connection.execute(_gpu_wrapped(sql, self._gpu),
-                                        params or []).fetch_df()
+        wrapped_sql, wrapped_params = _gpu_wrapped(sql, params or [], self._gpu)
+        return self._connection.execute(wrapped_sql, wrapped_params).fetch_df()
 
     def close(self) -> None:
         self._connection.close()
