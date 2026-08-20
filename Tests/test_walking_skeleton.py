@@ -42,6 +42,13 @@ def test_ask_previews_the_cohort_partition(configured):
     assert plan.error is None
 
 
+def test_ask_caches_the_discovered_cohort_on_the_plan(configured):
+    plan = askslm.ask("fecal metagenomes from adults with IBD, Western countries")
+
+    assert plan.discovered is not None
+    assert plan.preview.union == len(plan.discovered.union())
+
+
 def test_a_source_omitted_from_the_translation_contributes_nothing(configured):
     """Confirms the prompt's new "omit a source that cannot express the question" rule
     is safe to follow: Cohort.by_source is built from whatever queries it is handed, so
@@ -319,6 +326,7 @@ def test_bad_sql_is_repaired_once_and_the_cohort_survives(configured):
 
     assert plan.error is None
     assert plan.preview.union > 0
+    assert plan.discovered is not None      # the repaired SQL's cohort, cached too
     connection.close()
 
 

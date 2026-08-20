@@ -21,7 +21,8 @@ def test_on_step_is_called_for_each_phase_in_order(tmp_path):
 
     plan.run(profile_sources=askslm.Source.METALOG_MOTUS3, on_step=seen.append)
 
-    assert seen == ["discovering cohort", "reading profile matrix",
+    # ask() now discovers and caches the cohort onto the plan, so run() reuses it.
+    assert seen == ["discovering cohort (cached)", "reading profile matrix",
                     "assembling and writing biom"]
     connection.close()
 

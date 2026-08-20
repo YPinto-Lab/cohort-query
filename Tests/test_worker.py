@@ -37,8 +37,9 @@ def test_main_builds_the_biom_and_reports_success(tmp_path):
     assert "discovering cohort" in log_text
     assert "reading profile matrix" in log_text
 
+    # ask() now discovers and caches the cohort onto the plan, so run() reuses it.
     progress_labels = [label for _, _, label in progress.read_events(plan_dir)]
-    assert progress_labels == ["discovering cohort", "reading profile matrix",
+    assert progress_labels == ["discovering cohort (cached)", "reading profile matrix",
                                "assembling and writing biom"]
 
 
