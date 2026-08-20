@@ -28,7 +28,14 @@ def watch(plan_dir: Path, console: Console) -> None:
                 if report_path.exists():
                     console.print(report_path.read_text())
                 return
-            state = jobs.squeue_state(job_id)
+            try:
+                state = jobs.squeue_state(job_id)
+            except RuntimeError as error:
+                # A transient squeue failure isn't the job's fault -- retry rather
+                # than crash the view or mistake it for the job having finished.
+                console.print(f"[yellow]squeue check failed, retrying: {error}[/yellow]")
+                time.sleep(POLL_SECONDS)
+                continue
             if state is None and status is None:
                 console.print("[red]job left the queue and never reported a status[/red]")
                 return
