@@ -37,3 +37,24 @@ def test_on_step_defaults_to_doing_nothing(tmp_path):
 
     assert report.biosamples > 0
     connection.close()
+
+
+def test_a_cached_cohort_skips_rediscovery_and_gets_a_distinct_label(tmp_path):
+    from askslm import runtime
+    from askslm.build import Materialization
+    from askslm.cohort import CohortDiscovery
+
+    path = build_fixture_mirror(tmp_path / "fixture.duckdb")
+    connection = DuckDbConnection(path)
+    askslm.config(db=path, database=connection, backend=CannedLlmBackend(TRANSLATION))
+    plan = askslm.ask("gut metagenomes")
+    cohort = CohortDiscovery(connection).discover(plan.translation.queries)
+    request = Materialization(profile_sources=(askslm.Source.METALOG_MOTUS3,),
+                              metadata_winning_source=askslm.Source.METALOG_METADATA)
+    seen = []
+
+    runtime.cohort_builder().build(plan.translation.queries, request, None,
+                                   on_step=seen.append, discovered=cohort)
+
+    assert seen[0] == "discovering cohort (cached)"
+    connection.close()
