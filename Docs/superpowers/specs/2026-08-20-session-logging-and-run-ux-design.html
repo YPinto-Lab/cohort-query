@@ -119,11 +119,17 @@ is the only record of that attempt, which is the point of writing it before the 
 
 <h2>5. Menu</h2>
 
+<p>The SQL and overlap are already-computed data the moment <code>ask()</code> returns
+successfully (they come from <code>plan.translation.queries</code> and <code>plan.preview</code>,
+both already in hand) — gating them behind a menu click added a step for information that costs
+nothing to show. <code>_ask()</code>'s success path now prints interpretation, preview line,
+narrow warning, per-source SQL, and the overlap table together, and
+<code>Show the SQL and overlap</code> is removed from the menu:</p>
+
 <pre><code>? What now?
  » Run it
    Refine the question
    Ask new question
-   Show the SQL and overlap
    Discard
    Quit</code></pre>
 
@@ -143,7 +149,51 @@ is the only record of that attempt, which is the point of writing it before the 
       disk.</td></tr>
 </table>
 
-<h2>6. Run progress</h2>
+<h3>5.1 Replay (<code>askslm run plan.json</code>) gets the same loop</h3>
+
+<p><code>_replay()</code> currently builds once and exits — no menu at all. It now creates its
+own timestamped <code>plans/&lt;ts&gt;/</code> folder for <code>log.txt</code> and the default
+<code>cohort.biom</code> target (the loaded <code>plan.json</code> stays wherever it was; replay
+does not rewrite or move it), then after <code>_run</code> completes, loops on a menu scoped to
+what replay can actually do — there is no question to refine, so no LLM-related choices appear:</p>
+
+<pre><code>? What now?
+ » Run it
+   Discard
+   Quit</code></pre>
+
+<p><code>Run it</code> lets you rebuild the same loaded plan with a different feature
+space/source combination without re-invoking <code>askslm run</code> from the shell.
+<code>Discard</code> deletes <em>this replay's</em> log folder (and any biom it wrote) — never the
+original <code>plan.json</code> path, which is a caller-owned input, not something this run
+created.</p>
+
+<h2>6. Skip a menu that has only one answer</h2>
+
+<p><code>_run</code>'s two prompts each become a no-op when they'd only ever offer one choice:</p>
+
+<ul>
+  <li><strong><code>_families(plan)</code></strong> — when the cohort covers exactly one
+  <code>ProfilerFamily</code>, skip the <code>questionary.select</code> and use it directly.</li>
+  <li><strong><code>_sources_of(family)</code></strong> restricted to sources the cohort actually
+  covers — when exactly one remains, skip the <code>questionary.checkbox</code> and use it
+  directly.</li>
+</ul>
+
+<p>Silently skipping a step is confusing on its own — the transcript would jump from "Run it" to
+a build with no visible reason. So each auto-pick prints one line before the build starts, in the
+same header that already announces the output path:</p>
+
+<pre><code>Building cohort -> plans/20260820_143012/cohort.biom
+  feature space: STAT (only option)
+  sources: METALOG_MOTUS3 (only option)
+  [1/3] discovering cohort...        12.4s
+  ...</code></pre>
+
+<p>When a prompt has more than one real choice, it is asked exactly as today — this only removes
+the click when there was never a decision to make.</p>
+
+<h2>7. Run progress</h2>
 
 <p><code>CohortBuilder.build</code> (<code>build.py</code>) takes one new optional argument,
 <code>on_step: Callable[[str], None] | None = None</code>, called with a short label immediately
@@ -164,7 +214,7 @@ Wrote plans/20260820_143012/cohort.biom (2.1 GB)</code></pre>
 <code>feature_table.biom</code> to <code>&lt;plan folder&gt;/cohort.biom</code>; typing a
 different path still overrides it.</p>
 
-<h2>7. Deliberate limits</h2>
+<h2>8. Deliberate limits</h2>
 
 <ul>
   <li><strong>Still synchronous.</strong> The terminal blocks for the whole build, same as today.
@@ -175,6 +225,10 @@ different path still overrides it.</p>
   — not a long-running service. Add a cap only if a real log is ever observed to be a problem.</li>
   <li><strong><code>plans/</code> is never garbage-collected automatically</strong> except via an
   explicit <code>Discard</code>. Old folders accumulate; that is the intended trail, not a leak.</li>
+  <li><strong>Replay never writes a second <code>plan.json</code>.</strong> Its fresh
+  <code>plans/&lt;ts&gt;/</code> folder exists only for <code>log.txt</code> and the default biom
+  path — the plan itself lives at whatever path the caller passed to <code>askslm run</code>, and
+  replay never copies or rewrites it.</li>
 </ul>
 
 <hr>
