@@ -24,12 +24,12 @@ _logger = logging.getLogger("askslm.worker")
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     handler = rundir.attach_log_handler(args.plan_dir)
-    jobs.write_status(args.plan_dir, "RUNNING")
     try:
+        jobs.write_status(args.plan_dir, "RUNNING")
         plan = load_plan(args.plan)
         askslm.config(db=args.db, gpu=args.gpu)
         _, report = plan.run(
-            profile_sources=[Source[name] for name in args.sources.split(",")],
+            profile_sources=[Source[name.strip()] for name in args.sources.split(",")],
             out=args.out,
             on_step=_log_step)
         (args.plan_dir / "report.txt").write_text(str(report))
