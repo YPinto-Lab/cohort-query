@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
+from typing import Callable
 
 CPU_TEMPLATE = """#!/bin/bash
 #SBATCH --job-name=askslm-cohort
@@ -50,22 +51,32 @@ def write_sbatch(plan_dir: Path, worker_cmd: str, gpu: bool) -> Path:
     return path
 
 
-def submit(script_path: Path, run=subprocess.run) -> str:
+def submit(script_path: Path,
+          run: Callable[..., subprocess.CompletedProcess] = subprocess.run) -> str:
     result = run(["sbatch", str(script_path)], capture_output=True, text=True, check=True)
     match = re.search(r"Submitted batch job (\d+)", result.stdout)
     if not match:
-        raise RuntimeError(f"could not parse a job id from sbatch output: {result.stdout!r}")
+        raise RuntimeError(
+            f"could not parse a job id from sbatch output: "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}")
     return match.group(1)
 
 
-def squeue_state(job_id: str, run=subprocess.run) -> str | None:
-    """None means the job is no longer in the queue -- finished, one way or another."""
+def squeue_state(job_id: str,
+                run: Callable[..., subprocess.CompletedProcess] = subprocess.run) -> str | None:
+    """None means the job is no longer in the queue -- finished, one way or another.
+    A nonzero exit is squeue itself failing (not on PATH, scheduler hiccup) and must
+    not be confused with that: a job that's actually gone still exits 0 with empty
+    stdout."""
     result = run(["squeue", "-j", job_id, "-h", "-o", "%T"], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"squeue failed for job {job_id}: {result.stderr!r}")
     state = result.stdout.strip()
     return state or None
 
 
-def cancel(job_id: str, run=subprocess.run) -> None:
+def cancel(job_id: str,
+          run: Callable[..., subprocess.CompletedProcess] = subprocess.run) -> None:
     run(["scancel", job_id], check=True)
 
 

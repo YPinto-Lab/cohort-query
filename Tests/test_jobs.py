@@ -68,6 +68,14 @@ def test_squeue_state_reports_the_job_state_while_queued():
     assert jobs.squeue_state("4213765", run=fake_run) == "RUNNING"
 
 
+def test_squeue_state_raises_if_squeue_itself_fails(tmp_path):
+    def fake_run(args, **kwargs):
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="squeue: error: bad job id")
+
+    with pytest.raises(RuntimeError, match="bad job id"):
+        jobs.squeue_state("4213765", run=fake_run)
+
+
 def test_job_id_and_status_round_trip_through_the_plan_folder(tmp_path):
     jobs.write_job_id(tmp_path, "4213765")
     jobs.write_status(tmp_path, "RUNNING")
