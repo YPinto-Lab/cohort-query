@@ -36,8 +36,18 @@ def watch(plan_dir: Path, console: Console) -> None:
                 console.print(f"[yellow]squeue check failed, retrying: {error}[/yellow]")
                 time.sleep(POLL_SECONDS)
                 continue
-            if state is None and status is None:
-                console.print("[red]job left the queue and never reported a status[/red]")
+            if state is None:
+                # squeue is the only signal guaranteed to update once a job is gone --
+                # a job killed by `scancel` from outside askslm, or OOM-killed, never
+                # gets to write DONE/FAILED, so status.txt alone would hang this loop
+                # forever. Leaving the queue at all means it's over, whatever
+                # status.txt still says.
+                if status is None:
+                    console.print("[red]job left the queue and never reported a status[/red]")
+                else:
+                    console.print(
+                        f"[yellow]job left the queue while status.txt still said "
+                        f"{status!r} -- likely killed outside askslm (scancel, OOM)[/yellow]")
                 return
             console.print(f"job {job_id} · {state or status}")
             time.sleep(POLL_SECONDS)
