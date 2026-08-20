@@ -15,6 +15,7 @@ import biom
 
 from askslm import runtime
 from askslm.build import BuildReport, Materialization
+from askslm.cohort import Accession, Cohort
 from askslm.sources import Source
 from askslm.translation import ResearchQuestion, SourceQuery, Translation
 
@@ -44,6 +45,7 @@ class Plan:
     translation: Translation
     preview: CohortPreview
     error: str | None = None
+    discovered: Cohort | None = None   # ask()'s own Cohort, cached so run() need not re-query it
 
     def run(self, profile_sources: Source | Sequence[Source],
             out: Path | None = None,
@@ -54,7 +56,7 @@ class Plan:
         request = Materialization(profile_sources=_as_tuple(profile_sources),
                                   metadata_winning_source=metadata_winning_source)
         return runtime.cohort_builder().build(self.translation.queries, request, out,
-                                              on_step=on_step)
+                                              on_step=on_step, discovered=self.discovered)
 
     def _guard_runnable(self) -> None:
         if self.error is not None:
@@ -93,7 +95,12 @@ def _as_json(plan: Plan) -> dict:
             "union": plan.preview.union,
         },
         "error": plan.error,
+        "discovered": _cohort_json(plan.discovered) if plan.discovered is not None else None,
     }
+
+
+def _cohort_json(cohort: Cohort) -> dict:
+    return {source.name: sorted(keys) for source, keys in cohort.by_source.items()}
 
 
 def _named(counts: dict) -> dict:
@@ -104,8 +111,14 @@ def _sourced(counts: dict) -> dict:
     return {Source[name]: count for name, count in counts.items()}
 
 
+def _cohort_of(payload: dict) -> Cohort:
+    return Cohort({Source[name]: frozenset(Accession(key) for key in keys)
+                   for name, keys in payload.items()})
+
+
 def _from_json(payload: dict) -> Plan:
     preview = payload["preview"]
+    discovered_payload = payload.get("discovered")
     return Plan(
         question=ResearchQuestion(payload["question"]),
         translation=Translation(
@@ -117,7 +130,8 @@ def _from_json(payload: dict) -> Plan:
             by_metadata_source=_sourced(preview["by_metadata_source"]),
             by_profile_source=_sourced(preview["by_profile_source"]),
             shared=preview["shared"], union=preview["union"]),
-        error=payload["error"])
+        error=payload["error"],
+        discovered=_cohort_of(discovered_payload) if discovered_payload else None)
 
 
 def _as_tuple(profile_sources: Source | Sequence[Source]) -> tuple[Source, ...]:
