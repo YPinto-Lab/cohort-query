@@ -14,6 +14,15 @@ from askslm.sources import Source, SourceKind
 from askslm.translation import SourceQuery, Translation, TranslationPrompt
 
 
+SIRIUS_EXTENSION_PATH = "/private/pinto-lab/anna/sirius/build/sirius.duckdb_extension"
+
+
+def _gpu_wrapped(sql: str, gpu: bool) -> str:
+    if not gpu:
+        return sql
+    return f"SELECT * FROM gpu_processing($$ {sql} $$)"
+
+
 class DuckDbConnection:
     """The mirror is opened READ-ONLY. Any write -- including a stray LLM INSERT -- is
     refused by DuckDB itself rather than by validation we would have to write.
@@ -24,9 +33,13 @@ class DuckDbConnection:
     mirror, not asked of the caller. A fixture with no mirror_config just skips this.
     """
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, gpu: bool = False):
         self._connection = duckdb.connect(str(db_path), read_only=True)
         self._attach_sources()
+        self._gpu = gpu
+        if gpu:
+            self._connection.execute(f"LOAD '{SIRIUS_EXTENSION_PATH}'")
+            self._connection.execute("SELECT gpu_buffer_init()")
 
     def _attach_sources(self) -> None:
         for alias, path in self._attachments():
@@ -41,7 +54,8 @@ class DuckDbConnection:
         return [("sra", row[0]) for row in rows]
 
     def query(self, sql: str, params: list | None = None) -> pd.DataFrame:
-        return self._connection.execute(sql, params or []).fetch_df()
+        return self._connection.execute(_gpu_wrapped(sql, self._gpu),
+                                        params or []).fetch_df()
 
     def close(self) -> None:
         self._connection.close()

@@ -8,7 +8,7 @@ with "table not found" against the real mirror while passing against the fixture
 import duckdb
 import pytest
 
-from askslm.adapters import DuckDbConnection
+from askslm.adapters import DuckDbConnection, _gpu_wrapped
 
 
 @pytest.fixture
@@ -60,3 +60,12 @@ def test_the_mirror_is_read_only(split_mirror):
         connection.query("CREATE TABLE injected (x INTEGER)")
 
     connection.close()
+
+
+def test_gpu_mode_wraps_the_sql_in_gpu_processing():
+    assert (_gpu_wrapped("SELECT 1", gpu=True)
+           == "SELECT * FROM gpu_processing($$ SELECT 1 $$)")
+
+
+def test_cpu_mode_leaves_the_sql_unchanged():
+    assert _gpu_wrapped("SELECT 1", gpu=False) == "SELECT 1"
