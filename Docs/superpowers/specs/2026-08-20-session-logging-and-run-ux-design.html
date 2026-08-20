@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>askslm — session run-directory, logging &amp; run UX</title>
+<style>
+  :root{--ink:#1b1f24;--muted:#5b6570;--line:#e2e6ea;--bg:#fbfcfd;
+    --locked-bg:#e7f6ec;--locked-ink:#1f7a3d;--stop-bg:#fdecec;--stop-ink:#9c2020;
+    --code-bg:#0f141a;--code-ink:#e7edf3;--accent:#1457b8;--kw:#7fb2ff;--str:#9ad29a;--com:#7d8a99;}
+  *{box-sizing:border-box}
+  body{font:16px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);background:var(--bg);margin:0;padding:0 0 6rem}
+  .wrap{max-width:960px;margin:0 auto;padding:2.5rem 1.5rem}
+  header.doc{border-bottom:2px solid var(--line);padding-bottom:1.2rem;margin-bottom:2rem}
+  h1{font-size:1.7rem;margin:0 0 .3rem}
+  h2{font-size:1.3rem;margin:2.6rem 0 .8rem;padding-bottom:.25rem;border-bottom:1px solid var(--line)}
+  h3{font-size:1.05rem;margin:1.6rem 0 .4rem}
+  .sub{color:var(--muted);font-size:.95rem}
+  .badge{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+         padding:.15rem .5rem;border-radius:999px;vertical-align:middle;margin-left:.5rem;
+         background:var(--locked-bg);color:var(--locked-ink)}
+  p{margin:.6rem 0} ul,ol{margin:.5rem 0 .8rem;padding-left:1.4rem} li{margin:.3rem 0}
+  code{background:#eef1f4;padding:.1rem .35rem;border-radius:4px;font-size:.88em;
+       font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+  pre{background:var(--code-bg);color:var(--code-ink);padding:1rem 1.1rem;border-radius:10px;
+      overflow:auto;font-size:.84rem;line-height:1.5;margin:.8rem 0}
+  pre code{background:none;padding:0;color:inherit}
+  pre .kw{color:var(--kw)} pre .str{color:var(--str)} pre .com{color:var(--com)}
+  table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+  th,td{border:1px solid var(--line);padding:.55rem .7rem;text-align:left;vertical-align:top}
+  th{background:#eef2f6}
+  .note{border-left:3px solid var(--accent);background:#f0f5fc;padding:.7rem 1rem;border-radius:0 8px 8px 0;margin:1rem 0}
+  .fix{border-left:3px solid var(--locked-ink);background:var(--locked-bg);padding:.7rem 1rem;border-radius:0 8px 8px 0;margin:1rem 0}
+  .danger{border-left:3px solid var(--stop-ink);background:var(--stop-bg);padding:.7rem 1rem;border-radius:0 8px 8px 0;margin:1rem 0}
+  .meta{color:var(--muted);font-size:.85rem}
+  hr{border:none;border-top:1px solid var(--line);margin:2.4rem 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <h1>Session run-directory, logging &amp; run UX <span class="badge">accepted 2026-08-20</span></h1>
+  <p class="sub">Every question gets a folder on disk; every run leaves a log; "Run it" stops
+  looking like it hung.</p>
+  <p class="meta">2026-08-20 · touches only <code>src/askslm/cli/session.py</code> and
+  <code>src/askslm/build.py</code> · no change to the public API surface</p>
+</header>
+
+<h2>1. The problem this fixes</h2>
+
+<p>A real session on the server, right after picking sources and confirming output:</p>
+
+<pre><code>? What now? Run it
+? Which feature space? STAT
+? Which sources? (order = precedence) done
+? What now? (Use arrow keys)</code></pre>
+
+<p>Nothing between "done" and the next menu tells you a multi-minute build ran, where it wrote,
+or whether it's safe to assume it finished. Separately: nothing survives a session except what
+you manually choose to <code>Save plan and quit</code>, and there is no record at all of what the
+LLM was actually sent or what SQL actually ran — the only way to find out is
+<code>Show the SQL and overlap</code>, and only for the current plan, only while the session is
+still open.</p>
+
+<h2>2. Plan folder: one per question</h2>
+
+<p>The instant <code>_session()</code> reads a question (first ask, "Refine the question", or
+"Ask new question"), before calling <code>askslm.ask()</code>, it creates:</p>
+
+<pre><code>plans/&lt;YYYYMMDD_HHMMSS&gt;/
+  log.txt      <span class="com"># created immediately -- captures the run even if ask() throws</span>
+  plan.json    <span class="com"># written only if ask() returns with plan.error is None</span>
+  cohort.biom  <span class="com"># default "Run it" output target; still overridable</span></code></pre>
+
+<p>Every question is a new folder — refining keeps the text pre-filled but is still a new
+<code>ask()</code> call, so it gets a new timestamp. The previous folder is left on disk exactly
+as it was; nothing merges across refinements. No collision handling is added for two questions
+in the same second — that has never happened in practice and <code>mkdir</code> would just raise
+if it did.</p>
+
+<h2>3. Logging: what goes in <code>log.txt</code></h2>
+
+<p>Stdlib <code>logging</code>, one file handler per plan folder, attached to the
+<code>askslm</code> logger when the folder is created and removed (not just replaced) when the
+next one is. Three call sites feed it:</p>
+
+<ul>
+  <li><strong><code>cli/session.py</code></strong> — one <code>logger.info(...)</code> beside
+  every <code>questionary</code> <code>.ask()</code>: which prompt, what was answered. This is
+  the only new logging call site that is CLI-specific; it is what makes the whole session
+  replayable from the log alone.</li>
+  <li><strong><code>adapters.py</code>, <code>GeminiBackend</code></strong> — prompt text, raw
+  response text, and elapsed time around <code>translate</code>, <code>expand</code>, and
+  <code>repair</code>. These already exist as three separate methods on one class; logging wraps
+  each, it does not change what they do.</li>
+  <li><strong><code>adapters.py</code>, <code>DuckDbConnection.query</code></strong> — the SQL
+  string, row count, and elapsed time. One hook, because every SQL execution in the system —
+  attribute retrieval, cohort discovery, profile reads — already funnels through this one method
+  on the <code>Database</code> port. No other file needs a logging call for SQL to be fully
+  captured.</li>
+</ul>
+
+<div class="note">
+This is observability, not new behavior: nothing here changes a return value, a retry count, or
+an error path. <code>CannedLlmBackend</code> and any test double are untouched — logging lives in
+the concrete adapters, not the ports, so the fakes the test suite injects keep running with no
+log file and no handler at all.
+</div>
+
+<h2>4. Auto-save replaces manual save</h2>
+
+<p>Immediately after <code>askslm.ask()</code> returns, if <code>plan.error is None</code>, the
+session writes <code>plan.json</code> into that question's folder itself — the same
+<code>Plan.save</code> that "Save plan and quit" used to call explicitly. A translation failure or
+an error that survived the one repair attempt is <em>not</em> saved as a plan; <code>log.txt</code>
+is the only record of that attempt, which is the point of writing it before the outcome is known.</p>
+
+<h2>5. Menu</h2>
+
+<pre><code>? What now?
+ » Run it
+   Refine the question
+   Ask new question
+   Show the SQL and overlap
+   Discard
+   Quit</code></pre>
+
+<table>
+  <tr><th>Choice</th><th>Behavior</th></tr>
+  <tr><td><code>Refine the question</code></td>
+      <td>Re-opens the text prompt pre-filled with the current question text. New plan folder on
+      submit, as above.</td></tr>
+  <tr><td><code>Ask new question</code></td>
+      <td>Same, but the text prompt starts blank — for an unrelated cohort, not a wording tweak.</td></tr>
+  <tr><td><code>Discard</code></td>
+      <td>Deletes the current plan folder (<code>plan.json</code>, <code>log.txt</code>, any
+      <code>cohort.biom</code> already written) and drops straight into a blank "Ask new
+      question" prompt — for a cohort that turned out to be junk.</td></tr>
+  <tr><td><code>Save plan and quit</code></td>
+      <td><strong>Removed.</strong> Redundant now that a successful plan is always already on
+      disk.</td></tr>
+</table>
+
+<h2>6. Run progress</h2>
+
+<p><code>CohortBuilder.build</code> (<code>build.py</code>) takes one new optional argument,
+<code>on_step: Callable[[str], None] | None = None</code>, called with a short label immediately
+before each of its three existing phases: discovering the cohort, reading the profile matrix,
+assembling and writing the biom. Nothing about the phases themselves changes — this is a callback
+inserted between three lines that already ran in this order.</p>
+
+<p><code>_run</code> in <code>session.py</code> prints the resolved output path before starting,
+then a line per step with elapsed time as each completes:</p>
+
+<pre><code>Building cohort -> plans/20260820_143012/cohort.biom
+  [1/3] discovering cohort...        12.4s
+  [2/3] reading profile matrix...    done
+  [3/3] assembling + writing biom... done
+Wrote plans/20260820_143012/cohort.biom (2.1 GB)</code></pre>
+
+<p>The default "Write to" answer in the source-picking prompt changes from
+<code>feature_table.biom</code> to <code>&lt;plan folder&gt;/cohort.biom</code>; typing a
+different path still overrides it.</p>
+
+<h2>7. Deliberate limits</h2>
+
+<ul>
+  <li><strong>Still synchronous.</strong> The terminal blocks for the whole build, same as today.
+  A background/return-to-menu-immediately design was considered and explicitly rejected for this
+  round — the progress lines are judged sufficient; revisit only if a build actually needs to run
+  unattended.</li>
+  <li><strong>No log rotation or size cap.</strong> One question, one short session, one log file
+  — not a long-running service. Add a cap only if a real log is ever observed to be a problem.</li>
+  <li><strong><code>plans/</code> is never garbage-collected automatically</strong> except via an
+  explicit <code>Discard</code>. Old folders accumulate; that is the intended trail, not a leak.</li>
+</ul>
+
+<hr>
+<p class="meta">Implementation plan: to be written next via the writing-plans skill.</p>
+
+</div>
+</body>
+</html>
