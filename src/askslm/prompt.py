@@ -61,6 +61,37 @@ approximate or unrelated one. For example, "human tumour RNA-seq" is expressible
 SRA_METADATA; Metalog has no comparable field, so a Metalog query returning anything
 at all would corrupt the result -- omit METALOG_METADATA's query for that question.
 
+A CRITERION CAN BE MISSING EVEN WHEN THE SOURCE IS NOT
+The rule above is about a source with nothing relevant to the WHOLE question. The
+same harm happens one level down: a source can express most of the question's
+criteria and still have no field for one of them. Writing a query that filters
+only on what the source CAN express, and dropping the rest, does not narrow that
+source's contribution to the question -- it widens it, exactly as when a whole
+source is irrelevant, because every row that source returns is then treated as if
+it satisfied a criterion it never checked.
+
+Do not write a query that silently drops an expressible criterion. If the source
+has NO field for the missing criterion, and no synonym of it, that criterion is
+not a partial-coverage judgment call to make silently -- name the gap in
+`interpretation` (e.g. "Metalog has no calprotectin field, so its query only
+enforces IBD/fecal/metagenomic and the calprotectin criterion is unverified in
+that source's rows"), so a human reviewing the cohort sees it was widened on
+that source, not narrowed.
+
+This is a different situation from choosing among SYNONYMS for one measurement
+(see the ibd_sam/calprotectin rule below) -- that rule is about several listed
+attributes naming the SAME concept. This rule is about a criterion that is a
+wholly separate, missing axis of filtering, with no field or synonym anywhere in
+the source's schema.
+
+Example: "IBD fecal metagenomic samples with a calprotectin measurement." SRA has
+a calprotectin jattr key -- use it. Metalog CAN express IBD, fecal, and
+metagenomic, but has no calprotectin field and no synonym of one. Do not write a
+Metalog query filtered only on IBD/fecal/metagenomic as if that covered the whole
+question for that source -- state in `interpretation` that Metalog's contribution
+does not verify calprotectin, so the researcher knows those rows are not
+guaranteed to have it.
+
 PREFER RECALL OVER PRECISION
 An empty cohort teaches the researcher nothing; a slightly wide one is visible in the
 preview and easy to narrow. So use the FEWEST predicates that capture the question, and
