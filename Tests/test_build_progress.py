@@ -40,6 +40,9 @@ def test_on_step_defaults_to_doing_nothing(tmp_path):
 
 
 def test_a_cached_cohort_skips_rediscovery_and_gets_a_distinct_label(tmp_path):
+    """Passing bad SQL as `queries` proves the cached path is really taken, not
+    just labeled that way: if discover() ran anyway, it would raise on the bogus
+    table before this test could ever reach its assertions."""
     from askslm import runtime
     from askslm.build import Materialization
     from askslm.cohort import CohortDiscovery
@@ -49,12 +52,18 @@ def test_a_cached_cohort_skips_rediscovery_and_gets_a_distinct_label(tmp_path):
     askslm.config(db=path, database=connection, backend=CannedLlmBackend(TRANSLATION))
     plan = askslm.ask("gut metagenomes")
     cohort = CohortDiscovery(connection).discover(plan.translation.queries)
+    poisoned_queries = (SourceQuery(askslm.Source.METALOG_METADATA,
+                                    "SELECT * FROM no_such_table_at_all"),)
     request = Materialization(profile_sources=(askslm.Source.METALOG_MOTUS3,),
                               metadata_winning_source=askslm.Source.METALOG_METADATA)
     seen = []
 
-    runtime.cohort_builder().build(plan.translation.queries, request, None,
-                                   on_step=seen.append, discovered=cohort)
+    table, report = runtime.cohort_builder().build(
+        poisoned_queries, request, None, on_step=seen.append, discovered=cohort)
 
     assert seen[0] == "discovering cohort (cached)"
+    # report.dropped is cohort.union() - matrix.biosamples(); this only adds up if
+    # the build actually used the passed-in cached cohort's 14 biosamples, not some
+    # other (e.g. empty) cohort.
+    assert report.biosamples + len(report.dropped) == len(cohort.union())
     connection.close()
