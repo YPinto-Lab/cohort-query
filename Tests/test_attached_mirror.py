@@ -5,6 +5,8 @@ database file holding 13.6 billion rows. config(db=...) still takes one path, so
 connection has to find the second one itself. If this breaks, every STAT query fails
 with "table not found" against the real mirror while passing against the fixture.
 """
+import logging
+
 import duckdb
 import pytest
 
@@ -101,3 +103,18 @@ def test_gpu_mode_fails_fast_when_the_extension_is_missing(tmp_path):
 
     with pytest.raises(duckdb.Error):
         DuckDbConnection(plain, gpu=True)
+
+
+def test_query_logs_the_sql_and_row_count(caplog, tmp_path):
+    db_path = tmp_path / "t.duckdb"
+    raw = duckdb.connect(str(db_path))
+    raw.execute("CREATE TABLE t (x INTEGER)")
+    raw.execute("INSERT INTO t VALUES (1), (2)")
+    raw.close()
+    caplog.set_level(logging.INFO, logger="askslm.adapters")
+
+    connection = DuckDbConnection(db_path)
+    connection.query("SELECT * FROM t")
+    connection.close()
+
+    assert any("SELECT * FROM t" in record.message for record in caplog.records)
