@@ -100,3 +100,25 @@ def test_watch_stops_once_squeue_says_the_job_is_gone_even_if_status_still_says_
     watch.watch(tmp_path, watch.Console(width=200))
 
     assert "killed outside askslm" in capsys.readouterr().out
+
+
+def test_non_terminal_console_still_shows_periodic_progress(tmp_path, monkeypatch, capsys):
+    """rich's console.status() is a transient Live display that writes nothing at
+    all when the console isn't a real terminal -- a piped or logged session must
+    still see periodic progress, not total silence."""
+    calls = {"n": 0}
+
+    def _pending_then_gone(job_id, run=None):
+        calls["n"] += 1
+        return ("PENDING", "Resources") if calls["n"] <= 2 else None
+
+    def _no_sleep(seconds):
+        pass
+
+    jobs.write_job_id(tmp_path, "4213765")
+    monkeypatch.setattr(jobs, "squeue_state_and_reason", _pending_then_gone)
+    monkeypatch.setattr(watch.time, "sleep", _no_sleep)
+
+    watch.watch(tmp_path, watch.Console(width=200, force_terminal=False))
+
+    assert capsys.readouterr().out.count("PENDING") >= 2

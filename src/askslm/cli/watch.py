@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from rich.console import Console
+from rich.status import Status
 
 from askslm.cli import jobs, progress
 
@@ -18,9 +19,15 @@ TOTAL_PHASES = 3          # CohortBuilder.build's fixed phase count
 
 
 def watch(plan_dir: Path, console: Console) -> None:
+    """`console.status()`'s redraw-in-place only renders on a real terminal --
+    `rich.status.Status` is a transient Live display that writes nothing at all
+    when `console.is_terminal` is False (piped output, a logged session). On
+    those, the status line is also printed as an ordinary line each poll, so a
+    non-interactive watcher still sees periodic progress instead of silence."""
     job_id = jobs.read_job_id(plan_dir)
     submitted_at = progress.read_submitted(plan_dir)
     printed: set[str] = set()
+    interactive = console.is_terminal
     try:
         with console.status("") as live:
             while True:
@@ -37,7 +44,8 @@ def watch(plan_dir: Path, console: Console) -> None:
                 try:
                     result = jobs.squeue_state_and_reason(job_id)
                 except RuntimeError as error:
-                    live.update(f"[yellow]squeue check failed, retrying: {error}[/yellow]")
+                    _show(live, console, interactive,
+                         f"[yellow]squeue check failed, retrying: {error}[/yellow]")
                     time.sleep(POLL_SECONDS)
                     continue
                 if result is None:
@@ -50,10 +58,17 @@ def watch(plan_dir: Path, console: Console) -> None:
                             f"{status!r} -- likely killed outside askslm (scancel, OOM)[/yellow]")
                     return
                 state, reason = result
-                live.update(_status_line(job_id, state, reason, submitted_at, events, printed))
+                _show(live, console, interactive,
+                     _status_line(job_id, state, reason, submitted_at, events, printed))
                 time.sleep(POLL_SECONDS)
     except KeyboardInterrupt:
         console.print("\n[dim]stopped watching -- job keeps running[/dim]")
+
+
+def _show(live: Status, console: Console, interactive: bool, line: str) -> None:
+    live.update(line)
+    if not interactive:
+        console.print(line)
 
 
 def _new_phase_lines(events: list[tuple[float, str, str]], printed: set[str],
