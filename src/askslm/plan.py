@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 import biom
 
@@ -47,12 +47,14 @@ class Plan:
 
     def run(self, profile_sources: Source | Sequence[Source],
             out: Path | None = None,
-            metadata_winning_source: Source = Source.METALOG_METADATA
+            metadata_winning_source: Source = Source.METALOG_METADATA,
+            on_step: Callable[[str], None] | None = None
             ) -> tuple[biom.Table, BuildReport]:
         self._guard_runnable()
         request = Materialization(profile_sources=_as_tuple(profile_sources),
                                   metadata_winning_source=metadata_winning_source)
-        return runtime.cohort_builder().build(self.translation.queries, request, out)
+        return runtime.cohort_builder().build(self.translation.queries, request, out,
+                                              on_step=on_step)
 
     def _guard_runnable(self) -> None:
         if self.error is not None:

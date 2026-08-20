@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import biom
 import pandas as pd
@@ -65,6 +66,10 @@ def _json_safe(frame: pd.DataFrame) -> pd.DataFrame:
     return frame.astype(object).where(frame.notna(), None)
 
 
+def _noop_step(label: str) -> None:
+    pass
+
+
 class BiomFactory:
     """Assembles the biom: counts, lineage on the feature axis, metadata on the sample axis.
 
@@ -100,10 +105,14 @@ class CohortBuilder:
         self._metadata = metadata
         self._factory = factory
 
-    def build(self, queries, request: Materialization,
-              out: Path | None) -> tuple[biom.Table, BuildReport]:
+    def build(self, queries, request: Materialization, out: Path | None,
+             on_step: Callable[[str], None] | None = None) -> tuple[biom.Table, BuildReport]:
+        step = on_step or _noop_step
+        step("discovering cohort")
         cohort = self._discovery.discover(queries)
+        step("reading profile matrix")
         matrix = self._profiles.read(request.profile_sources, cohort.union())
+        step("assembling and writing biom")
         metadata = self._metadata.reconciled(cohort, request.metadata_winning_source)
         table = self._factory.build(matrix, metadata.restricted_to(matrix.biosamples()))
         return self._written(table, out), self._report(request, cohort, matrix)
