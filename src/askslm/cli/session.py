@@ -3,9 +3,15 @@
 Line-oriented on purpose. A full-screen TUI owns the terminal and needs a layout
 engine; this needs to show a table, arrow between options, confirm, and repeat.
 Every screen here maps to exactly one call the public API already has.
+
+Not unit-tested: verified by running it. The parts worth testing (plan folders, job
+templating/status, on_step, GPU wrapping) are extracted into rundir.py/jobs.py/
+build.py/adapters.py, which do have tests.
 """
 from __future__ import annotations
 
+import logging
+import shutil
 import sys
 from pathlib import Path
 
@@ -14,18 +20,20 @@ from rich.console import Console
 from rich.table import Table
 
 import askslm
+from askslm.cli import jobs, rundir, watch
 from askslm.cli.render import narrow_warning, overlap_rows, preview_line
 from askslm.plan import Plan, load_plan
 from askslm.settings_file import CONFIG_PATH, stored_settings, write_settings
 from askslm.sources import ProfilerFamily, Source, SourceKind
 
 console = Console()
+logger = logging.getLogger("askslm.session")
 
 
 def main() -> None:
-    """`askslm` starts a session; `askslm run plans/x.json` replays one, no LLM."""
-    if len(sys.argv) > 2 and sys.argv[1] == "run":
-        _replay(Path(sys.argv[2]))
+    """`askslm` starts a session; `askslm load plans/x/plan.json` reattaches to one."""
+    if len(sys.argv) > 2 and sys.argv[1] == "load":
+        _load(Path(sys.argv[2]))
         return
     _configure()
     _session()
@@ -93,67 +101,102 @@ def _ask_key() -> str:
 def _session() -> None:
     question = ""
     plan = None
+    plan_dir = None
     while True:
         if plan is None:
             question = questionary.text("What cohort do you need?", default=question).ask()
             if not question:
                 return
-            plan = _ask(question)
+            plan_dir = rundir.new_plan_dir()
+            handler = rundir.attach_log_handler(plan_dir)
+            logger.info("question -> %r", question)
+            plan = _ask(question, plan_dir)
+            rundir.detach_log_handler(handler)
             if plan is None:
                 continue
         choice = questionary.select("What now?", choices=[
-            "Run it", "Refine the question", "Show the SQL and overlap",
-            "Save plan and quit", "Quit"]).ask()
+            "Run it", "Refine the question", "Ask new question", "Discard", "Quit"]).ask()
         if choice == "Run it":
-            _run(plan)
+            _run(plan, plan_dir)
         elif choice == "Refine the question":
             plan = None
-        elif choice == "Show the SQL and overlap":
-            _show_overlap(plan)
-        elif choice == "Save plan and quit":
-            _save(plan)
-            return
+        elif choice == "Ask new question":
+            plan = None
+            question = ""
+        elif choice == "Discard":
+            _discard(plan_dir)
+            plan = None
+            question = ""
         else:
             return
 
 
-def _ask(question: str) -> Plan | None:
+def _ask(question: str, plan_dir: Path) -> Plan | None:
     """A question the model cannot translate is a screen, not a stack trace."""
     with console.status("thinking"):
         plan = askslm.ask(question)
     if plan.error is not None:
         console.print(f"[red]Could not translate that into a query.[/red]\n{plan.error}")
         return None
+    plan.save(plan_dir / "plan.json")
     console.print(f"[bold]{plan.translation.interpretation}[/bold]")
     console.print(preview_line(plan.preview))
     warning = narrow_warning(plan.preview)
     if warning:
         console.print(f"[yellow]{warning}[/yellow]")
+    _show_overlap(plan)
     return plan
 
 
-def _run(plan: Plan) -> None:
-    family = questionary.select("Which feature space?", choices=_families(plan)).ask()
-    if family is None:
+def _run(plan: Plan, plan_dir: Path) -> None:
+    families = _families(plan)
+    if len(families) == 1:
+        family_name = families[0]
+        console.print(f"  feature space: {family_name} (only option)")
+    else:
+        family_name = questionary.select("Which feature space?", choices=families).ask()
+        if family_name is None:
+            return
+    sources = _sources_of(ProfilerFamily[family_name])
+    if len(sources) == 1:
+        chosen = sources
+        console.print(f"  sources: {sources[0].name} (only option)")
+    else:
+        picked = questionary.checkbox("Which sources? (order = precedence)",
+                                      choices=[source.name for source in sources]).ask()
+        if not picked:
+            return
+        chosen = [Source[name] for name in picked]
+    out = questionary.text("Write to", default=str(plan_dir / "cohort.biom")).ask()
+    if not out:
         return
-    sources = _sources_of(ProfilerFamily[family])
-    chosen = questionary.checkbox("Which sources? (order = precedence)",
-                                  choices=[source.name for source in sources]).ask()
-    if not chosen:
-        return
-    out = questionary.text("Write to", default="feature_table.biom").ask()
-    with console.status("building"):
-        table, report = plan.run(profile_sources=[Source[name] for name in chosen],
-                                 out=Path(out))
-    console.print(f"[green]{out}[/green]")
-    console.print(str(report))
+    gpu = questionary.confirm("Use GPU acceleration for this build?", default=False).ask()
+    _submit(plan_dir, chosen, Path(out), gpu)
+
+
+def _submit(plan_dir: Path, sources: list[Source], out: Path, gpu: bool) -> None:
+    settings = stored_settings()
+    worker_cmd = (f'"{sys.executable}" -m askslm.cli.worker '
+                 f'--plan-dir "{plan_dir}" --plan "{plan_dir / "plan.json"}" '
+                 f'--sources "{",".join(source.name for source in sources)}" '
+                 f'--out "{out}" --db "{settings["db"]}"' + (" --gpu" if gpu else ""))
+    script = jobs.write_sbatch(plan_dir, worker_cmd, gpu)
+    job_id = jobs.submit(script)
+    jobs.write_job_id(plan_dir, job_id)
+    console.print(f"[green]Submitted SLURM job {job_id}[/green]")
+    console.print(f"  squeue:  squeue -j {job_id}")
+    console.print(f"  log:     tail -f {plan_dir / 'log.txt'}")
+    choice = questionary.select("Watch progress now, or back to menu?",
+                                choices=["Watch progress", "Back to menu"]).ask()
+    if choice == "Watch progress":
+        watch.watch(plan_dir, console)
 
 
 def _families(plan: Plan) -> list[str]:
     """Only families that actually cover this cohort. Picking the family first is what
     makes the cross-family guard unreachable by construction (HLD C.0.2)."""
     covered = {source.family().name for source, count in plan.preview.by_profile_source.items()
-               if count}
+              if count}
     return sorted(covered) or sorted(family.name for family in ProfilerFamily)
 
 
@@ -171,19 +214,50 @@ def _show_overlap(plan: Plan) -> None:
         console.print(f"[dim]{query.source.name}[/dim] {query.sql}")
 
 
-def _save(plan: Plan) -> None:
-    out = questionary.text("Save plan to", default="plans/cohort.json").ask()
-    path = plan.save(Path(out))
-    console.print(f"[green]{path}[/green] -- replay with: askslm run {path}")
+def _discard(plan_dir: Path) -> None:
+    """The session created plan.json here itself (autosave), so the whole folder is
+    disposable -- cancel a live job first, never delete files out from under it."""
+    _cancel_if_running(plan_dir)
+    shutil.rmtree(plan_dir)
 
 
-def _replay(path: Path) -> None:
-    """No LLM hop -- the reproducible half of the loop. Still asks which family,
-    sources, and output path to materialize: the persisted Plan only carries the
-    translation and the preview, not a Materialization choice, so `_run` has to
-    ask every time regardless of how the plan was produced."""
+def _discard_loaded(plan_dir: Path, keep: Path) -> None:
+    """`keep` is the plan.json path the caller passed to `askslm load` -- a
+    caller-owned input, not something this run created, so it survives; only this
+    run's own artifacts (log, job files, biom) are removed."""
+    _cancel_if_running(plan_dir)
+    for entry in plan_dir.iterdir():
+        if entry == keep:
+            continue
+        if entry.is_dir():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+
+
+def _cancel_if_running(plan_dir: Path) -> None:
+    job_id = jobs.read_job_id(plan_dir)
+    if job_id is not None and jobs.squeue_state(job_id) is not None:
+        jobs.cancel(job_id)
+
+
+def _load(path: Path) -> None:
+    """No LLM hop -- the reproducible half of the loop. Reattaches straight to the
+    live progress view if a job submitted from this same folder is still running."""
     settings = stored_settings()
     askslm.config(db=settings["db"], llm="gemini", llm_key=settings.get("llm_key", ""))
+    plan_dir = path.parent
+    job_id = jobs.read_job_id(plan_dir)
+    if job_id is not None and jobs.squeue_state(job_id) is not None:
+        watch.watch(plan_dir, console)
     plan = load_plan(path)
     console.print(preview_line(plan.preview))
-    _run(plan)
+    while True:
+        choice = questionary.select("What now?", choices=["Run it", "Discard", "Quit"]).ask()
+        if choice == "Run it":
+            _run(plan, plan_dir)
+        elif choice == "Discard":
+            _discard_loaded(plan_dir, keep=path)
+            return
+        else:
+            return
