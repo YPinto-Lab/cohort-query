@@ -261,11 +261,13 @@ def _load(path: Path) -> None:
     job_id = jobs.read_job_id(plan_dir)
     if job_id is not None:
         try:
-            if jobs.squeue_state(job_id) is not None:
-                watch.watch(plan_dir, console)
+            still_running = jobs.squeue_state(job_id) is not None
         except RuntimeError as error:
             console.print(f"[yellow]couldn't confirm job status ({error}); "
                          f"check `squeue -j {job_id}` yourself if needed[/yellow]")
+            still_running = False
+        if still_running:
+            watch.watch(plan_dir, console)
     plan = load_plan(path)
     console.print(preview_line(plan.preview))
     while True:
