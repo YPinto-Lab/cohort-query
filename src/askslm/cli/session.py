@@ -11,6 +11,7 @@ build.py/adapters.py, which do have tests.
 from __future__ import annotations
 
 import logging
+import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -176,10 +177,13 @@ def _run(plan: Plan, plan_dir: Path) -> None:
 
 def _submit(plan_dir: Path, sources: list[Source], out: Path, gpu: bool) -> None:
     settings = stored_settings()
-    worker_cmd = (f'"{sys.executable}" -m askslm.cli.worker '
-                 f'--plan-dir "{plan_dir}" --plan "{plan_dir / "plan.json"}" '
-                 f'--sources "{",".join(source.name for source in sources)}" '
-                 f'--out "{out}" --db "{settings["db"]}"' + (" --gpu" if gpu else ""))
+    args = [sys.executable, "-m", "askslm.cli.worker",
+           "--plan-dir", str(plan_dir), "--plan", str(plan_dir / "plan.json"),
+           "--sources", ",".join(source.name for source in sources),
+           "--out", str(out), "--db", str(settings["db"])]
+    if gpu:
+        args.append("--gpu")
+    worker_cmd = shlex.join(args)
     script = jobs.write_sbatch(plan_dir, worker_cmd, gpu)
     job_id = jobs.submit(script)
     jobs.write_job_id(plan_dir, job_id)
@@ -227,7 +231,7 @@ def _discard_loaded(plan_dir: Path, keep: Path) -> None:
     run's own artifacts (log, job files, biom) are removed."""
     _cancel_if_running(plan_dir)
     for entry in plan_dir.iterdir():
-        if entry == keep:
+        if entry.samefile(keep):
             continue
         if entry.is_dir():
             shutil.rmtree(entry)
@@ -237,7 +241,14 @@ def _discard_loaded(plan_dir: Path, keep: Path) -> None:
 
 def _cancel_if_running(plan_dir: Path) -> None:
     job_id = jobs.read_job_id(plan_dir)
-    if job_id is not None and jobs.squeue_state(job_id) is not None:
+    if job_id is None:
+        return
+    try:
+        still_running = jobs.squeue_state(job_id) is not None
+    except RuntimeError as error:
+        console.print(f"[yellow]couldn't confirm job status ({error}); cancelling anyway[/yellow]")
+        still_running = True
+    if still_running:
         jobs.cancel(job_id)
 
 
@@ -248,8 +259,13 @@ def _load(path: Path) -> None:
     askslm.config(db=settings["db"], llm="gemini", llm_key=settings.get("llm_key", ""))
     plan_dir = path.parent
     job_id = jobs.read_job_id(plan_dir)
-    if job_id is not None and jobs.squeue_state(job_id) is not None:
-        watch.watch(plan_dir, console)
+    if job_id is not None:
+        try:
+            if jobs.squeue_state(job_id) is not None:
+                watch.watch(plan_dir, console)
+        except RuntimeError as error:
+            console.print(f"[yellow]couldn't confirm job status ({error}); "
+                         f"check `squeue -j {job_id}` yourself if needed[/yellow]")
     plan = load_plan(path)
     console.print(preview_line(plan.preview))
     while True:
