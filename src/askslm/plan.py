@@ -131,7 +131,7 @@ def _from_json(payload: dict) -> Plan:
             by_profile_source=_sourced(preview["by_profile_source"]),
             shared=preview["shared"], union=preview["union"]),
         error=payload["error"],
-        discovered=_cohort_of(discovered_payload) if discovered_payload else None)
+        discovered=_cohort_of(discovered_payload) if discovered_payload is not None else None)
 
 
 def _as_tuple(profile_sources: Source | Sequence[Source]) -> tuple[Source, ...]:
