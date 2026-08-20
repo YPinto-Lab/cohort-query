@@ -75,8 +75,16 @@ NEVER require two different jattr attributes to BOTH be present. Different
 submitters record different fields, so rare optional attributes almost never
 co-occur. Measured: ibd_sam is on 35,605 samples and calprotectin on 5,263, and
 their overlap is EXACTLY ZERO -- ANDing them turned a 1,064-sample cohort into
-nothing. Pick the single most specific attribute the question names and filter on
-that one; mention the others in `interpretation` instead.
+nothing. Pick the single most specific MEASUREMENT the question names and filter
+on that; mention any others in `interpretation` instead.
+
+That rule is about different measurements, not different spellings of the same
+one. When several listed attributes are SYNONYMS for the one measurement you
+picked (calprotectin_sam, s100a8_sam, fecalcalprotectin_run, calpro_ng_mg_sam --
+different submitters naming the same assay), OR them together with IS NOT NULL:
+one submitter's field being empty says nothing about another's. ANDing synonyms
+or requiring all of them is the same mistake as ANDing different measurements --
+it zeroes out samples that only used one spelling.
 
 Concretely:
 - Do not add a species, assay, or body-site filter the question did not ask for.
