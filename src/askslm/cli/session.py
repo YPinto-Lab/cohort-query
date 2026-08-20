@@ -21,7 +21,7 @@ from rich.console import Console
 from rich.table import Table
 
 import askslm
-from askslm.cli import jobs, rundir, watch
+from askslm.cli import jobs, progress, rundir, watch
 from askslm.cli.render import narrow_warning, overlap_rows, preview_line
 from askslm.plan import Plan, load_plan
 from askslm.settings_file import CONFIG_PATH, stored_settings, write_settings
@@ -187,6 +187,7 @@ def _submit(plan_dir: Path, sources: list[Source], out: Path, gpu: bool) -> None
     script = jobs.write_sbatch(plan_dir, worker_cmd, gpu)
     job_id = jobs.submit(script)
     jobs.write_job_id(plan_dir, job_id)
+    progress.write_submitted(plan_dir)
     console.print(f"[green]Submitted SLURM job {job_id}[/green]")
     console.print(f"  squeue:  squeue -j {job_id}")
     console.print(f"  log:     tail -f {plan_dir / 'log.txt'}")
