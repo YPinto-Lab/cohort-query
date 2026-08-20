@@ -4,7 +4,7 @@ import pytest
 
 import askslm
 from askslm.adapters import CannedLlmBackend, DuckDbConnection
-from askslm.cli import worker
+from askslm.cli import progress, worker
 from askslm.translation import SourceQuery, Translation
 
 from fixtures.mirror import build_fixture_mirror
@@ -36,6 +36,10 @@ def test_main_builds_the_biom_and_reports_success(tmp_path):
     log_text = (plan_dir / "log.txt").read_text()
     assert "discovering cohort" in log_text
     assert "reading profile matrix" in log_text
+
+    progress_labels = [label for _, _, label in progress.read_events(plan_dir)]
+    assert progress_labels == ["discovering cohort", "reading profile matrix",
+                               "assembling and writing biom"]
 
 
 def test_main_reports_failed_status_on_error(tmp_path):
