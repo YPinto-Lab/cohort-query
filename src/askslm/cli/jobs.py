@@ -75,6 +75,22 @@ def squeue_state(job_id: str,
     return state or None
 
 
+def squeue_state_and_reason(job_id: str,
+        run: Callable[..., subprocess.CompletedProcess] = subprocess.run
+        ) -> tuple[str, str] | None:
+    """Like squeue_state, but also returns the REASON code (e.g. 'Resources',
+    'Priority') a PENDING job reports -- one extra %R column, no second call.
+    None means the job is no longer in the queue, same convention as squeue_state."""
+    result = run(["squeue", "-j", job_id, "-h", "-o", "%T %R"], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"squeue failed for job {job_id}: {result.stderr!r}")
+    output = result.stdout.strip()
+    if not output:
+        return None
+    state, reason = output.split(" ", 1)
+    return state, reason
+
+
 def cancel(job_id: str,
           run: Callable[..., subprocess.CompletedProcess] = subprocess.run) -> None:
     run(["scancel", job_id], check=True)

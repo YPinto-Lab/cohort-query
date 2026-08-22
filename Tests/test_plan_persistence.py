@@ -1,4 +1,6 @@
 """A plan is the reproducible artifact: save it, replay it, never re-ask the LLM."""
+import json
+
 import pytest
 
 import askslm
@@ -53,3 +55,39 @@ def test_a_failed_plan_still_saves_and_still_refuses_to_run(tmp_path):
 
     with pytest.raises(askslm.TranslationError):
         load_plan(path).run(profile_sources=askslm.Source.METALOG_MOTUS3)
+
+
+def test_discovered_cohort_round_trips(tmp_path):
+    from askslm.cohort import Cohort
+
+    plan = Plan(
+        question=ResearchQuestion("adults with IBD"),
+        translation=Translation(
+            interpretation="x",
+            queries=(SourceQuery(askslm.Source.METALOG_METADATA,
+                                 "SELECT biosample FROM metalog_metadata"),)),
+        preview=CohortPreview(union=2),
+        discovered=Cohort({askslm.Source.METALOG_METADATA:
+                           frozenset({"SAMN001", "SAMN002"})}))
+    path = tmp_path / "cached.json"
+
+    plan.save(path)
+    loaded = load_plan(path)
+
+    assert (loaded.discovered.by_source[askslm.Source.METALOG_METADATA]
+           == frozenset({"SAMN001", "SAMN002"}))
+
+
+def test_an_old_plan_json_with_no_discovered_key_still_loads(tmp_path):
+    """An old plan.json, saved before this field existed, has no "discovered" key
+    at all -- it must still load, with discovered=None, and fall back to fresh
+    discovery rather than crashing on a missing key."""
+    path = tmp_path / "old.json"
+    _plan().save(path)
+    payload = json.loads(path.read_text())
+    del payload["discovered"]
+    path.write_text(json.dumps(payload))
+
+    loaded = load_plan(path)
+
+    assert loaded.discovered is None

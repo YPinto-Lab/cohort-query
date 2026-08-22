@@ -12,9 +12,10 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
+from typing import Callable
 
 import askslm
-from askslm.cli import jobs, rundir
+from askslm.cli import jobs, progress, rundir
 from askslm.plan import load_plan
 from askslm.sources import Source
 
@@ -31,7 +32,7 @@ def main(argv: list[str] | None = None) -> None:
         _, report = plan.run(
             profile_sources=[Source[name.strip()] for name in args.sources.split(",")],
             out=args.out,
-            on_step=_log_step)
+            on_step=_on_step(args.plan_dir))
         (args.plan_dir / "report.txt").write_text(str(report))
         jobs.write_status(args.plan_dir, "DONE")
     except Exception:
@@ -41,8 +42,11 @@ def main(argv: list[str] | None = None) -> None:
         rundir.detach_log_handler(handler)
 
 
-def _log_step(label: str) -> None:
-    _logger.info(label)
+def _on_step(plan_dir: Path) -> Callable[[str], None]:
+    def step(label: str) -> None:
+        _logger.info(label)
+        progress.write_start(plan_dir, label)
+    return step
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:

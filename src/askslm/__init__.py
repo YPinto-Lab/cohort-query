@@ -21,11 +21,12 @@ Design: Docs/superpowers/specs/2026-06-17-askslm-architecture-hld-lld.html
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from askslm import runtime
 from askslm.build import BuildReport, Materialization
-from askslm.cohort import Accession, Cohort, InvalidCohortQuery
+from askslm.cohort import Accession, Cohort, CohortDiscovery, InvalidCohortQuery
 from askslm.plan import CohortPreview, Plan, TranslationError, load_plan
 from askslm.ports import Database, LlmBackend
 from askslm.profiles import ProfileReader
@@ -59,7 +60,9 @@ def ask(question: str, save: str | Path | None = None) -> Plan:
         plan = Plan(research_question, translation, CohortPreview(), error=translation.failure)
     else:
         try:
-            plan = Plan(research_question, translation, _preview(translation))
+            discovery = _discover(translation)
+            plan = Plan(research_question, translation, discovery.preview,
+                       discovered=discovery.cohort)
         except InvalidCohortQuery as error:
             plan = _repaired(research_question, translation, error)
     if save is not None:
@@ -85,7 +88,8 @@ def _repaired(question: ResearchQuestion, translation: Translation,
         columns=_columns_of(error.source))
     retried = _with_sql(translation, error.source, fixed)
     try:
-        return Plan(question, retried, _preview(retried))
+        discovery = _discover(retried)
+        return Plan(question, retried, discovery.preview, discovered=discovery.cohort)
     except InvalidCohortQuery as second:
         return Plan(question, retried, CohortPreview(), error=str(second))
 
@@ -107,15 +111,20 @@ def _columns_of(source: Source) -> str:
                      in zip(frame["column_name"], frame["column_type"]))
 
 
-def _preview(translation: Translation) -> CohortPreview:
-    from askslm.cohort import CohortDiscovery
+@dataclass(frozen=True)
+class _Discovery:
+    cohort: Cohort
+    preview: CohortPreview
 
+
+def _discover(translation: Translation) -> _Discovery:
     cohort = CohortDiscovery(runtime.database()).discover(translation.queries)
     reader = ProfileReader(runtime.database())
-    return CohortPreview(
+    preview = CohortPreview(
         by_metadata_source={source: len(keys) for source, keys in cohort.by_source.items()},
         shared=len(cohort.shared()),
         union=len(cohort.union()),
         by_profile_source={source: len(reader.coverage(source, cohort.union()))
                            for source in Source if source.kind() is SourceKind.PROFILE},
     )
+    return _Discovery(cohort, preview)

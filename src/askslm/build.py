@@ -106,10 +106,15 @@ class CohortBuilder:
         self._factory = factory
 
     def build(self, queries, request: Materialization, out: Path | None,
-              on_step: Callable[[str], None] | None = None) -> tuple[biom.Table, BuildReport]:
+              on_step: Callable[[str], None] | None = None,
+              discovered: Cohort | None = None) -> tuple[biom.Table, BuildReport]:
         step = on_step or _noop_step
-        step("discovering cohort")
-        cohort = self._discovery.discover(queries)
+        if discovered is not None:
+            step("discovering cohort (cached)")
+            cohort = discovered
+        else:
+            step("discovering cohort")
+            cohort = self._discovery.discover(queries)
         step("reading profile matrix")
         matrix = self._profiles.read(request.profile_sources, cohort.union())
         step("assembling and writing biom")
