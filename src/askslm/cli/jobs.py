@@ -4,8 +4,15 @@ submit a real sbatch job instead of running the build on the login node.
 Resource numbers are scaled down from Anna Shafir's own proven-working jobs on this
 cluster (run_duckdb.sh: cpu192G-48h/18cpu/64G/4h; run_sirius.sh: H200-12h/48cpu/
 gres:gpu:1/1T/4h) -- hers ran a full 39M-row unfiltered join; a cohort build reads an
-already-discovered, cohort-scoped set of biosamples off stat_coverage. Revisit with
-real timing once a few builds have run.
+already-discovered, cohort-scoped set of biosamples off stat_coverage.
+
+CPU memory revised 2026-08-20 from the first real build (job 23680753, a 4503-biosample
+IBD cohort over SRA_TAXONOMY): DuckDB alone reached MaxRSS 41.3G against the old 48G
+cap, and that was before `fetch_df` materialized the result. The result frame, the
+`_with_biosample` merge, the pivot, and `to_json` all live OUTSIDE DuckDB's buffer pool,
+so they are not spillable and not counted by `memory_limit` -- the cap has to cover the
+buffer pool AND everything pandas builds on top of it. 160G still fits the 192G nodes,
+which are usually idle, so the headroom costs no queue time.
 """
 from __future__ import annotations
 
@@ -18,8 +25,8 @@ CPU_TEMPLATE = """#!/bin/bash
 #SBATCH --job-name=askslm-cohort
 #SBATCH --partition=cpu192G-48h
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=48G
-#SBATCH --time=02:00:00
+#SBATCH --mem=160G
+#SBATCH --time=08:00:00
 #SBATCH --output={plan_dir}/slurm-%j.out
 #SBATCH --error={plan_dir}/slurm-%j.err
 
