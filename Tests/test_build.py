@@ -73,3 +73,51 @@ def test_timestamp_values_become_iso_strings_not_json_nan():
 
     assert md["collection_date"] == "2020-03-01T00:00:00"
     assert md["bmi"] is None
+
+
+def test_wide_format_visit_fields_resolve_by_study_week_not_silently_dropped():
+    """Verified against a real cohort (bioproject PRJNA930767): 49/72 biosamples carry
+    all six visit weeks' calprotectin values on one row, though each biosample is one
+    sequenced run of one specimen. study_week_sam identifies which one is real for this
+    specimen; the rest are the same subject's OTHER visits, not this specimen's data."""
+    row = {"study_week_sam": "52",
+          "calprotectin0_sam": "21", "calprotectin6_sam": "61", "calprotectin12_sam": "147",
+          "calprotectin24_sam": "15", "calprotectin36_sam": "46", "calprotectin52_sam": "145",
+          "environment_material": "fecal material"}
+    metadata = ReconciledMetadata(pd.DataFrame([row], index=["SAMN1"]))
+
+    table = BiomFactory().build(_matrix(["SAMN1"]), metadata)
+    md = table.metadata("SAMN1", axis="sample")
+
+    assert md["calprotectin_sam"] == "145"                      # this specimen's own week-52 value
+    assert md["calprotectin_sam__other_visit_week0"] == "21"     # kept, not dropped
+    assert md["calprotectin_sam__other_visit_week6"] == "61"
+    assert md["calprotectin_sam__other_visit_week12"] == "147"
+    assert md["calprotectin_sam__other_visit_week24"] == "15"
+    assert md["calprotectin_sam__other_visit_week36"] == "46"
+    for week in (0, 6, 12, 24, 36, 52):
+        assert f"calprotectin{week}_sam" not in md    # raw per-week fields all resolved away
+    assert md["environment_material"] == "fecal material"        # untouched
+
+
+def test_a_lone_numbered_field_is_left_alone_not_treated_as_a_visit_collision():
+    """Only >1 same-prefix numbered field on one row is the wide-format signature --
+    a single one is just a normal field name, nothing to resolve."""
+    row = {"study_week_sam": "6", "calprotectin6_sam": "61"}
+    metadata = ReconciledMetadata(pd.DataFrame([row], index=["SAMN1"]))
+
+    table = BiomFactory().build(_matrix(["SAMN1"]), metadata)
+    md = table.metadata("SAMN1", axis="sample")
+
+    assert md["calprotectin6_sam"] == "61"
+    assert "calprotectin_sam" not in md
+
+
+def test_no_study_week_means_visit_fields_pass_through_unchanged():
+    row = {"calprotectin0_sam": "21", "calprotectin6_sam": "61"}
+    metadata = ReconciledMetadata(pd.DataFrame([row], index=["SAMN1"]))
+
+    table = BiomFactory().build(_matrix(["SAMN1"]), metadata)
+    md = table.metadata("SAMN1", axis="sample")
+
+    assert md["calprotectin0_sam"] == "21" and md["calprotectin6_sam"] == "61"

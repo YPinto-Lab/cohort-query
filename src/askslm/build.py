@@ -1,6 +1,7 @@
 """discover -> reconcile -> assemble. What run() drives."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -108,7 +109,8 @@ class BiomFactory:
         that was never looked up for this sample. `_restricted_to` drops exactly those.
         """
         rows = _json_safe(metadata.frame).to_dict("index")
-        return {column: {**_flattened(_restricted_to(rows.get(biosample, {}), metadata.columns_for(biosample))),
+        return {column: {**_resolved_by_visit(_flattened(
+                             _restricted_to(rows.get(biosample, {}), metadata.columns_for(biosample)))),
                          "biosample": biosample, "column_id": column}
                 for column, biosample in matrix.column_biosample.items()}
 
@@ -139,6 +141,47 @@ def _flattened(row: dict) -> dict:
                 for key, values in grouped.items() if key not in row}
     return {**{key: value for key, value in row.items() if key not in ("attributes", "jattr")},
            **flattened}
+
+
+_VISIT_FIELD = re.compile(r"^(.+?)(\d+)_sam$")
+
+
+def _resolved_by_visit(row: dict) -> dict:
+    """A wide-format longitudinal study exports one row per SUBJECT with one column per
+    STUDY VISIT (calprotectin0_sam, calprotectin6_sam, ... calprotectin52_sam), then that
+    whole row gets attached to whichever single specimen from that subject was actually
+    sequenced. Verified on a real cohort (bioproject PRJNA930767): 49 of 72 biosamples
+    carry all six visits' calprotectin values simultaneously, though each biosample is
+    exactly one sequenced run of exactly one specimen -- only ONE of those six values was
+    ever measured on the material that got profiled. `study_week_sam` says which.
+
+    Never dropped: the other visits are real data about the same subject, just not about
+    THIS specimen, and silently discarding them would be a scientific judgement call this
+    function has no business making. They are relabeled instead, so nothing described as
+    plain `calprotectin_sam` can be mistaken for this specimen's own measurement unless it
+    verifiably is.
+    """
+    study_week = row.get("study_week_sam")
+    if study_week is None:
+        return row
+    by_prefix: dict[str, dict[str, str]] = {}
+    for key in row:
+        match = _VISIT_FIELD.match(key)
+        if match:
+            by_prefix.setdefault(match.group(1), {})[match.group(2)] = key
+
+    resolved = dict(row)
+    for prefix, weeks in by_prefix.items():
+        if len(weeks) < 2:      # a lone numbered field isn't a wide-format collision
+            continue
+        canonical = f"{prefix}_sam"
+        for week, key in weeks.items():
+            value = resolved.pop(key)
+            if week == str(study_week):
+                resolved.setdefault(canonical, value)     # a real column always wins
+            else:
+                resolved[f"{prefix}_sam__other_visit_week{week}"] = value
+    return resolved
 
 
 class CohortBuilder:
