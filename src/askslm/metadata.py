@@ -68,8 +68,16 @@ class MetadataReconciler:
         self._reader = reader
 
     def reconciled(self, cohort: Cohort, winning_source: Source) -> ReconciledMetadata:
-        accessions = cohort.union()
-        frames = {source: self._reader.read(source, accessions) for source in cohort.by_source}
+        """Each source is read for exactly the accessions ITS OWN discovery query
+        confirmed (`cohort.by_source[source]`), never the whole `cohort.union()`.
+
+        A biosample discovered only by SRA_METADATA may still have some unrelated row
+        in metalog_metadata -- a different study, never checked against this question's
+        criteria. Reading METALOG_METADATA against the full union would merge that
+        unconfirmed row in anyway. Scoping each read to what that source itself vetted
+        is what makes `Cohort.shared() == 0` actually mean zero cross-source blending.
+        """
+        frames = {source: self._reader.read(source, keys) for source, keys in cohort.by_source.items()}
         others = [frame for source, frame in frames.items() if source is not winning_source]
         combined = reduce(combine_first_onto, others, frames[winning_source])
         return ReconciledMetadata(combined, _covering_columns(frames))
