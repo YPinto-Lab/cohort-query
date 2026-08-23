@@ -81,6 +81,15 @@ attributes naming the SAME concept within a source that DOES have a field for it
 The rule above is about a criterion with no field or synonym anywhere in the
 source's schema, which is grounds to omit that source's query, not narrow it.
 
+"No field for it" does NOT mean "no column named exactly that." A free-text
+column matched with a pattern predicate (see WRITING PREDICATES above) expresses
+the criterion just as much as a dedicated column or listed attribute does -- e.g.
+SRA_METADATA has no column called "ibd", but `attributes`, `sra_study`, and
+`sample_name` are free text and ILIKE '%inflammatory bowel disease%' / '%IBD%'
+expresses it, so SRA is NOT missing this criterion. Only omit a source when NO
+column, listed attribute, or pattern predicate over a free-text column can reach
+the criterion at all -- not merely because no column is literally named after it.
+
 PREFER RECALL OVER PRECISION
 An empty cohort teaches the researcher nothing; a slightly wide one is visible in the
 preview and easy to narrow. So use the FEWEST predicates that capture the question, and
