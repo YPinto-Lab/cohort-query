@@ -13,7 +13,7 @@ def test_cpu_template_names_the_partition_and_the_worker_command(tmp_path):
 
     assert "#SBATCH --partition=cpu192G-48h" in script
     assert "#SBATCH --cpus-per-task=8" in script
-    assert "#SBATCH --mem=48G" in script
+    assert "#SBATCH --mem=160G" in script
     assert "python -m askslm.cli.worker" in script
     assert "--gres=gpu" not in script
 

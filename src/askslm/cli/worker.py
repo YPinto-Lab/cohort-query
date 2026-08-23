@@ -32,7 +32,8 @@ def main(argv: list[str] | None = None) -> None:
         _, report = plan.run(
             profile_sources=[Source[name.strip()] for name in args.sources.split(",")],
             out=args.out,
-            on_step=_on_step(args.plan_dir))
+            on_step=_on_step(args.plan_dir),
+            plan_dir=args.plan_dir)
         (args.plan_dir / "report.txt").write_text(str(report))
         jobs.write_status(args.plan_dir, "DONE")
     except Exception:

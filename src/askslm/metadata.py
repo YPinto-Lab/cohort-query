@@ -6,7 +6,7 @@ A third source is the only thing that would reintroduce an order.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import reduce
 
 import pandas as pd
@@ -19,10 +19,26 @@ from askslm.sources import Source
 @dataclass(frozen=True)
 class ReconciledMetadata:
     frame: pd.DataFrame                    # indexed by Accession. NEVER merged with lineage.
+    covering_columns: dict[Accession, frozenset[str]] = field(default_factory=dict)
+    """Which columns a given accession's row is actually backed by.
+
+    `combine_first` unions BOTH sources' columns onto every row, so a biosample that
+    exists only in SRA_METADATA still gets every METALOG_METADATA column -- as an
+    explicit null, not an absence. That is wrong: those fields were never looked up for
+    this sample, not looked up and found empty. This is the per-row provenance that lets
+    the biom writer drop them instead of stamping a foreign schema onto every sample.
+    """
 
     def restricted_to(self, accessions: frozenset[Accession]) -> "ReconciledMetadata":
         present = [key for key in sorted(accessions) if key in self.frame.index]
-        return ReconciledMetadata(self.frame.loc[present])
+        return ReconciledMetadata(self.frame.loc[present],
+                                 {key: self.covering_columns[key] for key in present
+                                  if key in self.covering_columns})
+
+    def columns_for(self, accession: Accession) -> frozenset[str] | None:
+        """None means unrestricted -- e.g. a fixture ReconciledMetadata built by hand
+        with no provenance tracked. Never silently hides real fields in that case."""
+        return self.covering_columns.get(accession)
 
 
 class MetadataReader:
@@ -53,10 +69,10 @@ class MetadataReconciler:
 
     def reconciled(self, cohort: Cohort, winning_source: Source) -> ReconciledMetadata:
         accessions = cohort.union()
-        winner = self._reader.read(winning_source, accessions)
-        others = [self._reader.read(source, accessions)
-                  for source in cohort.by_source if source is not winning_source]
-        return ReconciledMetadata(reduce(combine_first_onto, others, winner))
+        frames = {source: self._reader.read(source, accessions) for source in cohort.by_source}
+        others = [frame for source, frame in frames.items() if source is not winning_source]
+        combined = reduce(combine_first_onto, others, frames[winning_source])
+        return ReconciledMetadata(combined, _covering_columns(frames))
 
 
 def combine_first_onto(winner: pd.DataFrame, other: pd.DataFrame) -> pd.DataFrame:
@@ -66,3 +82,12 @@ def combine_first_onto(winner: pd.DataFrame, other: pd.DataFrame) -> pd.DataFram
     if winner.empty:
         return other
     return winner.combine_first(other)
+
+
+def _covering_columns(frames: dict[Source, pd.DataFrame]) -> dict[Accession, frozenset[str]]:
+    covering: dict[Accession, set[str]] = {}
+    for frame in frames.values():
+        columns = frozenset(frame.columns)
+        for accession in frame.index:
+            covering.setdefault(accession, set()).update(columns)
+    return {accession: frozenset(columns) for accession, columns in covering.items()}

@@ -50,13 +50,15 @@ class Plan:
     def run(self, profile_sources: Source | Sequence[Source],
             out: Path | None = None,
             metadata_winning_source: Source = Source.METALOG_METADATA,
-            on_step: Callable[[str], None] | None = None
+            on_step: Callable[[str], None] | None = None,
+            plan_dir: Path | None = None
             ) -> tuple[biom.Table, BuildReport]:
         self._guard_runnable()
         request = Materialization(profile_sources=_as_tuple(profile_sources),
                                   metadata_winning_source=metadata_winning_source)
         return runtime.cohort_builder().build(self.translation.queries, request, out,
-                                              on_step=on_step, discovered=self.discovered)
+                                              on_step=on_step, discovered=self.discovered,
+                                              plan_dir=plan_dir)
 
     def _guard_runnable(self) -> None:
         if self.error is not None:
