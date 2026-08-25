@@ -68,6 +68,8 @@ class DuckDbConnection:
 
     def __init__(self, db_path: Path, gpu: bool = False):
         self._connection = duckdb.connect(str(db_path), read_only=True)
+        self._connection.execute("INSTALL vss")
+        self._connection.execute("LOAD vss")
         self._attach_sources()
         self._gpu = gpu
         if gpu:
