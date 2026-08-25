@@ -283,7 +283,7 @@ def test_a_short_acronym_finds_its_semantic_neighbor_key():
     ])
     values_db = _FakeValueEmbeddingDatabase([])
     embedder = _FakeEmbedder({"IBD": IBD_VECTOR})
-    index = ConceptIndex(keys_db, values_db, embedder)
+    index = ConceptIndex(keys_db, values_db, embedder=embedder)
 
     found = index.matching_keys("IBD fecal metagenomic")
 
@@ -301,7 +301,7 @@ def test_matching_values_finds_disease_subtypes_for_an_umbrella_term():
         ("metalog_metadata", "geographic_location", "Israel", UNRELATED_VECTOR),
     ])
     embedder = _FakeEmbedder({"IBD": IBD_VECTOR})
-    index = ConceptIndex(keys_db, values_db, embedder)
+    index = ConceptIndex(keys_db, values_db, embedder=embedder)
 
     found = index.matching_values("IBD cohort")
 
@@ -320,7 +320,7 @@ def test_no_embedder_degrades_to_no_candidates():
             return []
 
     index = ConceptIndex(_FakeKeyEmbeddingDatabase([]), _FakeValueEmbeddingDatabase([]),
-                         _EmptyEmbedder())
+                         embedder=_EmptyEmbedder())
 
     assert index.matching_keys("IBD") == {}
     assert index.matching_values("IBD") == {}
@@ -360,6 +360,8 @@ does nearest-neighbor lookup against them. See the design doc for what was measu
 """
 from __future__ import annotations
 
+import pandas as pd
+
 from askslm.ports import Database
 
 EMBED_DIM = 256          # small and cheap: this indexes short field names/values, not
@@ -395,13 +397,7 @@ class ConceptIndex:
         so the two can be unioned before the MAX_KEYS budget is applied."""
         found: dict[str, tuple[int, str | None]] = {}
         for term, vector in self._term_vectors(question):
-            rows = self._key_embeddings.query(
-                "SELECT k.key, k.occurrences, k.samples_json "
-                "FROM attribute_key_embeddings e JOIN attribute_keys k USING (key) "
-                "ORDER BY array_cosine_distance(e.vector, ?::FLOAT[%d]) LIMIT ?"
-                % EMBED_DIM,
-                [vector, TOP_K_KEYS])
-            for row in rows.itertuples(index=False):
+            for row in self._nearest_keys(vector=vector).itertuples(index=False):
                 found.setdefault(row.key, (row.occurrences, row.samples_json))
         return found
 
@@ -409,16 +405,8 @@ class ConceptIndex:
         """"table.column" -> matched values, in nearest-first order, de-duplicated."""
         found: dict[str, list[str]] = {}
         for term, vector in self._term_vectors(question):
-            rows = self._value_embeddings.query(
-                "SELECT table_name, column_name, value FROM column_value_embeddings "
-                "ORDER BY array_cosine_distance(vector, ?::FLOAT[%d]) LIMIT ?"
-                % EMBED_DIM,
-                [vector, TOP_K_VALUES])
-            for row in rows.itertuples(index=False):
-                key = f"{row.table_name}.{row.column_name}"
-                values = found.setdefault(key, [])
-                if row.value not in values:
-                    values.append(row.value)
+            for row in self._nearest_values(vector=vector).itertuples(index=False):
+                _add_value(found=found, row=row)
         return found
 
     def _term_vectors(self, question: str) -> list[tuple[str, list[float]]]:
@@ -431,6 +419,26 @@ class ConceptIndex:
         if not vectors:
             return []
         return list(zip(terms, vectors))
+
+    def _nearest_keys(self, vector: list[float]) -> pd.DataFrame:
+        return self._key_embeddings.query(
+            "SELECT k.key, k.occurrences, k.samples_json "
+            "FROM attribute_key_embeddings e JOIN attribute_keys k USING (key) "
+            f"ORDER BY array_cosine_distance(e.vector, ?::FLOAT[{EMBED_DIM}]) LIMIT ?",
+            [vector, TOP_K_KEYS])
+
+    def _nearest_values(self, vector: list[float]) -> pd.DataFrame:
+        return self._value_embeddings.query(
+            "SELECT table_name, column_name, value FROM column_value_embeddings "
+            f"ORDER BY array_cosine_distance(vector, ?::FLOAT[{EMBED_DIM}]) LIMIT ?",
+            [vector, TOP_K_VALUES])
+
+
+def _add_value(found: dict[str, list[str]], row) -> None:
+    key = f"{row.table_name}.{row.column_name}"
+    values = found.setdefault(key, [])
+    if row.value not in values:
+        values.append(row.value)
 
 
 def _terms(question: str) -> list[str]:
@@ -617,6 +625,13 @@ Expected: FAIL — `Translator.__init__()` has no `concepts` parameter (`TypeErr
 
 In `src/askslm/translation.py`:
 
+Add the import to the top of `src/askslm/translation.py`, alongside the existing
+`from askslm.attributes import render as render_attributes`:
+
+```python
+from askslm.concept_search import render_values as render_concept_values
+```
+
 ```python
 class Translator:
     def __init__(self, backend: LlmBackend, catalog, attributes, concepts=None):
@@ -630,17 +645,15 @@ class Translator:
             TranslationPrompt(question=question, schemas=self._schemas(question)))
 
     def _schemas(self, question: ResearchQuestion) -> str:
-        blocks = [self._catalog.all()]
-        attribute_block = render_attributes(self._attributes.matching(question.text))
-        if attribute_block:
-            blocks.append(attribute_block)
-        if self._concepts is not None:
-            from askslm.concept_search import render_values
+        blocks = [self._catalog.all(),
+                  render_attributes(self._attributes.matching(question.text)),
+                  self._concept_values_block(question)]
+        return "\n\n".join(block for block in blocks if block)
 
-            value_block = render_values(self._concepts.matching_values(question.text))
-            if value_block:
-                blocks.append(value_block)
-        return "\n\n".join(blocks)
+    def _concept_values_block(self, question: ResearchQuestion) -> str:
+        if self._concepts is None:
+            return ""
+        return render_concept_values(self._concepts.matching_values(question.text))
 ```
 
 - [ ] **Step 8: Run to verify it passes**
@@ -853,6 +866,7 @@ has ~36,000 keys plus however many low-cardinality column values.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -880,57 +894,48 @@ class ConceptEmbeddingBuilder:
 
     def build(self) -> None:
         con = duckdb.connect(str(self.db_path))
-        self._build_key_embeddings(con)
-        self._build_value_embeddings(con)
-        self._report(con)
+        self._build_key_embeddings(con=con)
+        self._build_value_embeddings(con=con)
+        self._report(con=con)
         con.close()
 
     def _build_key_embeddings(self, con: duckdb.DuckDBPyConnection) -> None:
         con.execute("DROP TABLE IF EXISTS attribute_key_embeddings")
-        con.execute(f"""
-            CREATE TABLE attribute_key_embeddings (
-                key TEXT,
-                vector FLOAT[{self.dim}]
-            )
-        """)
+        con.execute(f"CREATE TABLE attribute_key_embeddings (key TEXT, vector FLOAT[{self.dim}])")
         keys = [row[0] for row in con.execute("SELECT key FROM attribute_keys").fetchall()]
-        for batch in _chunks(keys, self.batch_size):
-            vectors = self.embedder.embed(batch)
-            con.executemany("INSERT INTO attribute_key_embeddings VALUES (?, ?)",
-                            list(zip(batch, vectors)))
-        con.execute("SET hnsw_enable_experimental_persistence = true")
-        con.execute(
-            "CREATE INDEX attribute_key_embeddings_idx ON attribute_key_embeddings "
-            "USING HNSW (vector) WITH (metric = 'cosine')")
+        vectors = self._embed_in_batches(texts=keys)
+        con.executemany("INSERT INTO attribute_key_embeddings VALUES (?, ?)",
+                        list(zip(keys, vectors)))
+        self._create_hnsw_index(con=con, table="attribute_key_embeddings")
 
     def _build_value_embeddings(self, con: duckdb.DuckDBPyConnection) -> None:
         con.execute("DROP TABLE IF EXISTS column_value_embeddings")
-        con.execute(f"""
-            CREATE TABLE column_value_embeddings (
-                table_name TEXT,
-                column_name TEXT,
-                value TEXT,
-                vector FLOAT[{self.dim}]
-            )
-        """)
-        rows = self._qualifying_columns(con)
-        for batch in _chunks(rows, self.batch_size):
-            texts = [value for _, _, value in batch]
-            vectors = self.embedder.embed(texts)
-            con.executemany(
-                "INSERT INTO column_value_embeddings VALUES (?, ?, ?, ?)",
-                [(t, c, v, vec) for (t, c, v), vec in zip(batch, vectors)])
+        con.execute(f"""CREATE TABLE column_value_embeddings (
+            table_name TEXT, column_name TEXT, value TEXT, vector FLOAT[{self.dim}])""")
+        columns = self._qualifying_columns(con=con)
+        vectors = self._embed_in_batches(texts=[value for _, _, value in columns])
+        rows = [(table, column, value, vector)
+                for (table, column, value), vector in zip(columns, vectors)]
+        con.executemany("INSERT INTO column_value_embeddings VALUES (?, ?, ?, ?)", rows)
+        self._create_hnsw_index(con=con, table="column_value_embeddings")
+
+    def _embed_in_batches(self, texts: list[str]) -> list[list[float]]:
+        """Shared by both tables: same batching, same embedder, different callers.
+        Not premature abstraction -- both call sites need it right now, unchanged."""
+        vectors: list[list[float]] = []
+        for batch in _chunks(items=texts, size=self.batch_size):
+            vectors.extend(self.embedder.embed(batch))
+        return vectors
+
+    def _create_hnsw_index(self, con: duckdb.DuckDBPyConnection, table: str) -> None:
         con.execute("SET hnsw_enable_experimental_persistence = true")
-        con.execute(
-            "CREATE INDEX column_value_embeddings_idx ON column_value_embeddings "
-            "USING HNSW (vector) WITH (metric = 'cosine')")
+        con.execute(f"CREATE INDEX {table}_idx ON {table} USING HNSW (vector) "
+                    "WITH (metric = 'cosine')")
 
     def _qualifying_columns(self, con: duckdb.DuckDBPyConnection) -> list[tuple[str, str, str]]:
         """Only columns schema_catalog already shows a COMPLETE vocabulary for --
         truncated or NULL-valued columns are identifiers or free text, not vocabulary
         (see build_schema_catalog.py's _is_identifier)."""
-        import json
-
         rows = con.execute(
             "SELECT table_name, column_name, values_json FROM schema_catalog "
             "WHERE truncated = false AND values_json IS NOT NULL").fetchall()
@@ -1103,7 +1108,7 @@ class _FixtureEmbedder:
 def test_a_short_acronym_finds_ibd_sam_through_real_duckdb_vss(tmp_path):
     path = build_fixture_mirror(tmp_path / "fixture.duckdb")
     connection = DuckDbConnection(path)
-    index = ConceptIndex(connection, connection, _FixtureEmbedder())
+    index = ConceptIndex(connection, connection, embedder=_FixtureEmbedder())
 
     found = index.matching_keys("IBD")
 
@@ -1114,7 +1119,7 @@ def test_a_short_acronym_finds_ibd_sam_through_real_duckdb_vss(tmp_path):
 def test_ibd_finds_both_disease_subtypes_through_real_duckdb_vss(tmp_path):
     path = build_fixture_mirror(tmp_path / "fixture.duckdb")
     connection = DuckDbConnection(path)
-    index = ConceptIndex(connection, connection, _FixtureEmbedder())
+    index = ConceptIndex(connection, connection, embedder=_FixtureEmbedder())
 
     found = index.matching_values("IBD")
 
@@ -1164,7 +1169,7 @@ from askslm.concept_search import ConceptIndex
 def translator() -> Translator:
     db = database()
     llm = backend()
-    concepts = ConceptIndex(db, db, llm)
+    concepts = ConceptIndex(db, db, embedder=llm)
     return Translator(llm, SchemaCatalog(db),
                       AttributeIndex(db, expander=llm, semantic=concepts), concepts)
 ```
@@ -1302,6 +1307,26 @@ wording problem) versus not finding them at all (a retrieval problem — check `
 change. If Step 4 surfaces a real bug, that becomes a new task, not a silent tweak here.
 
 ---
+
+## Style Pass (clean-code-style + ponytail)
+
+Applied to every NEW production function in this plan (`concept_search.py`,
+`build_concept_embeddings.py`, `Translator._schemas`): no function over 10 lines, no
+`else`, no `lambda`, keyword arguments at call sites for anything past the first
+self-evident positional argument. `ConceptIndex.matching_keys`/`matching_values` were
+split into `_nearest_keys`/`_nearest_values`/`_add_value` to get under the limit;
+`ConceptEmbeddingBuilder`'s two `_build_*` methods share `_embed_in_batches` and
+`_create_hnsw_index` — extracted because both call sites need it *now*, not
+speculatively (ponytail's bar for a shared helper).
+
+**Where this plan deliberately does NOT retrofit the rule:** `GeminiBackend.embed()`
+mirrors the existing shape of its siblings `expand()`/`repair()` in the same class
+(both already over 10 lines, pre-existing style) — matched for in-class consistency
+rather than diverged for a rule those neighbors don't follow. Calls into pre-existing
+signatures (`open_gemini(args.api_key, "gemini-2.5-flash")`, `DuckDbConnection(...)`)
+keep the codebase's own established positional-call style rather than being rewritten
+— this plan does not retrofit files it isn't otherwise touching for this feature, per
+writing-plans' "don't propose unrelated refactoring."
 
 ## Self-Review Notes
 
