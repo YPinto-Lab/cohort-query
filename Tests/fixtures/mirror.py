@@ -35,6 +35,7 @@ import duckdb
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "Scripts" / "build_mirror"))
 from build_attribute_index import AttributeIndexBuilder
+from build_concept_embeddings import ConceptEmbeddingBuilder
 from build_schema_catalog import SchemaCatalogBuilder
 
 SHARED = [f"SAMN{n:05d}" for n in range(1, 9)]            # in both databases
@@ -44,6 +45,23 @@ ORPHANS = ["MG_ORPHAN_1", "MG_ORPHAN_2"]                  # Metalog, no BioSampl
 
 DISEASES = ["Crohn's disease", "ulcerative colitis", "healthy control"]
 COUNTRIES = ["Germany", "United States", "Israel", "Japan"]
+
+
+class _FixtureEmbedder:
+    """Deterministic, hand-placed vectors for the specific terms the fixture's own
+    tests need to be semantic neighbors of each other -- NOT a real embedding model.
+    "IBD" and both real disease values map to the same point; everything else maps
+    to a distinct point per distinct string, so no two unrelated strings collide."""
+
+    _KNOWN = {
+        "IBD": [1.0, 0.0],
+        "Crohn's disease": [1.0, 0.0],
+        "ulcerative colitis": [1.0, 0.0],
+        "ibd_sam": [1.0, 0.0],
+    }
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [self._KNOWN.get(text, [0.0, float(len(text))]) for text in texts]
 
 
 def build_fixture_mirror(path: Path) -> Path:
@@ -64,6 +82,7 @@ def build_fixture_mirror(path: Path) -> Path:
     # truncated branch, and its columns have only a handful of values each.
     SchemaCatalogBuilder(path, max_distinct=5).build()
     AttributeIndexBuilder(path).build()
+    ConceptEmbeddingBuilder(path, embedder=_FixtureEmbedder(), dim=2).build()
 
     return path
 
@@ -98,6 +117,8 @@ def _sra_biosamples() -> list[str]:
 
 
 def _sra_metadata_row(run: str, biosample: str, index: int) -> tuple:
+    jattr = '{"host_age":"%d","ibd_sam":"true"}' % (25 + index) if biosample == "SAMN00009" \
+        else '{"host_age":"%d"}' % (25 + index)
     return (
         run,
         biosample,
@@ -108,7 +129,7 @@ def _sra_metadata_row(run: str, biosample: str, index: int) -> tuple:
         "ILLUMINA",
         COUNTRIES[index % len(COUNTRIES)],
         f"2021-0{index % 9 + 1}-15",
-        '{"host_age":"%d"}' % (25 + index),
+        jattr,
         [COUNTRIES[index % len(COUNTRIES)]],   # array: matched with list_contains, not =
     )
 
