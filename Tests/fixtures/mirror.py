@@ -33,6 +33,8 @@ from pathlib import Path
 
 import duckdb
 
+from askslm.concept_search import EMBED_DIM
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "Scripts" / "build_mirror"))
 from build_attribute_index import AttributeIndexBuilder
 from build_concept_embeddings import ConceptEmbeddingBuilder
@@ -50,18 +52,23 @@ COUNTRIES = ["Germany", "United States", "Israel", "Japan"]
 class _FixtureEmbedder:
     """Deterministic, hand-placed vectors for the specific terms the fixture's own
     tests need to be semantic neighbors of each other -- NOT a real embedding model.
-    "IBD" and both real disease values map to the same point; everything else maps
-    to a distinct point per distinct string, so no two unrelated strings collide."""
+    "IBD" and both real disease values map to the same one-hot vector; everything
+    else maps to a distinct one-hot-ish vector derived from its length, so no two
+    unrelated strings collide. Dimensionality matches EMBED_DIM so this fixture's
+    embedding tables are queryable by ConceptIndex's real SQL (which hardcodes
+    FLOAT[EMBED_DIM] in its array casts) -- a dimension mismatch here is a DuckDB
+    BinderException, not a silent bug, so this was caught by the integration test."""
 
-    _KNOWN = {
-        "IBD": [1.0, 0.0],
-        "Crohn's disease": [1.0, 0.0],
-        "ulcerative colitis": [1.0, 0.0],
-        "ibd_sam": [1.0, 0.0],
-    }
+    _KNOWN_TERMS = frozenset({"IBD", "Crohn's disease", "ulcerative colitis", "ibd_sam"})
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        return [self._KNOWN.get(text, [0.0, float(len(text))]) for text in texts]
+        return [self._vector_for(text) for text in texts]
+
+    def _vector_for(self, text: str) -> list[float]:
+        vector = [0.0] * EMBED_DIM
+        index = 0 if text in self._KNOWN_TERMS else 1 + (len(text) % (EMBED_DIM - 1))
+        vector[index] = 1.0
+        return vector
 
 
 def build_fixture_mirror(path: Path) -> Path:
@@ -82,7 +89,7 @@ def build_fixture_mirror(path: Path) -> Path:
     # truncated branch, and its columns have only a handful of values each.
     SchemaCatalogBuilder(path, max_distinct=5).build()
     AttributeIndexBuilder(path).build()
-    ConceptEmbeddingBuilder(path, embedder=_FixtureEmbedder(), dim=2).build()
+    ConceptEmbeddingBuilder(path, embedder=_FixtureEmbedder(), dim=EMBED_DIM).build()
 
     return path
 
