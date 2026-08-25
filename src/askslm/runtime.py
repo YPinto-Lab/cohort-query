@@ -14,6 +14,7 @@ from askslm.attributes import AttributeIndex
 from askslm.build import BiomFactory, CohortBuilder
 from askslm.catalog import SchemaCatalog
 from askslm.cohort import CohortDiscovery
+from askslm.concept_search import ConceptIndex
 from askslm.metadata import MetadataReader, MetadataReconciler
 from askslm.ports import Database, LlmBackend
 from askslm.profiles import ProfileReader, ProfileReconciler
@@ -82,8 +83,11 @@ def _named_backend(settings: Settings) -> LlmBackend:
 
 
 def translator() -> Translator:
-    return Translator(backend(), SchemaCatalog(database()),
-                      AttributeIndex(database(), expander=backend()))
+    db = database()
+    llm = backend()
+    concepts = ConceptIndex(db, db, embedder=llm)
+    return Translator(llm, SchemaCatalog(db),
+                      AttributeIndex(db, expander=llm, concepts=concepts), concepts)
 
 
 def cohort_builder() -> CohortBuilder:
