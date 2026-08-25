@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 import duckdb
@@ -20,10 +21,16 @@ import duckdb
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from askslm.concept_search import EMBED_DIM, Embedder
 
-DEFAULT_BATCH_SIZE = 100    # conservative default for the embedding API's batch limit;
-                            # raise it if the real API accepts more in one call --
-                            # verify against the live endpoint before trusting a bigger
-                            # number, this was not measured against the real API limit.
+DEFAULT_BATCH_SIZE = 100    # measured against the real free-tier embedding endpoint
+                            # 2026-08-25: a single 100-item batch is accepted, but the
+                            # account's embed_content_free_tier_requests quota is
+                            # ~100 requests/MINUTE -- see MAX_RETRIES/BATCH_PACING_SECONDS.
+
+MAX_RETRIES = 5             # a 429 RESOURCE_EXHAUSTED mid-run is expected, not
+                            # exceptional, against ~945 batches (94,450 real keys /
+                            # batch_size=100) on a free-tier per-minute quota.
+INITIAL_BACKOFF_SECONDS = 5
+BATCH_PACING_SECONDS = 0.7  # stays under the ~100 req/min free-tier ceiling with margin.
 
 
 class ConceptEmbeddingBuilder:
@@ -67,19 +74,32 @@ class ConceptEmbeddingBuilder:
     def _embed_in_batches(self, texts: list[str]) -> list[list[float]]:
         """Shared by both tables: same batching, same embedder, different callers.
         Not premature abstraction -- both call sites need it right now, unchanged.
-        Fails loudly on a partial batch -- embed() degrading to [] is correct at
-        query time (don't crash a live ask()) but WRONG here: a silently short
-        batch would misalign every subsequent (key, vector) pair via zip(), with
-        no way to detect the corruption downstream."""
+        Paced between batches to stay under the free-tier per-minute quota; a 429
+        mid-run is expected at this volume, not exceptional (see MAX_RETRIES)."""
         vectors: list[list[float]] = []
         for index, batch in enumerate(_chunks(items=texts, size=self.batch_size)):
-            embedded = self.embedder.embed(batch)
-            if len(embedded) != len(batch):
-                raise RuntimeError(
-                    f"batch {index}: embed() returned {len(embedded)} vectors for "
-                    f"{len(batch)} texts -- aborting to avoid corrupting the index")
-            vectors.extend(embedded)
+            vectors.extend(self._embed_batch(batch=batch, index=index))
+            time.sleep(BATCH_PACING_SECONDS)
         return vectors
+
+    def _embed_batch(self, batch: list[str], index: int) -> list[list[float]]:
+        """Retries a short/empty result (embed()'s documented degrade-on-failure
+        contract, e.g. a transient 429) before treating it as unrecoverable.
+        Still fails loudly after exhausting retries -- a silently short batch
+        would misalign every subsequent (key, vector) pair via zip(), with no
+        way to detect the corruption downstream."""
+        backoff = INITIAL_BACKOFF_SECONDS
+        for attempt in range(MAX_RETRIES):
+            embedded = self.embedder.embed(batch)
+            if len(embedded) == len(batch):
+                return embedded
+            print(f"batch {index}: got {len(embedded)}/{len(batch)} vectors "
+                  f"(attempt {attempt + 1}/{MAX_RETRIES}), retrying in {backoff}s")
+            time.sleep(backoff)
+            backoff *= 2
+        raise RuntimeError(
+            f"batch {index}: embed() still short after {MAX_RETRIES} retries "
+            "-- aborting to avoid corrupting the index")
 
     def _create_hnsw_index(self, con: duckdb.DuckDBPyConnection, table: str) -> None:
         con.execute("INSTALL vss")

@@ -8,7 +8,20 @@ import duckdb
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
+import build_concept_embeddings
 from build_concept_embeddings import ConceptEmbeddingBuilder
+
+
+@pytest.fixture(autouse=True)
+def no_real_sleeping(monkeypatch):
+    """Retry backoff and batch pacing are real seconds in production, not in tests --
+    a real 5s+10s+20s+40s+80s retry ladder would make test_short_batch... alone take
+    over two minutes."""
+    monkeypatch.setattr(build_concept_embeddings.time, "sleep", _no_sleep)
+
+
+def _no_sleep(seconds: float) -> None:
+    return None
 
 
 class _FakeEmbedder:
