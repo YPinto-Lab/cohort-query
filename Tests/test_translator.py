@@ -67,6 +67,39 @@ def test_a_matched_attribute_key_lands_in_the_prompt():
     assert "calprotectin_sam" in backend.prompt.schemas
 
 
+class StubConcepts:
+    def __init__(self, values: dict | None = None):
+        self._values = values or {}
+
+    def matching_values(self, question: str):
+        return self._values
+
+
+def test_a_semantic_value_match_lands_in_the_prompt():
+    """The metalog half of the feature: subject_disease_status's real values,
+    found by meaning, must reach the schemas string the same way attribute keys do."""
+    backend = SpyBackend()
+    translator = Translator(backend, StubCatalog(), StubAttributes(),
+                            concepts=StubConcepts({"metalog_metadata.subject_disease_status":
+                                         ["Crohn's disease", "ulcerative colitis"]}))
+
+    translator.translate(ResearchQuestion("IBD cohort"))
+
+    assert "Crohn's disease" in backend.prompt.schemas
+    assert "ulcerative colitis" in backend.prompt.schemas
+
+
+def test_no_concepts_collaborator_behaves_as_before():
+    """concepts=None (the default) must not change existing behavior -- every
+    existing test in this file constructs Translator without it."""
+    backend = SpyBackend()
+    translator = Translator(backend, StubCatalog(), StubAttributes())
+
+    translator.translate(ResearchQuestion("adults with IBD"))
+
+    assert "IBD" in backend.prompt.schemas
+
+
 def test_an_unknown_llm_name_fails_at_config_not_at_ask(tmp_path):
     """Fail fast: a typo in llm= must not survive until the first question."""
     import pytest

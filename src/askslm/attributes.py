@@ -10,6 +10,7 @@ import json
 
 import pandas as pd
 
+from askslm.concept_search import ConceptIndex
 from askslm.ports import Database
 
 MIN_TERM = 5           # "with", "and", "the" match half the index and teach nothing
@@ -21,23 +22,31 @@ GENERIC_KEYS = 120     # a term matching more keys than this describes everythin
 class AttributeIndex:
     """Looks up `attribute_keys`, the ETL-built census of every jattr key."""
 
-    def __init__(self, database: Database, expander=None):
+    def __init__(self, database: Database, expander=None, concepts: ConceptIndex | None = None):
         self._database = database
         self._expander = expander
+        self._concepts = concepts
 
     def matching(self, question: str) -> dict[str, tuple[int, str | None]]:
-        """key -> (occurrences, samples_json), for keys a term of the question names.
+        """key -> (occurrences, samples_json), for keys a term of the question names
+        OR a semantic neighbor of the question's meaning.
 
-        The budget is per TERM, not global, and that is the whole point. Ranking every
-        match together by frequency lets a broad term evict a precise one: "IBD fecal
-        metagenomic with calprotectin" filled all 25 slots with fecal_color2_sam,
-        fecal_date_sam, fecal_donor_id_sam ... and dropped fecalcalprotectin_run, the key
-        the researcher actually meant. Per-term slots mean a rare exact match cannot be
-        crowded out by a common vague one.
+        The budget is per TERM for substring matches (see the class docstring); the
+        semantic matches from ConceptIndex are unioned in afterward. Each term's
+        semantic candidates are capped at TOP_K_KEYS (concept_search.py), so within the
+        semantic side alone a broad term cannot crowd out a precise one -- but that
+        protection stops at the union. The merged dict still goes through the same
+        final `sorted(...)[:MAX_KEYS]` truncation as substring matches, so a rare key
+        found ONLY by embedding similarity can still be evicted if enough
+        higher-occurrence substring matches from OTHER terms fill the MAX_KEYS budget
+        first. Known limitation, not yet addressed here.
         """
         found: dict[str, tuple[int, str | None]] = {}
         for term in self._search_terms(question):
             for key, row in self._for_term(term).items():
+                found.setdefault(key, row)
+        if self._concepts is not None:
+            for key, row in self._concepts.matching_keys(question).items():
                 found.setdefault(key, row)
         return dict(sorted(found.items(), key=_by_occurrences)[:MAX_KEYS])
 
