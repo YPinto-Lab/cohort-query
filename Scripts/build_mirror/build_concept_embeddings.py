@@ -22,15 +22,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from askslm.concept_search import EMBED_DIM, Embedder
 
 DEFAULT_BATCH_SIZE = 100    # measured against the real free-tier embedding endpoint
-                            # 2026-08-25: a single 100-item batch is accepted, but the
-                            # account's embed_content_free_tier_requests quota is
-                            # ~100 requests/MINUTE -- see MAX_RETRIES/BATCH_PACING_SECONDS.
+                            # 2026-08-25: a single 100-item batch is accepted.
 
 MAX_RETRIES = 5             # a 429 RESOURCE_EXHAUSTED mid-run is expected, not
                             # exceptional, against ~945 batches (94,450 real keys /
                             # batch_size=100) on a free-tier per-minute quota.
 INITIAL_BACKOFF_SECONDS = 5
-BATCH_PACING_SECONDS = 0.7  # stays under the ~100 req/min free-tier ceiling with margin.
+# 2026-08-25 real run: 0.7s pacing (~85 req/min against a stated ~100/min quota) still
+# hit sustained 429s from batch 1 onward, for the entire 10-minute run -- not a brief
+# blip a short backoff could ride out. Slowed to a real sustained rate of ~20 req/min,
+# leaving headroom for retries to also fit inside the quota rather than compounding it.
+BATCH_PACING_SECONDS = 3.0
 
 
 class ConceptEmbeddingBuilder:
