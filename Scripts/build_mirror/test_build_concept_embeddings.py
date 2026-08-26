@@ -119,3 +119,26 @@ def test_short_batch_from_embedder_raises_instead_of_corrupting_index(db_path):
     con.close()
 
     assert count == 0
+
+
+class _CountingEmbedder:
+    """Counts how many embed() calls actually happened -- a cost cap that aborted
+    correctly must call embed() zero times, since the check runs BEFORE the call."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls += 1
+        return [[float(len(text)), 0.0] for text in texts]
+
+
+def test_a_zero_cost_cap_aborts_before_spending_anything(db_path):
+    """max_cost_usd=0 must reject even the smallest real batch -- proves the check
+    runs BEFORE the embed() call it would pay for, not after."""
+    embedder = _CountingEmbedder()
+
+    with pytest.raises(RuntimeError, match="aborting before spending"):
+        ConceptEmbeddingBuilder(db_path, embedder=embedder, dim=2, max_cost_usd=0.0).build()
+
+    assert embedder.calls == 0

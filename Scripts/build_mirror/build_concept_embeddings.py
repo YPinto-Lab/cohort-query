@@ -3,8 +3,10 @@ find a field or value that means the same thing without sharing its spelling.
 
 Run AFTER build_attribute_index.py and build_schema_catalog.py -- this reads both of
 their output tables. Batches every text into as few embed() calls as the batch size
-allows: one call per BATCH_SIZE items, not one call per item, because the real mirror
-has ~36,000 keys plus however many low-cardinality column values.
+allows: one call per BATCH_SIZE items, not one call per item. Measured against the
+real mirror 2026-08-25: 94,450 keys + 4,416 qualifying values, ~2.17M characters
+total -- a projected cost of well under $1 at gemini-embedding-001 pricing, enforced
+by --max-cost-usd so a bug can't run past that regardless of what the estimate says.
 
     python Scripts/build_mirror/build_concept_embeddings.py --db askslm_mirror.duckdb --api-key $ASKSLM_LLM_KEY
 """
@@ -34,17 +36,28 @@ INITIAL_BACKOFF_SECONDS = 5
 # leaving headroom for retries to also fit inside the quota rather than compounding it.
 BATCH_PACING_SECONDS = 3.0
 
+# Cost safeguard -- enforced by this script, not just a Google Cloud budget alert
+# (which only notifies, it doesn't stop spend). Deliberately conservative so the
+# estimate never falls BELOW the real bill: gemini-embedding-001 standard pricing
+# is $0.20/1M tokens (2026-05), and 3 chars/token undercounts English's real ~4
+# chars/token, so the projected cost is always >= what Google will actually charge.
+PRICE_PER_1M_TOKENS_USD = 0.20
+CONSERVATIVE_CHARS_PER_TOKEN = 3
+DEFAULT_MAX_COST_USD = 5.0
+
 
 class ConceptEmbeddingBuilder:
     """Two tables: attribute_key_embeddings (every jattr key) and
     column_value_embeddings (every value of every low-cardinality metadata column)."""
 
     def __init__(self, db_path: Path, embedder: Embedder, dim: int = EMBED_DIM,
-                batch_size: int = DEFAULT_BATCH_SIZE):
+                batch_size: int = DEFAULT_BATCH_SIZE, max_cost_usd: float = DEFAULT_MAX_COST_USD):
         self.db_path = db_path
         self.embedder = embedder
         self.dim = dim
         self.batch_size = batch_size
+        self.max_cost_usd = max_cost_usd
+        self._spent_usd = 0.0
 
     def build(self) -> None:
         con = duckdb.connect(str(self.db_path))
@@ -80,9 +93,24 @@ class ConceptEmbeddingBuilder:
         mid-run is expected at this volume, not exceptional (see MAX_RETRIES)."""
         vectors: list[list[float]] = []
         for index, batch in enumerate(_chunks(items=texts, size=self.batch_size)):
+            self._charge_for(batch=batch)
             vectors.extend(self._embed_batch(batch=batch, index=index))
             time.sleep(BATCH_PACING_SECONDS)
         return vectors
+
+    def _charge_for(self, batch: list[str]) -> None:
+        """Enforced BEFORE the call it would pay for, not after -- a cap checked
+        post-hoc could still let one over-budget call through. Aborts the whole
+        run rather than skipping the batch: a partially-embedded key set is a
+        worse outcome than stopping and re-running once the cap is raised."""
+        chars = sum(len(text) for text in batch)
+        projected = chars / CONSERVATIVE_CHARS_PER_TOKEN / 1_000_000 * PRICE_PER_1M_TOKENS_USD
+        if self._spent_usd + projected > self.max_cost_usd:
+            raise RuntimeError(
+                f"aborting before spending more: ${self._spent_usd:.4f} spent so far, "
+                f"this batch would add ~${projected:.4f}, cap is ${self.max_cost_usd:.2f}")
+        self._spent_usd += projected
+        print(f"running cost estimate: ${self._spent_usd:.4f} / ${self.max_cost_usd:.2f}")
 
     def _embed_batch(self, batch: list[str], index: int) -> list[list[float]]:
         """Retries a short/empty result (embed()'s documented degrade-on-failure
@@ -139,12 +167,15 @@ def main() -> None:
     parser.add_argument("--api-key", required=True)
     parser.add_argument("--dim", type=int, default=EMBED_DIM)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
+    parser.add_argument("--max-cost-usd", type=float, default=DEFAULT_MAX_COST_USD,
+                        help="abort before spending more than this (conservative estimate)")
     args = parser.parse_args()
 
     from askslm.adapters import open_gemini
 
     embedder = open_gemini(args.api_key, "gemini-2.5-flash")  # model unused by embed()
-    ConceptEmbeddingBuilder(args.db, embedder, args.dim, args.batch_size).build()
+    ConceptEmbeddingBuilder(args.db, embedder, args.dim, args.batch_size,
+                            args.max_cost_usd).build()
 
 
 if __name__ == "__main__":
