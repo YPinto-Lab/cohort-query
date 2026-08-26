@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 import time
 from pathlib import Path
@@ -162,6 +163,9 @@ def _chunks(items: list, size: int) -> list[list]:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")  # surface embed()'s
+    # own failure reason -- adapters.py logs it via `logging`, not print()
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=Path, required=True)
     parser.add_argument("--api-key", required=True)

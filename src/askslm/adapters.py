@@ -207,9 +207,9 @@ class GeminiBackend:
             response = self._client.models.embed_content(
                 model=self.EMBEDDING_MODEL, contents=texts,
                 config={"output_dimensionality": EMBED_DIM})
-        except Exception:
-            _log_safely("embed (%.2fs) failed for texts=%r",
-                       time.monotonic() - start, texts)
+        except Exception as exc:
+            _log_safely("embed (%.2fs) failed for %d texts: %r",
+                       time.monotonic() - start, len(texts), exc)
             return []
         _log_safely("embed (%.2fs) for %d texts", time.monotonic() - start, len(texts))
         return [list(embedding.values) for embedding in response.embeddings]
