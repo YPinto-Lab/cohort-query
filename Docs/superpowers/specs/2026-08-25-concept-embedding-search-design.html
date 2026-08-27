@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>askslm — concept embedding search</title>
+<style>
+  :root{--ink:#1b1f24;--muted:#5b6570;--line:#e2e6ea;--bg:#fbfcfd;
+    --locked-bg:#e7f6ec;--locked-ink:#1f7a3d;--stop-bg:#fdecec;--stop-ink:#9c2020;
+    --code-bg:#0f141a;--code-ink:#e7edf3;--accent:#1457b8;--kw:#7fb2ff;--str:#9ad29a;--com:#7d8a99;}
+  *{box-sizing:border-box}
+  body{font:16px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);background:var(--bg);margin:0;padding:0 0 6rem}
+  .wrap{max-width:960px;margin:0 auto;padding:2.5rem 1.5rem}
+  header.doc{border-bottom:2px solid var(--line);padding-bottom:1.2rem;margin-bottom:2rem}
+  h1{font-size:1.7rem;margin:0 0 .3rem}
+  h2{font-size:1.3rem;margin:2.6rem 0 .8rem;padding-bottom:.25rem;border-bottom:1px solid var(--line)}
+  h3{font-size:1.05rem;margin:1.6rem 0 .4rem}
+  .sub{color:var(--muted);font-size:.95rem}
+  .badge{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+         padding:.15rem .5rem;border-radius:999px;vertical-align:middle;margin-left:.5rem;
+         background:var(--locked-bg);color:var(--locked-ink)}
+  p{margin:.6rem 0} ul,ol{margin:.5rem 0 .8rem;padding-left:1.4rem} li{margin:.3rem 0}
+  code{background:#eef1f4;padding:.1rem .35rem;border-radius:4px;font-size:.88em;
+       font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+  pre{background:var(--code-bg);color:var(--code-ink);padding:1rem 1.1rem;border-radius:10px;
+      overflow:auto;font-size:.84rem;line-height:1.5;margin:.8rem 0}
+  pre code{background:none;padding:0;color:inherit}
+  pre .kw{color:var(--kw)} pre .str{color:var(--str)} pre .com{color:var(--com)}
+  table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+  th,td{border:1px solid var(--line);padding:.55rem .7rem;text-align:left;vertical-align:top}
+  th{background:#eef2f6}
+  .note{border-left:3px solid var(--accent);background:#f0f5fc;padding:.7rem 1rem;border-radius:0 8px 8px 0;margin:1rem 0}
+  .fix{border-left:3px solid var(--locked-ink);background:var(--locked-bg);padding:.7rem 1rem;border-radius:0 8px 8px 0;margin:1rem 0}
+  .danger{border-left:3px solid var(--stop-ink);background:var(--stop-bg);padding:.7rem 1rem;border-radius:0 8px 8px 0;margin:1rem 0}
+  .meta{color:var(--muted);font-size:.85rem}
+  hr{border:none;border-top:1px solid var(--line);margin:2.4rem 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <h1>Concept embedding search <span class="badge">proposed 2026-08-25</span></h1>
+  <p class="sub">Retrieval that survives paraphrase: finding the field or value that means what the
+  researcher meant, not just what they typed.</p>
+  <p class="meta">2026-08-25 · extends
+  <code>Docs/superpowers/specs/2026-08-19-attribute-retrieval-design.html</code>, which named this
+  exact gap and deferred it: "A synonym layer or embedding search is the obvious extension, and is
+  deliberately not v1 — measure whether the simple thing fails first." We measured. It fails.</p>
+</header>
+
+<h2>1. The question that found this</h2>
+
+<p>A real, saved plan (<code>Workspaces/IBD_calprotectin/0_inputs/plan.json</code>), run against the
+real mirror:</p>
+
+<pre><code>? What cohort do you need? IBD fecal metagenomic with calprotectin</code></pre>
+
+<p>The query returned 1,261 samples. It missed <code>PRJNA1265906</code> / <code>SRP586738</code> — a
+real cohort with fecal calprotectin measurements on every run — even though nothing about the
+question or the data was ambiguous to a human reading it. Verified against the real mirror:</p>
+
+<ul>
+  <li>Those runs pass every other filter: <code>librarysource = 'METAGENOMIC'</code>, a
+  <code>human-gut</code> <code>biosamplemodel</code>, and a populated
+  <code>fecalcalprotectin_run</code> jattr value.</li>
+  <li>They fail only the IBD-detection clause, which checks
+  <code>sra_study</code>/<code>sample_name</code>/<code>attributes</code> text for the literal
+  strings <code>"IBD"</code> or <code>"inflammatory bowel disease"</code>. This study's study ID and
+  sample names (<code>SRP586738</code>, <code>GB_513_1</code>, …) contain neither.</li>
+  <li>The mirror already has the field that would have caught it —
+  <code>ibd_sam</code> exists on 44,976 runs, alongside <code>host_disease_sam</code> (5.6M),
+  <code>disease_sam</code>, <code>ibd_diagnosis_sam</code>, and others — but the translator never saw
+  it.</li>
+</ul>
+
+<div class="danger">
+<strong>Root cause, verified:</strong> <code>attributes.py</code>'s <code>_terms()</code> drops any
+question word shorter than <code>MIN_TERM = 5</code> characters before it is ever tried as a
+substring search term. <code>"IBD"</code> is 3 characters — discarded before the search against
+<code>attribute_keys</code> runs at all. The only other path into the search-term set is
+<code>expansion.py</code>'s LLM call, whose instruction is written narrowly around measurement
+spelling variants ("calprotectin" → "calpro", "s100a8") and gives no guarantee of emitting the bare
+diagnosis acronym itself. Nothing put <code>"ibd"</code> back in.</p>
+<p>The same failure mode exists one layer down, on <strong>values</strong> rather than keys.
+Metalog's <code>subject_disease_status</code> — a real, low-cardinality column, already fully shown
+by the catalog (201 distinct values, not truncated) — has <strong>no <code>"IBD"</code> value at
+all</strong>. It has <code>"Crohn's disease"</code> (1,682 rows) and
+<code>"ulcerative colitis"</code> (1,679 rows) as two separate literals. A question naming the
+umbrella term will never match either without knowing they're the same disease family.</p>
+</div>
+
+<h2>2. Why lexical retrieval can't be patched further</h2>
+
+<p>The 2026-08-19 design deliberately shipped substring matching (plus one LLM call,
+<code>expansion.py</code>, to guess plausible field-name spellings) and flagged the ceiling: matching
+is lexical, not semantic. "IBD" and "Crohn's disease" share zero substrings — no length threshold
+tweak, no bigger <code>MAX_KEYS</code> budget, and no amount of prompt wording fixes a problem that is
+about <em>meaning</em>, not spelling.</p>
+
+<p>Two ways to close a semantic gap were considered and rejected:</p>
+<ul>
+  <li><strong>A hand-built concept → field/value table.</strong> Infeasible: 35,768 keys ×
+  arbitrary research questions (disease, assay type, geography, body site, …) is not something any
+  person or group can anticipate and maintain.</li>
+  <li><strong>Guess synonyms fresh on every question, via a bigger LLM prompt.</strong> Rejected once
+  we established the mirror only rebuilds rarely (~yearly): the real vocabulary is static and already
+  fully knowable at build time. Re-guessing a static, knowable answer on every single <code>ask()</code>
+  call is waste, and it's non-deterministic waste — the same question could get different candidate
+  fields on different runs.</li>
+</ul>
+
+<h2>3. The design: embed once at build, retrieve by similarity at query time</h2>
+
+<p>Same shape as the 2026-08-19 design — index once, search per question — with the index now
+semantic instead of purely lexical, and layered <em>on top of</em> the existing substring search
+rather than replacing it.</p>
+
+<h3>3.1 Build time (<code>Scripts/build_mirror/</code>, run when the mirror rebuilds)</h3>
+<ol>
+  <li>Embed every <code>attribute_keys.key</code> (~35,768 jattr field names) with Gemini's
+  embedding model.</li>
+  <li>Embed every value of every column <code>schema_catalog</code> already marks as
+  low-cardinality / not truncated (e.g. <code>subject_disease_status</code>'s 201 values,
+  <code>librarysource</code>'s 9) — reusing the existing truncation cutoff, no new threshold to
+  invent.</li>
+  <li>Store both as vector columns in new tables inside the same mirror file (e.g.
+  <code>attribute_key_embeddings(key, vector)</code>,
+  <code>column_value_embeddings(table_name, column_name, value, vector)</code>), indexed with
+  DuckDB's <code>vss</code> extension.</li>
+</ol>
+
+<h3>3.2 Query time (<code>ask()</code>, in the package)</h3>
+<ol>
+  <li>Embed the question's terms with one live Gemini API call — same pattern as the existing
+  translation call, same free-tier budget class, no local model dependency.</li>
+  <li>Nearest-neighbor lookup via <code>vss</code> against both embedding tables.</li>
+  <li><strong>Union</strong> the results into <code>attributes.py</code>'s existing candidate set,
+  alongside the substring-search hits from <code>AttributeIndex</code> / <code>expansion.py</code> —
+  same per-term budget and ranking logic (<code>MAX_KEYS</code>, per-term slots) already documented
+  there. Exact/near-exact matches are still free and instant; embeddings only do the work substring
+  search can't.</li>
+</ol>
+
+<pre><code><span class="com">"IBD fecal metagenomic with calprotectin"</span>
+   -> substring search: calprotectin -> calpro/s100a8 variants (as today)
+   -> embedding search: "IBD" -> nearest neighbors in attribute_key_embeddings
+      -> ibd_sam, host_disease_sam, disease_sam, ibd_diagnosis_sam (all real, all populous)
+   -> embedding search: "IBD" -> nearest neighbors in column_value_embeddings
+      -> subject_disease_status = "Crohn's disease" / "ulcerative colitis"
+   -> union -> prompt gains the candidates it was missing, same shape as before</code></pre>
+
+<div class="note">
+No new exclusion-guidance prompt rule (e.g. "shotgun must not match 16S") is being added. Once
+retrieval surfaces the real enumerated values, the model reads them directly off the catalog the
+same way it already does today — that guardrail would be solving a problem better retrieval already
+solves.
+</div>
+
+<h2>4. Verified mechanics</h2>
+
+<p>Everything below was checked against the real mirror and lab server before this design was
+written.</p>
+
+<table>
+  <tr><th>Question</th><th>Answer</th></tr>
+  <tr><td>Does <code>attribute_keys</code> already have the fields this needs?</td>
+      <td>Yes — <code>ibd_sam</code> (44,976 runs), <code>host_disease_sam</code> (5.6M),
+      <code>disease_sam</code>, <code>study_disease_sam</code>, <code>ibd_diagnosis_sam</code>,
+      <code>ibd_diagnosis_refined_sam</code>, and more, all already indexed by the 2026-08-19
+      design. The gap is retrieval, not data.</td></tr>
+  <tr><td>Does <code>subject_disease_status</code> contain an "IBD" literal?</td>
+      <td><strong>No.</strong> 201 distinct values; disease is split into
+      <code>"Crohn's disease"</code> (1,682) and <code>"ulcerative colitis"</code> (1,679) with no
+      umbrella term.</td></tr>
+  <tr><td>Is a value census feasible for SRA's free-text ID columns
+      (<code>sample_name</code>, <code>sra_study</code>)?</td>
+      <td><strong>No.</strong> 30.5M distinct <code>sample_name</code> values across 39.1M rows —
+      these are identifiers, not vocabulary. Only <code>schema_catalog</code>'s already-low-cardinality
+      columns are in scope for value embedding.</td></tr>
+  <tr><td>Does DuckDB's <code>vss</code> extension load on the lab server?</td>
+      <td>Yes — installs and loads cleanly against the real mirror's DuckDB version.</td></tr>
+  <tr><td>Does the lab server have internet access for the embedding API?</td>
+      <td>Yes — reaches <code>generativelanguage.googleapis.com</code>.</td></tr>
+  <tr><td>Is a new heavy dependency (e.g. <code>torch</code> for a local embedding model) needed?</td>
+      <td><strong>No.</strong> <code>google-genai</code> is already a package dependency and already
+      installed; no <code>sentence-transformers</code>/<code>torch</code> present or required.</td></tr>
+  <tr><td>Does embedding cost money?</td>
+      <td>No — Gemini's embedding model is free-tier (10M tokens/minute), a separate quota pool from
+      the translation model. The one-time build-time embedding of ~36K terms and the per-question
+      query-time calls both stay well inside free-tier headroom.</td></tr>
+  <tr><td>Which embedding model?</td>
+      <td>Currently <code>gemini-embedding-001</code> (<code>text-embedding-004</code> was deprecated
+      January 2026). Google deprecates these on a roughly annual cadence — confirm the current
+      recommended model at implementation time rather than trusting this table.</td></tr>
+</table>
+
+<h2>5. Deliberate limits</h2>
+
+<ul>
+  <li><strong>jattr key <em>values</em> are not embedded</strong> — only key names, and only the
+  values of real low-cardinality columns. A per-key value census (e.g. distinct values of
+  <code>host_disease_sam</code> itself) would need new per-key cardinality computation at ETL time;
+  it's not in this design. Mirrors the existing asymmetry from 2026-08-19: keys are indexed, their
+  values are not.</li>
+  <li><strong>No client-side embedding cache.</strong> Each <code>ask()</code> makes one live
+  embedding call, same pattern as the existing translation call. Free-tier headroom and latency don't
+  justify a cache with invalidation concerns.</li>
+  <li><strong>No sidecar vector index.</strong> Vectors live inside the same mirror file via
+  <code>vss</code> — one file, one source of truth, package still never builds or writes it.</li>
+  <li><strong>Retrieval only, not translation.</strong> The final SQL predicate is still a literal,
+  reviewable <code>=</code>/<code>ILIKE</code>/<code>IS NOT NULL</code> written by the one existing
+  translation LLM call. Embeddings only change which candidates get shown to it — the Plan stays a
+  reviewable, replayable SQL artifact.</li>
+</ul>
+
+<h2>6. Eval</h2>
+
+<p>Two new cases in <code>Scripts/eval/questions.jsonl</code>, gold SQL verified executable against
+the real mirror (real row counts, not guessed), marked as unreviewed by the domain owner per the
+file's existing convention:</p>
+<ul>
+  <li>An IBD question worded without the literal word "IBD" — the <code>PRJNA1265906</code>-shaped
+  case above.</li>
+  <li>A shotgun/mgx question that must resolve to <code>librarysource = 'METAGENOMIC'</code> and must
+  not match <code>AMPLICON</code> rows.</li>
+</ul>
+<p><code>run_eval.py</code> runs before and after the change, against the real backend, to confirm no
+regression on the existing three cases and that both new cases pass.</p>
+
+<hr>
+<p class="meta">Measured against
+<code>/private/pinto-lab/tools/just-ask/mirror/askslm_mirror.duckdb</code> and the lab server's
+<code>askslm</code> conda environment, 2026-08-24/25.
+Implementation plan: <code>Docs/superpowers/plans/2026-08-25-concept-embedding-search.md</code>.</p>
+
+</div>
+</body>
+</html>

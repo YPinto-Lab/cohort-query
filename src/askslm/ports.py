@@ -41,3 +41,12 @@ class LlmBackend(Protocol):
         A backend with no model behind it returns [] and retrieval falls back to the
         words of the question itself.
         """
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        """Vector per input string, batched into one call, same order as `texts`.
+
+        A separate, cheap call on its own quota pool (HELPER_MODEL-class), used to
+        find candidate keys/values that share no substring with the question's
+        wording ("IBD" -> ibd_sam). A backend with no model returns [] and
+        retrieval falls back to substring matching alone.
+        """

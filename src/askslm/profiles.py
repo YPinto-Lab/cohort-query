@@ -35,7 +35,8 @@ class ProfileReader:
 
     STAT is read differently from the Metalog sources, and deliberately. Its table has
     13.6 BILLION rows and no biosample column, so it is only ever filtered by `acc` --
-    its own key, and the one it is indexed on. The cohort's biosamples are resolved to
+    its own key. `duckdb_indexes()` shows the table has no index at all, so this filter
+    is a full scan; the cohort's biosamples are resolved to
     run accessions through sra_metadata first, which is small by comparison (39M rows).
     That works precisely because a STAT biom column is a run (HLD B.3); nothing needs
     the huge table to know about biosamples.

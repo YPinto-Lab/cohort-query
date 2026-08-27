@@ -14,6 +14,7 @@ from askslm.attributes import AttributeIndex
 from askslm.build import BiomFactory, CohortBuilder
 from askslm.catalog import SchemaCatalog
 from askslm.cohort import CohortDiscovery
+from askslm.concept_search import ConceptIndex, Embedder
 from askslm.metadata import MetadataReader, MetadataReconciler
 from askslm.ports import Database, LlmBackend
 from askslm.profiles import ProfileReader, ProfileReconciler
@@ -43,16 +44,18 @@ class Settings:
 _settings: Settings | None = None
 _database: Database | None = None
 _backend: LlmBackend | None = None
+_embedder: Embedder | None = None
 
 
 def configure(settings: Settings, database: Database | None = None,
-              backend: LlmBackend | None = None) -> None:
-    """Called by config(). The two overrides are how tests inject fakes without a
+              backend: LlmBackend | None = None, embedder: Embedder | None = None) -> None:
+    """Called by config(). The overrides are how tests inject fakes without a
     conditional anywhere in the services."""
-    global _settings, _database, _backend
+    global _settings, _database, _backend, _embedder
     _settings = settings
     _database = database
     _backend = backend
+    _embedder = embedder
 
 
 def database() -> Database:
@@ -81,9 +84,32 @@ def _named_backend(settings: Settings) -> LlmBackend:
         "no LlmBackend configured: pass backend=... or config(llm='gemini', llm_key=...)")
 
 
+def embedder() -> Embedder:
+    """An explicitly injected embedder always wins (tests). Otherwise: gemini mode
+    gets a local model -- Gemini's embed_content free tier proved too rate-limited
+    to finish the concept-embedding build even right after a fresh daily quota
+    reset (see build_concept_embeddings.py's docstring), so query-time embedding
+    must match the same local model the build used. Canned mode has no model to
+    call, so it keeps using the canned backend's own no-op embed() (retrieval
+    degrades to substring matching), unchanged from before."""
+    global _embedder
+    if _embedder is None:
+        settings = _require_settings()
+        if settings.llm == "gemini":
+            from askslm.adapters import open_local_embedder
+
+            _embedder = open_local_embedder()
+        else:
+            _embedder = backend()
+    return _embedder
+
+
 def translator() -> Translator:
-    return Translator(backend(), SchemaCatalog(database()),
-                      AttributeIndex(database(), expander=backend()))
+    db = database()
+    llm = backend()
+    concepts = ConceptIndex(db, db, embedder=embedder())
+    return Translator(llm, SchemaCatalog(db),
+                      AttributeIndex(db, expander=llm, concepts=concepts), concepts)
 
 
 def cohort_builder() -> CohortBuilder:
