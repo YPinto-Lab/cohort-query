@@ -53,44 +53,42 @@ WRITING PREDICATES
   absent -- say so in `failure` rather than inventing a column.
 
 WHEN A SOURCE CANNOT EXPRESS PART OF THE QUESTION
-The caller unions every source's results, so a query against a source with nothing
-relevant to the question does not narrow the cohort -- it WIDENS it, silently adding
-unrelated samples. If a source's columns cannot express the question (or the part of
-it that source would cover), omit that source's query entirely rather than writing an
-approximate or unrelated one. For example, "human tumour RNA-seq" is expressible in
-SRA_METADATA; Metalog has no comparable field, so a Metalog query returning anything
-at all would corrupt the result -- omit METALOG_METADATA's query for that question.
+The caller unions every source's results, so a query against a source that does not
+check every criterion does not narrow the cohort -- it WIDENS it, silently adding
+samples that were never verified against the criterion the source can't express.
+If a source's columns cannot express the question, OR can express only SOME of its
+criteria, omit that source's query entirely. Do not write a query filtered on a
+subset of the criteria as a stand-in for the whole question -- a partial filter is
+not a smaller version of the right answer, it is a wrong answer with some of the
+right rows in it. There is no partial-coverage query: a source either can express
+every criterion the question needs from it, or it contributes nothing.
 
-A CRITERION CAN BE MISSING EVEN WHEN THE SOURCE IS NOT
-The rule above is about a source with nothing relevant to the WHOLE question. The
-same harm happens one level down: a source can express most of the question's
-criteria and still have no field for one of them. Writing a query that filters
-only on what the source CAN express, and dropping the rest, does not narrow that
-source's contribution to the question -- it widens it, exactly as when a whole
-source is irrelevant, because every row that source returns is then treated as if
-it satisfied a criterion it never checked.
+For example, "human tumour RNA-seq" is expressible in SRA_METADATA; Metalog has no
+comparable field, so omit METALOG_METADATA's query entirely. Likewise "IBD fecal
+metagenomic samples with a calprotectin measurement": SRA has a calprotectin jattr
+key and can express all four criteria, so write its query. Metalog can express IBD,
+fecal, and metagenomic, but has no calprotectin field or synonym of one -- omit
+METALOG_METADATA's query rather than filtering it on the other three criteria only.
 
-Do not write a query that silently drops an expressible criterion. If the source
-has NO field for the missing criterion, and no synonym of it, that criterion is
-not a partial-coverage judgment call to make silently -- name the gap in
-`interpretation` (e.g. "Metalog has no calprotectin field, so its query only
-enforces IBD/fecal/metagenomic and the calprotectin criterion is unverified in
-that source's rows"), so a human reviewing the cohort sees it was widened on
-that source, not narrowed.
+When you omit a source this way, say so in `interpretation` (e.g. "Metalog omitted:
+no calprotectin field, so it cannot verify this question's criteria"), so the
+researcher knows to widen the question, adjust it, or accept SRA alone rather than
+unknowingly trusting unverified rows.
 
 This is a different situation from choosing among SYNONYMS for one measurement
 (see the ibd_sam/calprotectin rule below) -- that rule is about several listed
-attributes naming the SAME concept. This rule is about a criterion that is a
-wholly separate, missing axis of filtering, with no field or synonym anywhere in
-the source's schema.
+attributes naming the SAME concept within a source that DOES have a field for it.
+The rule above is about a criterion with no field or synonym anywhere in the
+source's schema, which is grounds to omit that source's query, not narrow it.
 
-Example: "IBD fecal metagenomic samples with a calprotectin measurement." SRA has
-a calprotectin jattr key -- use it. Metalog CAN express IBD, fecal, and
-metagenomic, but has no calprotectin field and no synonym of one. Do not write a
-Metalog query filtered only on IBD/fecal/metagenomic as if that covered the whole
-question for that source -- state in `interpretation` that Metalog's contribution
-does not verify calprotectin, so the researcher knows those rows are not
-guaranteed to have it.
+"No field for it" does NOT mean "no column named exactly that." A free-text
+column matched with a pattern predicate (see WRITING PREDICATES above) expresses
+the criterion just as much as a dedicated column or listed attribute does -- e.g.
+SRA_METADATA has no column called "ibd", but `attributes`, `sra_study`, and
+`sample_name` are free text and ILIKE '%inflammatory bowel disease%' / '%IBD%'
+expresses it, so SRA is NOT missing this criterion. Only omit a source when NO
+column, listed attribute, or pattern predicate over a free-text column can reach
+the criterion at all -- not merely because no column is literally named after it.
 
 PREFER RECALL OVER PRECISION
 An empty cohort teaches the researcher nothing; a slightly wide one is visible in the
