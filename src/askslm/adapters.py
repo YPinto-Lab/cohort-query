@@ -86,7 +86,7 @@ class DuckDbConnection:
             return []
         rows = self._connection.execute(
             "SELECT value FROM mirror_config WHERE key = 'sra_db_path'").fetchall()
-        return [("sra", row[0]) for row in rows]
+        return [("sorted_src", row[0]) for row in rows]
 
     def query(self, sql: str, params: list | None = None) -> pd.DataFrame:
         wrapped_sql, wrapped_params = _gpu_wrapped(sql, params or [], self._gpu)

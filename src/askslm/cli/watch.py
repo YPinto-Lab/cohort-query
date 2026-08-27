@@ -49,6 +49,12 @@ def watch(plan_dir: Path, console: Console) -> None:
                     time.sleep(POLL_SECONDS)
                     continue
                 if result is None:
+                    status = jobs.read_status(plan_dir)
+                    if status in ("DONE", "FAILED"):
+                        report_path = plan_dir / "report.txt"
+                        if report_path.exists():
+                            console.print(report_path.read_text())
+                        return
                     if status is None:
                         console.print(
                             "[red]job left the queue and never reported a status[/red]")
