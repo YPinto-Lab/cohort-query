@@ -5,7 +5,7 @@ import duckdb
 import pandas as pd
 import pytest
 
-from askslm.attributes import GENERIC_KEYS, AttributeIndex, render
+from askslm.attributes import GENERIC_KEYS, MAX_KEYS, AttributeIndex, render
 from fixtures.mirror import build_fixture_mirror
 
 
@@ -122,3 +122,53 @@ def test_a_generic_term_is_dropped_by_measurement_not_by_trust():
     index = AttributeIndex(_FakeDatabase(rows), expander=_StubExpander(["dna"]))
 
     assert index.matching("stool samples") == {}
+
+
+class _StubSemantic:
+    def __init__(self, matches):
+        self._matches = matches
+
+    def matching_keys(self, question):
+        return self._matches
+
+
+def test_a_semantic_match_is_unioned_with_substring_matches():
+    """The whole point of Task 3: ibd_sam, found only by embedding similarity (no
+    substring in common with "IBD"), must still reach the rendered prompt block."""
+    index = AttributeIndex(_FakeDatabase([("calprotectin_sam", 2342, None)]),
+                           concepts=_StubSemantic({"ibd_sam": (44976, None)}))
+
+    found = index.matching("IBD fecal metagenomic with calprotectin")
+
+    assert "calprotectin_sam" in found
+    assert "ibd_sam" in found
+
+
+def test_a_low_occurrence_semantic_match_can_still_be_evicted_by_max_keys():
+    """The corrected claim from the class docstring, proven: TOP_K_KEYS only protects a
+    semantic candidate from OTHER semantic candidates. It does NOT protect it from the
+    final MAX_KEYS truncation once high-occurrence substring noise from OTHER terms
+    fills the budget first. Five distinct terms (PER_TERM=12 each) fill all MAX_KEYS=60
+    slots with high-occurrence substring noise, so a modest-occurrence semantic-only
+    match (like the real ibd_sam) is evicted. Known, current, honest behavior -- not
+    the guarantee the docstring used to (wrongly) claim."""
+    words = ["alpha", "bravo", "charlie", "delta", "echofoo"]
+    noise = [(f"{word}_key_{n}_sam", 500000 - (index * 12 + n), None)
+             for index, word in enumerate(words) for n in range(12)]
+    index = AttributeIndex(_FakeDatabase(noise),
+                           concepts=_StubSemantic({"ibd_sam": (300, None)}))
+
+    found = index.matching(" ".join(words))
+
+    assert len(found) == MAX_KEYS
+    assert "ibd_sam" not in found
+
+
+def test_no_semantic_collaborator_behaves_as_before():
+    """concepts=None (the default) must not change existing behavior -- every
+    existing test in this file constructs AttributeIndex without it."""
+    index = AttributeIndex(_FakeDatabase([("calprotectin_sam", 2342, None)]))
+
+    found = index.matching("with calprotectin")
+
+    assert "calprotectin_sam" in found

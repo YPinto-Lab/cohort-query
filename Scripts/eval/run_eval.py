@@ -11,12 +11,22 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 QUESTIONS = Path(__file__).parent / "questions.jsonl"
+
+# Free tier's real ceiling isn't the 5 RPM number -- it's 250K input tokens/minute,
+# and this schema-heavy prompt runs ~80K tokens/call (measured 2026-08-27: 3 calls
+# in one minute hit 239K/250K TPM). That caps real throughput at ~3 calls/minute
+# regardless of the RPM limit; 22s of pacing leaves margin under that, not just
+# under RPM. A day's 20 RPD cap still means a full question set can outrun the
+# budget outright -- that's handled in main() by skipping the failure and
+# reporting on whatever did complete, not by pacing harder.
+RPM_PACING_SECONDS = 22
 
 
 @dataclass(frozen=True)
@@ -64,6 +74,9 @@ def main() -> None:
     parser.add_argument("--db", type=Path, required=True, help="the real mirror")
     parser.add_argument("--key", required=True, help="Gemini API key")
     parser.add_argument("--model", default="gemini-2.5-flash")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="score only the first N questions -- for a quick, cheap "
+                             "check against the daily quota instead of the full set")
     args = parser.parse_args()
 
     import askslm
@@ -73,13 +86,25 @@ def main() -> None:
     askslm.config(db=args.db, llm="gemini", llm_key=args.key, llm_model=args.model,
                   database=connection)
 
+    cases = [json.loads(line) for line in QUESTIONS.read_text().splitlines()
+             if line.strip() and not line.lstrip().startswith("//")]
+    if args.limit is not None:
+        cases = cases[:args.limit]
+
     totals = []
-    for line in QUESTIONS.read_text().splitlines():
-        if not line.strip() or line.lstrip().startswith("//"):
-            continue
-        case = json.loads(line)
-        totals.append(_run_one(connection, case))
+    failed = []
+    for case in cases:
+        try:
+            totals.append(_run_one(connection, case))
+        except Exception as exc:
+            failed.append(case["question"])
+            print(f"\n{case['question']}\n  FAILED: {exc}")
+        time.sleep(RPM_PACING_SECONDS)
     _report(totals)
+    if failed:
+        print(f"\n{len(failed)}/{len(totals) + len(failed)} question(s) failed to "
+              "translate (see FAILED lines above) -- likely the free-tier RPD cap; "
+              "rerun to fill in the rest once it resets.")
     connection.close()
 
 

@@ -9,6 +9,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
+from askslm.concept_search import EMBED_DIM
 from askslm.expansion import MAX_TERMS
 from askslm.expansion import SYSTEM_INSTRUCTION as EXPANSION_INSTRUCTION
 from askslm.prompt import SYSTEM_INSTRUCTION
@@ -67,6 +68,8 @@ class DuckDbConnection:
 
     def __init__(self, db_path: Path, gpu: bool = False):
         self._connection = duckdb.connect(str(db_path), read_only=True)
+        self._connection.execute("INSTALL vss")
+        self._connection.execute("LOAD vss")
         self._attach_sources()
         self._gpu = gpu
         if gpu:
@@ -117,6 +120,11 @@ class CannedLlmBackend:
         """No model, nothing to repair with."""
         return sql
 
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        """No model behind this backend, so no vectors -- retrieval falls back to
+        substring matching, which is what the tests exercise."""
+        return []
+
     def translate(self, prompt: TranslationPrompt) -> Translation:
         return self._translation
 
@@ -134,6 +142,12 @@ class GeminiBackend:
     # different model, which is both cheaper and a SEPARATE quota pool -- so one
     # question costs one request from each, not two from the same one.
     HELPER_MODEL = "gemini-2.5-flash-lite"
+
+    # gemini-embedding-001 is the current recommended text embedding model
+    # (text-embedding-004 was deprecated January 2026) -- free tier, separate
+    # quota pool from both the translation and helper models. Confirm this is
+    # still current before relying on it; Google deprecates on ~annual cadence.
+    EMBEDDING_MODEL = "gemini-embedding-001"
 
     def __init__(self, client, model: str):
         self._client = client
@@ -182,6 +196,24 @@ class GeminiBackend:
                    time.monotonic() - start, sql, error, fixed)
         return fixed
 
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        """Never raises: a failed embedding call must degrade to substring-only
+        retrieval, not take down ask(). Batched into ONE call -- embed_content
+        accepts a list of contents and returns one vector per input, same order."""
+        if not texts:
+            return []
+        start = time.monotonic()
+        try:
+            response = self._client.models.embed_content(
+                model=self.EMBEDDING_MODEL, contents=texts,
+                config={"output_dimensionality": EMBED_DIM})
+        except Exception as exc:
+            _log_safely("embed (%.2fs) failed for %d texts: %r",
+                       time.monotonic() - start, len(texts), exc)
+            return []
+        _log_safely("embed (%.2fs) for %d texts", time.monotonic() - start, len(texts))
+        return [list(embedding.values) for embedding in response.embeddings]
+
     def translate(self, prompt: TranslationPrompt) -> Translation:
         start = time.monotonic()
         response = self._client.models.generate_content(
@@ -205,6 +237,62 @@ def open_gemini(api_key: str, model: str) -> GeminiBackend:
     from google import genai
 
     return GeminiBackend(genai.Client(api_key=api_key), model)
+
+
+class LocalEmbedder:
+    """Runs entirely on-node: no API key, no quota, no cost. Swapped in for
+    GeminiBackend.embed() after gemini-embedding-001's free-tier quota (both the
+    per-minute and per-day caps) proved too restrictive to finish a ~99k-item build
+    even right after a fresh daily reset -- see build_concept_embeddings.py's
+    docstring. Query-time embedding (ConceptIndex) MUST use this same model, not
+    just the same EMBED_DIM: vectors from two different models aren't comparable
+    even at matching width.
+
+    A general-purpose model (all-MiniLM-L6-v2) was tried first and failed the
+    feature's own flagship case: it ranked "IBS" closer to "IBD" than "Crohn's
+    disease" or "ulcerative colitis" (0.73 vs 0.29-0.38 cosine) -- pure spelling
+    resemblance, no clinical knowledge. SapBERT is trained specifically on UMLS
+    synonym pairs (biomedical abbreviation <-> full name, exactly this task) and
+    correctly ranks "inflammatory bowel disease" (0.80) and "Crohn's disease"
+    (0.76) above "IBS" (0.73) for the same query -- verified 2026-08-27."""
+
+    MODEL_NAME = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
+    MAX_TOKENS = 25    # SapBERT's own recommended max_length -- these are entity
+                       # names/abbreviations, not sentences.
+    BATCH_SIZE = 64    # unlike sentence-transformers' .encode(), raw transformers does
+                       # NOT batch internally -- a bare call would tokenize and forward
+                       # all ~99k build-time texts as one batch and exhaust memory.
+
+    def __init__(self, tokenizer, model):
+        self._tokenizer = tokenizer
+        self._model = model
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        import torch
+
+        vectors = []
+        for start in range(0, len(texts), self.BATCH_SIZE):
+            batch = texts[start:start + self.BATCH_SIZE]
+            inputs = self._tokenizer(batch, padding=True, truncation=True,
+                                     return_tensors="pt", max_length=self.MAX_TOKENS)
+            with torch.no_grad():
+                output = self._model(**inputs)
+            vectors.extend(output.last_hidden_state[:, 0, :].tolist())   # [CLS] token
+        return vectors
+
+
+def open_local_embedder() -> LocalEmbedder:
+    """Imported lazily so `import askslm` does not require transformers/torch for
+    anyone using Gemini-only. Downloads MODEL_NAME to the HuggingFace cache on first
+    use."""
+    from transformers import AutoModel, AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(LocalEmbedder.MODEL_NAME)
+    model = AutoModel.from_pretrained(LocalEmbedder.MODEL_NAME)
+    model.eval()
+    return LocalEmbedder(tokenizer, model)
 
 
 def _prompt_text(prompt: TranslationPrompt) -> str:
