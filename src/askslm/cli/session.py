@@ -10,7 +10,9 @@ build.py/adapters.py, which do have tests.
 """
 from __future__ import annotations
 
+import json
 import logging
+from datetime import datetime
 import shlex
 import shutil
 import sys
@@ -32,12 +34,37 @@ logger = logging.getLogger("askslm.session")
 
 
 def main() -> None:
-    """`askslm` starts a session; `askslm load plans/x/plan.json` reattaches to one."""
-    if len(sys.argv) > 2 and sys.argv[1] == "load":
-        _load(Path(sys.argv[2]))
+    """`askslm` starts a session; `askslm load` picks a saved plan from a list;
+    `askslm load plans/x[/plan.json]` reattaches to one directly."""
+    if len(sys.argv) > 1 and sys.argv[1] == "load":
+        path = _pick_plan() if len(sys.argv) == 2 else _plan_json(Path(sys.argv[2]))
+        if path is not None:
+            _load(path)
         return
     _configure()
     _session()
+
+
+def _plan_json(path: Path) -> Path:
+    """`askslm load plans/x` and `askslm load plans/x/plan.json` both work."""
+    return path / "plan.json" if path.is_dir() else path
+
+
+def _pick_plan(root: Path = rundir.PLANS_ROOT) -> Path | None:
+    """List saved plans newest first, named by question + interpretation."""
+    plan_paths = sorted(root.glob("*/plan.json"), reverse=True)
+    if not plan_paths:
+        console.print(f"[yellow]no saved plans under {root}[/yellow]")
+        return None
+    choices = [questionary.Choice(title=_plan_label(path), value=path) for path in plan_paths]
+    return questionary.select("Which plan?", choices=choices).ask()
+
+
+def _plan_label(path: Path) -> str:
+    payload = json.loads(path.read_text())
+    ts = path.parent.name[:15]                        # YYYYMMDD_HHMMSS, slug may follow
+    when = datetime.strptime(ts, "%Y%m%d_%H%M%S").strftime("%b %d, %Y %H:%M")
+    return f"{when}  {payload['question']!r} -- {payload['interpretation']}"
 
 
 def _configure() -> None:
@@ -108,7 +135,7 @@ def _session() -> None:
             question = questionary.text("What cohort do you need?", default=question).ask()
             if not question:
                 return
-            plan_dir = rundir.new_plan_dir()
+            plan_dir = rundir.new_plan_dir(question)
             handler = rundir.attach_log_handler(plan_dir)
             logger.info("question -> %r", question)
             plan = _ask(question, plan_dir)
@@ -176,6 +203,7 @@ def _run(plan: Plan, plan_dir: Path) -> None:
 
 
 def _submit(plan_dir: Path, sources: list[Source], out: Path, gpu: bool) -> None:
+    _clear_previous_run(plan_dir)
     settings = stored_settings()
     args = [sys.executable, "-m", "askslm.cli.worker",
            "--plan-dir", str(plan_dir), "--plan", str(plan_dir / "plan.json"),
@@ -195,6 +223,18 @@ def _submit(plan_dir: Path, sources: list[Source], out: Path, gpu: bool) -> None
                                 choices=["Watch progress", "Back to menu"]).ask()
     if choice == "Watch progress":
         watch.watch(plan_dir, console)
+
+
+def _clear_previous_run(plan_dir: Path) -> None:
+    """Rerunning a plan reuses its folder, so a prior status.txt/progress.txt
+    still on disk would read as this run's -- watch() would see DONE/FAILED
+    before the new job even starts and bail out instantly."""
+    stale = ["status.txt", "progress.txt", "report.txt", "submitted.txt", "job.id"]
+    for name in stale:
+        (plan_dir / name).unlink(missing_ok=True)
+    for pattern in ("slurm-*.out", "slurm-*.err"):
+        for path in plan_dir.glob(pattern):
+            path.unlink()
 
 
 def _families(plan: Plan) -> list[str]:
@@ -240,6 +280,26 @@ def _discard_loaded(plan_dir: Path, keep: Path) -> None:
             entry.unlink()
 
 
+def _job_running(job_id: str) -> bool:
+    """squeue on this cluster errors outright, not just empty stdout, once a job has
+    aged fully out of the queue -- so a squeue failure here means gone, not unknown."""
+    try:
+        return jobs.squeue_state(job_id) is not None
+    except RuntimeError:
+        return False
+
+
+def _print_last_report(plan_dir: Path) -> None:
+    status = jobs.read_status(plan_dir)
+    if status not in ("DONE", "FAILED"):
+        return
+    report_path = plan_dir / "report.txt"
+    if report_path.exists():
+        console.print(report_path.read_text())
+    else:
+        console.print(f"[yellow]job finished ({status}) -- no report.txt[/yellow]")
+
+
 def _cancel_if_running(plan_dir: Path) -> None:
     job_id = jobs.read_job_id(plan_dir)
     if job_id is None:
@@ -255,20 +315,17 @@ def _cancel_if_running(plan_dir: Path) -> None:
 
 def _load(path: Path) -> None:
     """No LLM hop -- the reproducible half of the loop. Reattaches straight to the
-    live progress view if a job submitted from this same folder is still running."""
+    live progress view if a job submitted from this same folder is still running,
+    or prints its report if it already finished."""
     settings = stored_settings()
     askslm.config(db=settings["db"], llm="gemini", llm_key=settings.get("llm_key", ""))
     plan_dir = path.parent
     job_id = jobs.read_job_id(plan_dir)
     if job_id is not None:
-        try:
-            still_running = jobs.squeue_state(job_id) is not None
-        except RuntimeError as error:
-            console.print(f"[yellow]couldn't confirm job status ({error}); "
-                         f"check `squeue -j {job_id}` yourself if needed[/yellow]")
-            still_running = False
-        if still_running:
+        if _job_running(job_id):
             watch.watch(plan_dir, console)
+        else:
+            _print_last_report(plan_dir)
     plan = load_plan(path)
     console.print(preview_line(plan.preview))
     while True:
