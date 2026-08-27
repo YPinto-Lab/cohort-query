@@ -21,10 +21,11 @@ class Embedder(Protocol):
     def embed(self, terms: list[str]) -> list[list[float]]:
         ...
 
-EMBED_DIM = 256          # small and cheap: this indexes short field names/values, not
-                          # documents. Gemini's default is 3072; requested lower via
-                          # output_dimensionality at both build and query time -- the two
-                          # MUST match, a query vector of the wrong width is a DuckDB error.
+EMBED_DIM = 768          # native output width of LocalEmbedder's model
+                          # (cambridgeltl/SapBERT-from-PubMedBERT-fulltext, see
+                          # adapters.py) -- build-time and query-time MUST use the
+                          # same model and this same width, or a query vector of the
+                          # wrong shape is a DuckDB error (or worse, silently wrong).
 
 TOP_K_KEYS = 5              # nearest keys per question term
 TOP_K_VALUES = 2            # nearest values per question term -- kept tight because this

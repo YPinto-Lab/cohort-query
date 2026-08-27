@@ -239,6 +239,62 @@ def open_gemini(api_key: str, model: str) -> GeminiBackend:
     return GeminiBackend(genai.Client(api_key=api_key), model)
 
 
+class LocalEmbedder:
+    """Runs entirely on-node: no API key, no quota, no cost. Swapped in for
+    GeminiBackend.embed() after gemini-embedding-001's free-tier quota (both the
+    per-minute and per-day caps) proved too restrictive to finish a ~99k-item build
+    even right after a fresh daily reset -- see build_concept_embeddings.py's
+    docstring. Query-time embedding (ConceptIndex) MUST use this same model, not
+    just the same EMBED_DIM: vectors from two different models aren't comparable
+    even at matching width.
+
+    A general-purpose model (all-MiniLM-L6-v2) was tried first and failed the
+    feature's own flagship case: it ranked "IBS" closer to "IBD" than "Crohn's
+    disease" or "ulcerative colitis" (0.73 vs 0.29-0.38 cosine) -- pure spelling
+    resemblance, no clinical knowledge. SapBERT is trained specifically on UMLS
+    synonym pairs (biomedical abbreviation <-> full name, exactly this task) and
+    correctly ranks "inflammatory bowel disease" (0.80) and "Crohn's disease"
+    (0.76) above "IBS" (0.73) for the same query -- verified 2026-08-27."""
+
+    MODEL_NAME = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
+    MAX_TOKENS = 25    # SapBERT's own recommended max_length -- these are entity
+                       # names/abbreviations, not sentences.
+    BATCH_SIZE = 64    # unlike sentence-transformers' .encode(), raw transformers does
+                       # NOT batch internally -- a bare call would tokenize and forward
+                       # all ~99k build-time texts as one batch and exhaust memory.
+
+    def __init__(self, tokenizer, model):
+        self._tokenizer = tokenizer
+        self._model = model
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        import torch
+
+        vectors = []
+        for start in range(0, len(texts), self.BATCH_SIZE):
+            batch = texts[start:start + self.BATCH_SIZE]
+            inputs = self._tokenizer(batch, padding=True, truncation=True,
+                                     return_tensors="pt", max_length=self.MAX_TOKENS)
+            with torch.no_grad():
+                output = self._model(**inputs)
+            vectors.extend(output.last_hidden_state[:, 0, :].tolist())   # [CLS] token
+        return vectors
+
+
+def open_local_embedder() -> LocalEmbedder:
+    """Imported lazily so `import askslm` does not require transformers/torch for
+    anyone using Gemini-only. Downloads MODEL_NAME to the HuggingFace cache on first
+    use."""
+    from transformers import AutoModel, AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(LocalEmbedder.MODEL_NAME)
+    model = AutoModel.from_pretrained(LocalEmbedder.MODEL_NAME)
+    model.eval()
+    return LocalEmbedder(tokenizer, model)
+
+
 def _prompt_text(prompt: TranslationPrompt) -> str:
     return (f"SCHEMA\n{prompt.schemas}\n\n"
             f"QUESTION\n{prompt.question.text}\n")
