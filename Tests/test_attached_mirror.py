@@ -15,17 +15,18 @@ from askslm.adapters import DuckDbConnection, _gpu_wrapped
 
 @pytest.fixture
 def split_mirror(tmp_path):
-    """A two-file mirror, shaped like the real one: metadata copied, taxonomy attached."""
-    source = tmp_path / "sra.duckdb"
+    """A two-file mirror, shaped like the real one post-sort: metadata copied,
+    the sorted tax_fact table attached under the alias the view expects."""
+    source = tmp_path / "sra_taxonomy_sorted.duckdb"
     connection = duckdb.connect(str(source))
-    connection.execute("CREATE TABLE tax_raw (acc VARCHAR, tax_id INTEGER, self_count BIGINT)")
-    connection.execute("INSERT INTO tax_raw VALUES ('SRR1', 562, 10), ('SRR2', 562, 20)")
+    connection.execute("CREATE TABLE tax_fact (acc VARCHAR, tax_id INTEGER, self_count BIGINT)")
+    connection.execute("INSERT INTO tax_fact VALUES ('SRR1', 562, 10), ('SRR2', 562, 20)")
     connection.close()
 
     mirror = tmp_path / "mirror.duckdb"
     connection = duckdb.connect(str(mirror))
-    connection.execute(f"ATTACH '{source}' AS sra (READ_ONLY)")
-    connection.execute("CREATE VIEW sra_taxonomy AS SELECT * FROM sra.tax_raw")
+    connection.execute(f"ATTACH '{source}' AS sorted_src (READ_ONLY)")
+    connection.execute("CREATE VIEW sra_taxonomy AS SELECT * FROM sorted_src.tax_fact")
     connection.execute("CREATE TABLE mirror_config (key VARCHAR, value VARCHAR)")
     connection.execute("INSERT INTO mirror_config VALUES ('sra_db_path', ?)", [str(source)])
     connection.close()

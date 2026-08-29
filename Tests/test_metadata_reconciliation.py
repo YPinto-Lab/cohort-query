@@ -65,3 +65,18 @@ def test_a_genuinely_shared_biosample_still_gets_both_sources_blended():
 
     assert reconciled.frame.loc["SAMN1", "sex"] == "female"
     assert reconciled.columns_for(Accession("SAMN1")) == frozenset({"jattr", "sex"})
+
+
+def test_falls_back_when_the_configured_winner_never_ran():
+    """prompt.py can now omit a source's query entirely on partial criterion
+    coverage (e.g. Metalog has no calprotectin field), so cohort.by_source --
+    and therefore frames -- may simply not contain the default winning source.
+    Reconciliation must fall back to whatever metadata source did run instead
+    of KeyError-ing on `frames[winning_source]`."""
+    cohort = Cohort({Source.SRA_METADATA: frozenset({Accession("SAMN1")})})
+    frames = {Source.SRA_METADATA: pd.DataFrame({"jattr": ["{}"]}, index=["SAMN1"])}
+
+    reconciled = MetadataReconciler(_FakeReader(frames)).reconciled(
+        cohort, Source.METALOG_METADATA)
+
+    assert reconciled.frame.loc["SAMN1", "jattr"] == "{}"
