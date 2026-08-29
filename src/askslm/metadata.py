@@ -78,6 +78,12 @@ class MetadataReconciler:
         is what makes `Cohort.shared() == 0` actually mean zero cross-source blending.
         """
         frames = {source: self._reader.read(source, keys) for source, keys in cohort.by_source.items()}
+        if winning_source not in frames:
+            # The prompt can now omit a metadata source's query entirely (partial
+            # criterion coverage), so the configured winner may simply not have run
+            # -- fall back to whichever metadata source did, since with it absent
+            # there is no peer left to prefer over.
+            winning_source = next(iter(frames))
         others = [frame for source, frame in frames.items() if source is not winning_source]
         combined = reduce(combine_first_onto, others, frames[winning_source])
         return ReconciledMetadata(combined, _covering_columns(frames))
