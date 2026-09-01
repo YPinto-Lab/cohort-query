@@ -80,3 +80,53 @@ def test_falls_back_when_the_configured_winner_never_ran():
         cohort, Source.METALOG_METADATA)
 
     assert reconciled.frame.loc["SAMN1", "jattr"] == "{}"
+
+
+def _three_way_frames() -> dict[Source, pd.DataFrame]:
+    """SAMN1 matched only SRA, SAMN2 matched both, SAMN3 only Metalog -- the three
+    provenance cases in one fixture."""
+    return {
+        Source.SRA_METADATA: pd.DataFrame(
+            {"attributes": [[{"k": "bmi_sam", "v": "22.5"}], [{"k": "bmi_sam", "v": "30.1"}]]},
+            index=["SAMN1", "SAMN2"]),
+        Source.METALOG_METADATA: pd.DataFrame(
+            {"subject_disease_status": ["IBD", "healthy"]}, index=["SAMN2", "SAMN3"]),
+    }
+
+
+def _three_way_cohort() -> Cohort:
+    return Cohort({
+        Source.SRA_METADATA: frozenset(Accession(a) for a in ["SAMN1", "SAMN2"]),
+        Source.METALOG_METADATA: frozenset(Accession(a) for a in ["SAMN2", "SAMN3"]),
+    })
+
+
+def test_covering_columns_records_which_source_actually_backed_each_row():
+    """`columns_for` is what lets the biom writer tell "never looked up" apart from
+    "looked up and empty". combine_first unions BOTH sources' columns onto every row,
+    so without this a biosample only SRA matched still carries Metalog's whole schema
+    as explicit nulls. Each row must report only the columns a source really vetted
+    it against."""
+    reconciled = MetadataReconciler(_FakeReader(_three_way_frames())).reconciled(
+        _three_way_cohort(), Source.METALOG_METADATA)
+
+    assert reconciled.columns_for(Accession("SAMN1")) == frozenset({"attributes"})
+    assert reconciled.columns_for(Accession("SAMN2")) == frozenset(
+        {"attributes", "subject_disease_status"})
+    assert reconciled.columns_for(Accession("SAMN3")) == frozenset({"subject_disease_status"})
+
+
+def test_restricted_to_carries_provenance_forward_and_forgets_dropped_rows():
+    """`restricted_to` narrows the cohort late (a profile source covers fewer samples
+    than discovery found). It must carry each surviving row's provenance with it --
+    otherwise the biom writer loses the ability to drop foreign schema -- and must
+    report None, not a stale set, for a row it dropped."""
+    reconciled = MetadataReconciler(_FakeReader(_three_way_frames())).reconciled(
+        _three_way_cohort(), Source.METALOG_METADATA)
+
+    narrowed = reconciled.restricted_to(frozenset({Accession("SAMN1"), Accession("SAMN3")}))
+
+    assert narrowed.columns_for(Accession("SAMN1")) == frozenset({"attributes"})
+    assert narrowed.columns_for(Accession("SAMN3")) == frozenset({"subject_disease_status"})
+    assert narrowed.columns_for(Accession("SAMN2")) is None
+    assert list(narrowed.frame.index) == ["SAMN1", "SAMN3"]
