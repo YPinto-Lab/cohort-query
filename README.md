@@ -74,15 +74,47 @@ Python 3.12+. The ete3 NCBI database (`~/.etetoolkit/taxa.sqlite`) must be built
 
 ## The mirror
 
-The package only ever opens a prebuilt DuckDB read-only. Building it is a separate, one-time ETL:
+The package only ever opens a prebuilt DuckDB read-only. Building it is a separate ETL
+producing **three** files, in this order:
 
 ```bash
-python Scripts/build_mirror/build_duckdb.py \
-    --metalog-dir ~/Downloads/Metalog \
-    --sra-metadata <sra_metadata.csv> \
-    --sra-taxonomy <sra_taxonomy.csv> \
-    --out askslm_mirror.duckdb
+bash Scripts/build_mirror/build_all.sh          # all three
+bash Scripts/build_mirror/build_all.sh mirror   # just step 3, if the sidecars exist
 ```
+
+| File | Contents | Build time |
+|---|---|---|
+| `sra_taxonomy_sorted.duckdb` | `tax_fact` — 13.6B rows sorted by `acc`, 4 of 9 columns | ~2 h |
+| `sra_metadata_sorted.duckdb` | `metadata_fact` — 39.1M rows sorted by `biosample`, all columns | ~7 min |
+| `askslm_mirror.duckdb` | views over both, plus Metalog tables, embeddings, `stat_coverage` | ~1 h |
+
+Paths come from the environment (`SRA_DB`, `METALOG_DIR`, `MIRROR_DIR`, `PY`); the defaults
+are the Pinto lab's. Steps can also be run individually — see each script's `--help`.
+
+Only the mirror is passed to `config(db=...)`. It records the two sidecar paths in
+`mirror_config` and the package re-attaches them on connect, so the sidecars must stay where
+they were when the mirror was built, or the mirror must be rebuilt.
+
+### Why the big tables live outside the mirror
+
+Sort order **is** the index in a column store. DuckDB keeps min/max statistics per
+122,880-row group and can skip a whole group but never part of one, so a cohort query costs
+whatever the *groups it touches* cost — not what the rows it wants cost. Sorted by its read
+key, a cohort lands in a handful of groups instead of all of them.
+
+Measured on a 3,573-biosample cohort (Slurm jobs 26350723, 26360126):
+
+| | Time |
+|---|---|
+| unsorted `sra_metadata`, `SELECT *` — touches all 319 row groups | 1,772.7 s |
+| sorted, `SELECT *` — touches 20 | 50.0 s |
+| sorted, without the unread `jattr` column | **17.8 s** |
+
+Sorting also shrinks the file: clustering same-study rows together took the metadata from
+43.5 GB to 31 GB, since their `jattr`/`attributes` blobs compress far better adjacent.
+
+Steps 1 and 2 read only the SRA download and are independent; step 3 needs both, because it
+defines its views against them and derives `stat_coverage` from the taxonomy.
 
 ## Tests
 

@@ -20,8 +20,9 @@ from pathlib import Path
 
 import duckdb
 
-EXPECTED_ROWS = 13_613_810_995
-EXPECTED_COVERAGE = 35_681_228
+# No baked-in row count / coverage: this runs against whatever SRA download the user
+# has. The invariant is that the rewrite lost nothing, which is checked against the
+# source itself. (Counting 13.6B rows twice is minutes, against a multi-hour sort.)
 SAMPLE_ACCS = 200  # random accs pulled from the source for the bit-identical check
 
 
@@ -72,12 +73,15 @@ class SortedTaxonomyBuilder:
 
     def _verify(self, con: duckdb.DuckDBPyConnection) -> None:
         row_count = con.execute("SELECT count(*) FROM tax_fact").fetchone()[0]
-        print(f"row count: {row_count} (expected {EXPECTED_ROWS})")
-        assert row_count == EXPECTED_ROWS, "row count changed across the rewrite"
+        expected = con.execute("SELECT count(*) FROM src.tax_raw").fetchone()[0]
+        print(f"row count: {row_count} (source has {expected})")
+        assert row_count == expected, "row count changed across the rewrite"
 
         coverage = con.execute("SELECT count(DISTINCT acc) FROM tax_fact").fetchone()[0]
-        print(f"distinct acc: {coverage} (expected {EXPECTED_COVERAGE})")
-        assert coverage == EXPECTED_COVERAGE, "stat_coverage no longer matches"
+        expected_coverage = con.execute(
+            "SELECT count(DISTINCT acc) FROM src.tax_raw").fetchone()[0]
+        print(f"distinct acc: {coverage} (source has {expected_coverage})")
+        assert coverage == expected_coverage, "stat_coverage no longer matches"
 
         accs = [r[0] for r in con.execute(
             f"SELECT DISTINCT acc FROM tax_fact USING SAMPLE {SAMPLE_ACCS} ROWS"
