@@ -3,23 +3,45 @@ Builds the shared `askslm_mirror.duckdb` from the raw Metalog downloads and the
 existing SRA DuckDB. Run once (or on refresh), by the lab — never at package
 runtime. See Docs/superpowers/plans/2026-06-18-metalog-duckdb-build.md.
 
-The SRA side is ATTACHED, not re-ingested: `metadata_raw` (~39M rows) is copied in
-as `sra_metadata`, but `tax_raw` (~13.6 BILLION rows) is exposed as a VIEW named
-`sra_taxonomy`. Copying it would double hundreds of GB for no benefit. The mirror
-records the source path in `mirror_config` so the package re-attaches on connect.
+NEITHER SRA table is copied in. Both are exposed as VIEWs over sorted sidecar files
+built beforehand, and the mirror records their paths in `mirror_config` so the package
+re-attaches on connect. Copying them would double hundreds of GB AND throw away the
+sort order, which is the whole point: sorted by its read key, a cohort filter prunes
+row groups instead of scanning the table. Measured on a 3,573-biosample cohort, the
+metadata read went from 1,772s to 50s on sort alone (20 of 319 row groups touched).
+
+This script is therefore step 3 of 3, and the first two must already have run:
+
+    build_sorted_taxonomy.py  tax_raw      -> sra_taxonomy_sorted.duckdb  (~2 h)
+    build_sorted_metadata.py  metadata_raw -> sra_metadata_sorted.duckdb  (~7 min)
+    build_duckdb.py           this file    -> askslm_mirror.duckdb        (~1 h)
+
+`build_all.sh` runs the three in order. The mirror itself stays small (~13 GB) and is
+cheap to rebuild; the expensive sorted artifacts are built once per SRA download.
 
 Usage:
     python Scripts/build_mirror/build_duckdb.py \
         --metalog-dir ~/Downloads/Metalog \
-        --sra-db /path/to/sra.duckdb \
+        --sorted-taxonomy /path/to/sra_taxonomy_sorted.duckdb \
+        --sorted-metadata /path/to/sra_metadata_sorted.duckdb \
         --out askslm_mirror.duckdb
 """
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import duckdb
+
+# The mirror_config key -> ATTACH alias contract. A view definition bakes in the alias
+# it was written against, so the build and the runtime MUST agree; importing the single
+# definition is what guarantees that. See askslm.adapters.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+from askslm.adapters import SIDECAR_ALIASES          # noqa: E402
+
+TAXONOMY_ALIAS = SIDECAR_ALIASES["sra_db_path"]
+METADATA_ALIAS = SIDECAR_ALIASES["sra_metadata_path"]
 
 # Long-format profile tables: table name -> (glob pattern, environment regex marker).
 # metaphlan4 (all-levels) needs a glob that excludes the metaphlan4_species files.
@@ -43,11 +65,12 @@ PROFILE_SPECS = {
 class MirrorBuilder:
     """Builds and verifies the SRA x Metalog DuckDB mirror. One method per build step."""
 
-    def __init__(self, metalog_dir: Path, sra_db: Path, out_path: Path,
-                 threads: int | None = None, memory_limit: str | None = None,
-                 temp_dir: Path | None = None):
+    def __init__(self, metalog_dir: Path, sorted_taxonomy: Path, sorted_metadata: Path,
+                 out_path: Path, threads: int | None = None,
+                 memory_limit: str | None = None, temp_dir: Path | None = None):
         self.metalog_dir = metalog_dir
-        self.sra_db = sra_db
+        self.sorted_taxonomy = sorted_taxonomy
+        self.sorted_metadata = sorted_metadata
         self.out_path = out_path
         self.threads = threads
         self.memory_limit = memory_limit
@@ -59,7 +82,8 @@ class MirrorBuilder:
             out_path.unlink()
         con = duckdb.connect(str(out_path))
         self._configure(con)
-        con.execute(f"ATTACH '{self.sra_db}' AS sra (READ_ONLY)")
+        con.execute(f"ATTACH '{self.sorted_taxonomy}' AS {TAXONOMY_ALIAS} (READ_ONLY)")
+        con.execute(f"ATTACH '{self.sorted_metadata}' AS {METADATA_ALIAS} (READ_ONLY)")
         self._load_profiles(con)
         self._load_metadata(con)
         self._load_sra(con)
@@ -117,18 +141,22 @@ class MirrorBuilder:
         """)
 
     def _load_sra(self, con: duckdb.DuckDBPyConnection) -> None:
-        """Copy the metadata; do NOT copy the taxonomy.
+        """Copy NEITHER SRA table -- both are views over their sorted sidecar.
 
-        sra_metadata is ~39M rows -- small enough to own, and it needs an index on
-        biosample that the source may not have. sra_taxonomy is ~13.6 BILLION rows;
-        copying it would double hundreds of GB for nothing, so it is a VIEW over the
-        attached source database. The view persists in the mirror file and resolves
-        whenever the package re-attaches (see mirror_config below).
+        Copying would double hundreds of GB and, worse, discard the sort order these
+        files exist for. Sorted by its read key, each table lets a cohort filter prune
+        row groups: the cohort touches 20 of sra_metadata's 319 groups instead of all
+        319, and pays only for the rows it wants out of tax_fact's 13.6 BILLION.
+
+        The views persist in the mirror file and resolve whenever the package
+        re-attaches, which it does by reading the paths recorded below. Indexes live in
+        the sidecars (built there), not here -- a view cannot be indexed.
         """
-        con.execute("CREATE TABLE sra_metadata AS SELECT * FROM sra.metadata_raw")
-        con.execute("CREATE VIEW sra_taxonomy AS SELECT * FROM sra.tax_raw")
+        con.execute(f"CREATE VIEW sra_taxonomy AS SELECT * FROM {TAXONOMY_ALIAS}.tax_fact")
+        con.execute(f"CREATE VIEW sra_metadata AS SELECT * FROM {METADATA_ALIAS}.metadata_fact")
         con.execute("CREATE TABLE mirror_config (key VARCHAR, value VARCHAR)")
-        con.execute("INSERT INTO mirror_config VALUES ('sra_db_path', ?)", [str(self.sra_db)])
+        con.execute("INSERT INTO mirror_config VALUES ('sra_db_path', ?), ('sra_metadata_path', ?)",
+                    [str(self.sorted_taxonomy), str(self.sorted_metadata)])
 
     def _stamp_biosample(self, con: duckdb.DuckDBPyConnection) -> None:
         """Resolve the sample_alias -> biosample two-hop ONCE; every table gets a `biosample` column."""
@@ -152,10 +180,10 @@ class MirrorBuilder:
         con.execute("CREATE INDEX idx_metalog_metadata_alias ON metalog_metadata (sample_alias)")
         con.execute("CREATE INDEX idx_metalog_metadata_spire ON metalog_metadata (spire_sample_name)")
         con.execute("CREATE INDEX idx_metalog_metadata_biosample ON metalog_metadata (biosample)")
-        con.execute("CREATE INDEX idx_sra_metadata_biosample ON sra_metadata (biosample)")
-        con.execute("CREATE INDEX idx_sra_metadata_acc ON sra_metadata (acc)")
-        # sra_taxonomy is a VIEW over the attached source -- cannot be indexed here.
-        # tax_raw is filtered only by its own `acc`, which the source database indexes.
+        # Neither SRA table is indexed here: both are VIEWs over their sorted sidecar,
+        # and a view cannot be indexed. build_sorted_metadata.py builds
+        # idx_metadata_fact_{biosample,acc} inside its own file. Sort order is the
+        # primary access path either way -- the indexes only serve point lookups.
         con.execute("CREATE INDEX idx_stat_coverage_acc ON stat_coverage (acc)")
         for table in PROFILE_SPECS:
             con.execute(f"CREATE INDEX idx_{table}_alias ON {table} (sample_alias)")
@@ -228,8 +256,10 @@ class MirrorBuilder:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--metalog-dir", type=Path, required=True)
-    parser.add_argument("--sra-db", type=Path, required=True,
-                        help="the existing SRA DuckDB holding metadata_raw and tax_raw")
+    parser.add_argument("--sorted-taxonomy", type=Path, required=True,
+                        help="sra_taxonomy_sorted.duckdb from build_sorted_taxonomy.py")
+    parser.add_argument("--sorted-metadata", type=Path, required=True,
+                        help="sra_metadata_sorted.duckdb from build_sorted_metadata.py")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--threads", type=int, default=None)
     parser.add_argument("--memory-limit", default=None, help="e.g. 400GB")
@@ -237,7 +267,7 @@ def main() -> None:
                         help="DuckDB spill directory -- NOT /tmp on a compute node")
     args = parser.parse_args()
 
-    MirrorBuilder(args.metalog_dir, args.sra_db, args.out,
+    MirrorBuilder(args.metalog_dir, args.sorted_taxonomy, args.sorted_metadata, args.out,
                   args.threads, args.memory_limit, args.temp_dir).build()
 
 
