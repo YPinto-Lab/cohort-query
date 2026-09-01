@@ -19,6 +19,16 @@ from askslm.translation import SourceQuery, Translation, TranslationPrompt
 
 SIRIUS_EXTENSION_PATH = "/private/pinto-lab/anna/sirius/build/sirius.duckdb_extension"
 
+# mirror_config key -> ATTACH alias, for the big tables kept OUTSIDE the mirror file.
+# Sorting these by their read key is what makes a cohort filter prune row groups instead
+# of scanning the whole table, so they are built once and attached read-only rather than
+# copied into the mirror. build_duckdb.py writes the views against these same aliases.
+#
+# `sra_db_path` is the historical name for the sorted TAXONOMY file and is kept so that
+# mirrors built before the metadata sort keep resolving.
+SIDECAR_ALIASES = {"sra_db_path": "sorted_src",          # sra_taxonomy  -> tax_fact
+                   "sra_metadata_path": "sorted_meta"}   # sra_metadata  -> metadata_fact
+
 _logger = logging.getLogger(__name__)
 
 
@@ -81,12 +91,24 @@ class DuckDbConnection:
             self._connection.execute(f"ATTACH '{path}' AS {alias} (READ_ONLY)")
 
     def _attachments(self) -> list[tuple[str, str]]:
+        """Which sidecar databases to attach, and under which alias.
+
+        The mirror stores each big table as a VIEW, and a view definition BAKES IN the
+        alias it was written against -- so the aliases here and the ones build_duckdb.py
+        writes its views against are one contract, not two independent choices. That is
+        why they live in SIDECAR_ALIASES, imported by both.
+
+        A mirror predating the sorted metadata carries only `sra_db_path`; it attaches
+        that one and works exactly as before, so this is safe to deploy ahead of a
+        rebuild.
+        """
         tables = self._connection.execute("SHOW TABLES").fetchall()
         if ("mirror_config",) not in tables:
             return []
-        rows = self._connection.execute(
-            "SELECT value FROM mirror_config WHERE key = 'sra_db_path'").fetchall()
-        return [("sorted_src", row[0]) for row in rows]
+        configured = dict(self._connection.execute(
+            "SELECT key, value FROM mirror_config").fetchall())
+        return [(alias, configured[key])
+                for key, alias in SIDECAR_ALIASES.items() if key in configured]
 
     def query(self, sql: str, params: list | None = None) -> pd.DataFrame:
         wrapped_sql, wrapped_params = _gpu_wrapped(sql, params or [], self._gpu)

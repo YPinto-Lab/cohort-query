@@ -43,20 +43,26 @@ def _build_fixture(tmp_path: Path) -> MirrorBuilder:
         ["s2", "SRS_not_a_biosample"],
     ])
 
-    # The SRA side is a real DuckDB now, not CSVs -- that is what the lab server has.
-    # A1 and A2 are two RUNS of one BioSample (the B.3 case); A3 has no biosample.
-    sra_db = tmp_path / "sra.duckdb"
+    # Both SRA tables now arrive as pre-sorted sidecar files, shaped exactly as
+    # build_sorted_taxonomy.py and build_sorted_metadata.py leave them. A1 and A2 are
+    # two RUNS of one BioSample (the B.3 case); A3 has no biosample.
     import duckdb
-    source = duckdb.connect(str(sra_db))
-    source.execute("CREATE TABLE metadata_raw (acc VARCHAR, biosample VARCHAR)")
-    source.execute("INSERT INTO metadata_raw VALUES ('A1','SAMN001'),('A2','SAMN001'),('A3',NULL)")
-    source.execute("CREATE TABLE tax_raw (acc VARCHAR, tax_id INTEGER)")
-    source.execute("INSERT INTO tax_raw VALUES ('A1',9606),('A2',9606),('A3',9606)")
+    sorted_taxonomy = tmp_path / "sra_taxonomy_sorted.duckdb"
+    source = duckdb.connect(str(sorted_taxonomy))
+    source.execute("CREATE TABLE tax_fact (acc VARCHAR, tax_id INTEGER)")
+    source.execute("INSERT INTO tax_fact VALUES ('A1',9606),('A2',9606),('A3',9606)")
+    source.close()
+
+    sorted_metadata = tmp_path / "sra_metadata_sorted.duckdb"
+    source = duckdb.connect(str(sorted_metadata))
+    source.execute("CREATE TABLE metadata_fact (acc VARCHAR, biosample VARCHAR)")
+    source.execute("INSERT INTO metadata_fact VALUES ('A1','SAMN001'),('A2','SAMN001'),('A3',NULL)")
     source.close()
 
     return MirrorBuilder(
         metalog_dir=metalog_dir,
-        sra_db=sra_db,
+        sorted_taxonomy=sorted_taxonomy,
+        sorted_metadata=sorted_metadata,
         out_path=tmp_path / "mirror.duckdb",
     )
 
@@ -88,21 +94,24 @@ def test_build_stamps_biosample_and_joins(tmp_path, capsys):
     con.close()
 
 
-def test_taxonomy_is_a_view_over_the_attached_source_not_a_copy(tmp_path):
-    """The 13.6B-row table must never be copied, and must never be stamped.
+def test_both_sra_tables_are_views_over_their_sorted_sidecar_not_copies(tmp_path):
+    """NEITHER SRA table is copied into the mirror any more.
 
-    Instead the mirror holds a VIEW plus `stat_coverage`, and records the source path so
-    a read-only reopen can re-attach. Two runs of one BioSample stay two rows -- the ETL
-    collapses nothing (HLD B.3).
+    Copying would double hundreds of GB and, worse, discard the sort order the sidecars
+    exist for -- sorted by its read key, each table lets a cohort filter prune row groups
+    instead of scanning. The mirror holds two VIEWs plus `stat_coverage`, and records
+    both paths so a read-only reopen can re-attach. Two runs of one BioSample stay two
+    rows -- the ETL collapses nothing (HLD B.3).
     """
     builder = _build_fixture(tmp_path)
     builder.build()
 
     import duckdb
     con = duckdb.connect(str(builder.out_path), read_only=True)
-    recorded = con.execute(
-        "SELECT value FROM mirror_config WHERE key = 'sra_db_path'").fetchone()[0]
-    con.execute(f"ATTACH '{recorded}' AS sra (READ_ONLY)")
+    for key, alias in (("sra_db_path", "sorted_src"), ("sra_metadata_path", "sorted_meta")):
+        recorded = con.execute(
+            "SELECT value FROM mirror_config WHERE key = ?", [key]).fetchone()[0]
+        con.execute(f"ATTACH '{recorded}' AS {alias} (READ_ONLY)")
 
     kinds = dict(con.execute(
         "SELECT table_name, table_type FROM information_schema.tables "
@@ -113,7 +122,7 @@ def test_taxonomy_is_a_view_over_the_attached_source_not_a_copy(tmp_path):
         "SELECT count(DISTINCT acc) FROM sra_metadata WHERE biosample = 'SAMN001'").fetchone()[0]
 
     assert kinds["sra_taxonomy"] == "VIEW"          # not copied
-    assert kinds["sra_metadata"] == "BASE TABLE"    # copied: small, and needs its own index
+    assert kinds["sra_metadata"] == "VIEW"          # not copied either, since the sort
     assert "biosample" not in taxonomy_columns      # never stamped
     assert covered == ["A1", "A2", "A3"]
     assert runs_of_samn001 == 2

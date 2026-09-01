@@ -48,9 +48,21 @@ class MetadataReader:
         self._database = database
 
     def read(self, source: Source, accessions: frozenset[Accession]) -> pd.DataFrame:
+        """`jattr` is excluded, not forgotten. It is 60% of sra_metadata's bytes (28GB of
+        46GB) and the sole consumer of this frame -- `build.py`'s `_flattened` -- drops it
+        on BOTH return paths, because `attributes` carries the same key/value data
+        losslessly while `jattr`, being a JSON object, collapses a repeated key to its
+        first value. Fetching it costs a 2.8x slowdown to produce byte-identical output:
+        verified on 20,000 real rows, and the delivered biom carries `jattr` on 0 of its
+        3,770 sample columns.
+
+        DISCOVERY still needs the column and is untouched -- the LLM filters on
+        `json_extract_string(jattr, ...)` in its WHERE clause (see prompt.py). This is
+        only the assembly-time read, where the cohort is already known.
+        """
         table = source.spec().table
         rows = self._database.query(
-            f"SELECT * FROM {table} "
+            f"SELECT * {self._excluded(table)}FROM {table} "
             f"WHERE {self._key_expression(table)} IN (SELECT unnest(?::VARCHAR[]))",
             [sorted(accessions)])
         if rows.empty:
@@ -61,6 +73,10 @@ class MetadataReader:
 
     def _key_expression(self, table: str) -> str:
         return "coalesce(biosample, sample_alias)" if table.startswith("metalog_") else "biosample"
+
+    def _excluded(self, table: str) -> str:
+        """Only sra_metadata has a jattr column; the metalog tables must not name it."""
+        return "EXCLUDE (jattr) " if table == "sra_metadata" else ""
 
 
 class MetadataReconciler:
