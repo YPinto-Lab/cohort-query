@@ -20,6 +20,13 @@ from pathlib import Path
 
 import duckdb
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+from askslm.adapters import attach_sidecars          # noqa: E402
+
+
 MAX_DISTINCT = 200
 HUGE_TABLE_ROWS = 100_000_000        # never aggregate over a table above this
 
@@ -48,6 +55,8 @@ def main() -> None:
     args = parser.parse_args()
 
     con = duckdb.connect(str(args.db), read_only=True)
+
+    attach_sidecars(con)
     report = MirrorReport(con, args.max_distinct)
     report.tables()
     report.schemas()

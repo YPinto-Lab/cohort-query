@@ -25,6 +25,13 @@ from pathlib import Path
 
 import duckdb
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+from askslm.adapters import attach_sidecars          # noqa: E402
+
+
 METADATA_TABLES = ("sra_metadata", "metalog_metadata")
 DEFAULT_MAX_DISTINCT = 200
 
@@ -61,6 +68,7 @@ class SchemaCatalogBuilder:
 
     def build(self) -> None:
         con = duckdb.connect(str(self.db_path))
+        attach_sidecars(con)
         self._create_table(con)
         for table in METADATA_TABLES:
             self._catalog_table(con, table)
