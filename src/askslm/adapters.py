@@ -66,6 +66,34 @@ def _gpu_wrapped(sql: str, params: list, gpu: bool) -> tuple[str, list]:
     return f"SELECT * FROM gpu_processing($$ {sql} $$)", params
 
 
+def sidecars_of(connection) -> list[tuple[str, str]]:
+    """(alias, path) for every sidecar this mirror records, in SIDECAR_ALIASES order.
+
+    A mirror with no `mirror_config` (the generated single-file test fixture) records
+    none, and one predating a given sidecar simply omits that key.
+    """
+    tables = connection.execute("SHOW TABLES").fetchall()
+    if ("mirror_config",) not in tables:
+        return []
+    configured = dict(connection.execute("SELECT key, value FROM mirror_config").fetchall())
+    return [(alias, configured[key])
+            for key, alias in SIDECAR_ALIASES.items() if key in configured]
+
+
+def attach_sidecars(connection) -> list[tuple[str, str]]:
+    """ATTACH every recorded sidecar read-only, so the mirror's `sra_*` views resolve.
+
+    Shared by the runtime connection and by the build scripts that open a mirror
+    directly -- since the big tables became views, a plain `duckdb.connect(mirror)`
+    cannot read `sra_metadata` at all without this, and fails with
+    'schema sorted_meta does not exist'.
+    """
+    attached = sidecars_of(connection)
+    for alias, path in attached:
+        connection.execute(f"ATTACH '{path}' AS {alias} (READ_ONLY)")
+    return attached
+
+
 class DuckDbConnection:
     """The mirror is opened READ-ONLY. Any write -- including a stray LLM INSERT -- is
     refused by DuckDB itself rather than by validation we would have to write.
@@ -87,8 +115,7 @@ class DuckDbConnection:
             self._connection.execute("SELECT gpu_buffer_init()")
 
     def _attach_sources(self) -> None:
-        for alias, path in self._attachments():
-            self._connection.execute(f"ATTACH '{path}' AS {alias} (READ_ONLY)")
+        attach_sidecars(self._connection)
 
     def _attachments(self) -> list[tuple[str, str]]:
         """Which sidecar databases to attach, and under which alias.
@@ -102,13 +129,7 @@ class DuckDbConnection:
         that one and works exactly as before, so this is safe to deploy ahead of a
         rebuild.
         """
-        tables = self._connection.execute("SHOW TABLES").fetchall()
-        if ("mirror_config",) not in tables:
-            return []
-        configured = dict(self._connection.execute(
-            "SELECT key, value FROM mirror_config").fetchall())
-        return [(alias, configured[key])
-                for key, alias in SIDECAR_ALIASES.items() if key in configured]
+        return sidecars_of(self._connection)
 
     def query(self, sql: str, params: list | None = None) -> pd.DataFrame:
         wrapped_sql, wrapped_params = _gpu_wrapped(sql, params or [], self._gpu)

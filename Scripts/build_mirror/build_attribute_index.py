@@ -15,6 +15,13 @@ from pathlib import Path
 
 import duckdb
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+from askslm.adapters import attach_sidecars          # noqa: E402
+
+
 DEFAULT_SAMPLE_ROWS = 200_000
 MAX_SAMPLES = 3
 
@@ -34,6 +41,7 @@ class AttributeIndexBuilder:
 
     def build(self) -> None:
         con = duckdb.connect(str(self.db_path))
+        attach_sidecars(con)
         con.execute("DROP TABLE IF EXISTS attribute_keys")
         con.execute("""
             CREATE TABLE attribute_keys (

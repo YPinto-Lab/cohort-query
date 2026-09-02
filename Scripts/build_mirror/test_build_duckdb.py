@@ -4,6 +4,8 @@ import csv
 import gzip
 from pathlib import Path
 
+import pytest
+
 from build_duckdb import MirrorBuilder
 
 
@@ -128,3 +130,36 @@ def test_both_sra_tables_are_views_over_their_sorted_sidecar_not_copies(tmp_path
     assert runs_of_samn001 == 2
 
     con.close()
+
+
+def test_a_failed_build_leaves_the_existing_mirror_intact_and_no_orphan(tmp_path):
+    """These builds run for minutes to hours and the artifacts reach 128GB. Unlinking
+    the target up front -- which is what this used to do -- left the lab with nothing
+    for the whole run, and permanently if the build failed. The build now goes to a
+    staging sibling and is renamed over the target only after every check passes."""
+    builder = _build_fixture(tmp_path)
+    builder.out_path.write_text("PRECIOUS EXISTING MIRROR")
+    builder._verify = lambda con: (_ for _ in ()).throw(RuntimeError("verify failed"))
+
+    with pytest.raises(RuntimeError):
+        builder.build()
+
+    assert builder.out_path.read_text() == "PRECIOUS EXISTING MIRROR"
+    assert not builder.out_path.with_name(builder.out_path.name + ".building").exists()
+
+
+def test_a_successful_build_replaces_the_target_and_removes_the_staging_file(tmp_path):
+    builder = _build_fixture(tmp_path)
+    builder.out_path.write_text("PRECIOUS EXISTING MIRROR")
+
+    builder.build()
+
+    import duckdb
+    con = duckdb.connect(str(builder.out_path), read_only=True)
+    # a real table, not the sra_* views -- those need their sidecars attached, which
+    # is the runtime's job (DuckDbConnection) and is covered in Tests/.
+    assert con.execute("SELECT count(*) FROM metalog_metadata").fetchone()[0] == 2
+    assert dict(con.execute("SELECT key, value FROM mirror_config").fetchall()).keys() == {
+        "sra_db_path", "sra_metadata_path"}
+    con.close()
+    assert not builder.out_path.with_name(builder.out_path.name + ".building").exists()

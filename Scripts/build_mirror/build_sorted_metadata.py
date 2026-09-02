@@ -41,6 +41,14 @@ SAMPLE_KEYS = 200   # random biosamples pulled from the source for the bit-ident
 ROW_GROUP = 122_880  # DuckDB's fixed row group size; not tunable in 1.5.5
 
 
+
+def _staging_path(out_path: Path) -> Path:
+    """A sibling of the target, so the final rename stays on one filesystem and is
+    therefore atomic. Any leftover from a previous crashed run is discarded."""
+    staging = out_path.with_name(out_path.name + ".building")
+    staging.unlink(missing_ok=True)
+    return staging
+
 class SortedMetadataBuilder:
     """Builds and verifies the sorted metadata_fact table. One method per build step."""
 
@@ -54,15 +62,30 @@ class SortedMetadataBuilder:
         self.temp_dir = temp_dir
 
     def build(self) -> None:
-        if self.out_path.exists():
-            self.out_path.unlink()
-        con = duckdb.connect(str(self.out_path))
-        self._configure(con)
-        con.execute(f"ATTACH '{self.sra_db}' AS src (READ_ONLY)")
-        self._sort(con)
-        self._index(con)
-        self._verify(con)
-        con.close()
+        """Builds into a staging file and renames it over `out_path` only once every
+        check has passed. Never unlink the target first: these builds take minutes to
+        hours, so deleting up front leaves the lab with NOTHING for the whole run and
+        forever if it fails. Path.replace is os.replace -- atomic within a filesystem,
+        so readers see either the old file or the new one, never a half-written mirror.
+
+        DuckDB will not CREATE TABLE into a file that already has them, which is what
+        the unlink was really for; a fresh staging path solves that without risking the
+        live artifact.
+        """
+        staging = _staging_path(self.out_path)
+        try:
+            con = duckdb.connect(str(staging))
+            self._configure(con)
+            con.execute(f"ATTACH '{self.sra_db}' AS src (READ_ONLY)")
+            self._sort(con)
+            self._index(con)
+            self._verify(con)
+            con.close()
+        except BaseException:
+            # never leave a partial artifact behind -- these run to 128GB
+            staging.unlink(missing_ok=True)
+            raise
+        staging.replace(self.out_path)
 
     def _configure(self, con: duckdb.DuckDBPyConnection) -> None:
         if self.threads:
