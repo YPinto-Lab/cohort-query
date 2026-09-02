@@ -70,8 +70,8 @@ python Scripts/build_mirror/build_duckdb.py \
 ```
 
 Design docs: `Docs/superpowers/specs/2026-06-17-askslm-architecture-hld-lld.html` (HLD/LLD, the
-*how*), `2026-06-17-askslm-sra-metalog-cohort-design.html` (the *why*), and
-`Docs/superpowers/plans/2026-06-18-metalog-duckdb-build.md` (the mirror ETL itself).
+*how*), `Docs/superpowers/specs/2026-06-17-askslm-sra-metalog-cohort-design.html` (the *why*),
+and `Docs/superpowers/plans/2026-06-18-metalog-duckdb-build.md` (the mirror ETL itself).
 
 ## Tests
 
