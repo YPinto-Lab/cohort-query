@@ -89,7 +89,7 @@ def embedder() -> Embedder:
     """An explicitly injected embedder always wins (tests). Otherwise: gemini mode
     gets a local model -- Gemini's embed_content free tier proved too rate-limited
     to finish the concept-embedding build even right after a fresh daily quota
-    reset (see build_concept_embeddings.py's docstring), so query-time embedding
+    reset (see step6_embed_concepts.py's docstring), so query-time embedding
     must match the same local model the build used. Canned mode has no model to
     call, so it keeps using the canned backend's own no-op embed() (retrieval
     degrades to substring matching), unchanged from before."""

@@ -22,7 +22,7 @@ SIRIUS_EXTENSION_PATH = "/private/pinto-lab/anna/sirius/build/sirius.duckdb_exte
 # mirror_config key -> ATTACH alias, for the big tables kept OUTSIDE the mirror file.
 # Sorting these by their read key is what makes a cohort filter prune row groups instead
 # of scanning the whole table, so they are built once and attached read-only rather than
-# copied into the mirror. build_duckdb.py writes the views against these same aliases.
+# copied into the mirror. step3_assemble_mirror.py writes the views against these same aliases.
 #
 # `sra_db_path` is the historical name for the sorted TAXONOMY file and is kept so that
 # mirrors built before the metadata sort keep resolving.
@@ -30,9 +30,9 @@ SIDECAR_ALIASES = {"sra_db_path": "sorted_src",          # sra_taxonomy  -> tax_
                    "sra_metadata_path": "sorted_meta"}   # sra_metadata  -> metadata_fact
 
 
-# What a usable mirror must contain. `build_duckdb.py` produces only the first seven;
-# the last four come from build_attribute_index.py, build_schema_catalog.py and
-# build_concept_embeddings.py, which for a long time were run by hand -- so a mirror
+# What a usable mirror must contain. `step3_assemble_mirror.py` produces only the first seven;
+# the last four come from step4_index_attributes.py, step5_catalog_schema.py and
+# step6_embed_concepts.py, which for a long time were run by hand -- so a mirror
 # built by the documented command was silently missing the LLM's entire vocabulary and
 # failed much later, deep in discovery, with a bare DuckDB "table does not exist".
 #
@@ -175,7 +175,7 @@ class DuckDbConnection:
         """Which sidecar databases to attach, and under which alias.
 
         The mirror stores each big table as a VIEW, and a view definition BAKES IN the
-        alias it was written against -- so the aliases here and the ones build_duckdb.py
+        alias it was written against -- so the aliases here and the ones step3_assemble_mirror.py
         writes its views against are one contract, not two independent choices. That is
         why they live in SIDECAR_ALIASES, imported by both.
 
@@ -340,7 +340,7 @@ class LocalEmbedder:
     """Runs entirely on-node: no API key, no quota, no cost. Swapped in for
     GeminiBackend.embed() after gemini-embedding-001's free-tier quota (both the
     per-minute and per-day caps) proved too restrictive to finish a ~99k-item build
-    even right after a fresh daily reset -- see build_concept_embeddings.py's
+    even right after a fresh daily reset -- see step6_embed_concepts.py's
     docstring. Query-time embedding (ConceptIndex) MUST use this same model, not
     just the same EMBED_DIM: vectors from two different models aren't comparable
     even at matching width.

@@ -111,11 +111,11 @@ echo "  out-dir=$OUT_DIR (${free_gb}G free)"
 
 if [ "$STAGE" = all ] || [ "$STAGE" = sidecars ]; then
     echo "--- 1/6 sorted taxonomy -> $TAXONOMY"
-    time "$PY" "$HERE/build_sorted_taxonomy.py" --sra-db "$SRA_DB" --out "$TAXONOMY" \
+    time "$PY" "$HERE/steps/step1_sort_taxonomy.py" --sra-db "$SRA_DB" --out "$TAXONOMY" \
         --threads "$THREADS" --memory-limit "$MEMORY_LIMIT" --temp-dir "$TMP"
 
     echo "--- 2/6 sorted metadata -> $METADATA"
-    time "$PY" "$HERE/build_sorted_metadata.py" --sra-db "$SRA_DB" --out "$METADATA" \
+    time "$PY" "$HERE/steps/step2_sort_metadata.py" --sra-db "$SRA_DB" --out "$METADATA" \
         --threads "$THREADS" --memory-limit "$MEMORY_LIMIT" --temp-dir "$TMP"
 fi
 
@@ -124,7 +124,7 @@ if [ "$STAGE" = all ] || [ "$STAGE" = mirror ]; then
         [ -r "$f" ] || die "missing $f -- run with --stage sidecars first"
     done
     echo "--- 3/6 mirror -> $MIRROR"
-    time "$PY" "$HERE/build_duckdb.py" --metalog-dir "$METALOG_DIR" \
+    time "$PY" "$HERE/steps/step3_assemble_mirror.py" --metalog-dir "$METALOG_DIR" \
         --sorted-taxonomy "$TAXONOMY" --sorted-metadata "$METADATA" --out "$MIRROR" \
         --threads "$THREADS" --memory-limit "$MEMORY_LIMIT" --temp-dir "$TMP"
 fi
@@ -134,11 +134,11 @@ if [ "$STAGE" = all ] || [ "$STAGE" = mirror ] || [ "$STAGE" = enrich ]; then
     # These three WRITE INTO the mirror, in this order: concept embeddings read both
     # attribute_keys and schema_catalog, so they must come last.
     echo "--- 4/6 attribute index"
-    time "$PY" "$HERE/build_attribute_index.py" --db "$MIRROR"
+    time "$PY" "$HERE/steps/step4_index_attributes.py" --db "$MIRROR"
     echo "--- 5/6 schema catalog"
-    time "$PY" "$HERE/build_schema_catalog.py" --db "$MIRROR"
+    time "$PY" "$HERE/steps/step5_catalog_schema.py" --db "$MIRROR"
     echo "--- 6/6 concept embeddings (local SapBERT, no API key)"
-    time "$PY" "$HERE/build_concept_embeddings.py" --db "$MIRROR"
+    time "$PY" "$HERE/steps/step6_embed_concepts.py" --db "$MIRROR"
 fi
 
 echo "--- verifying the mirror is complete"
@@ -151,19 +151,6 @@ absent = missing_tables(con)
 if absent:
     raise SystemExit(f"INCOMPLETE MIRROR -- missing: {absent}")
 print(f"  all {len(REQUIRED_TABLES)} required tables/views present")
-PYEOF'
-import sys, duckdb
-con = duckdb.connect(sys.argv[1], read_only=True)
-present = {r[0] for r in con.execute("SELECT table_name FROM duckdb_tables()").fetchall()}
-present |= {r[0] for r in con.execute("SELECT view_name FROM duckdb_views() WHERE NOT internal").fetchall()}
-required = {"sra_metadata", "sra_taxonomy", "stat_coverage", "metalog_metadata",
-            "metalog_metaphlan4", "metalog_motus3", "metalog_spire_motus", "mirror_config",
-            "attribute_keys", "schema_catalog",
-            "attribute_key_embeddings", "column_value_embeddings"}
-missing = sorted(required - present)
-if missing:
-    raise SystemExit(f"INCOMPLETE MIRROR -- missing: {missing}")
-print(f"  all {len(required)} required tables/views present")
 PYEOF
 
 echo "=== done at $(date -Is) ==="

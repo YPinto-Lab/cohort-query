@@ -6,7 +6,7 @@ SRA hides its clinical fields in `jattr`, a JSON blob: 35,768 distinct keys in a
 (`calprotectin_sam` is in 2,342 of 39,100,115 runs). So we index them all and retrieve
 per question instead. See the design doc for the measurements.
 
-    python Scripts/build_mirror/build_attribute_index.py --db askslm_mirror.duckdb
+    python Scripts/build_mirror/steps/step4_index_attributes.py --db askslm_mirror.duckdb
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ import duckdb
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
 from askslm.adapters import attach_sidecars          # noqa: E402
 
 

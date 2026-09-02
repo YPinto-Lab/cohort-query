@@ -1,14 +1,14 @@
 """Embed attribute_keys and low-cardinality schema_catalog values, so a question can
 find a field or value that means the same thing without sharing its spelling.
 
-Run AFTER build_attribute_index.py and build_schema_catalog.py -- this reads both of
+Run AFTER step4_index_attributes.py and step5_catalog_schema.py -- this reads both of
 their output tables. Runs entirely locally (sentence-transformers on CPU) -- no API
 key, no quota, no cost. Switched from Gemini's embed_content after its free-tier
 per-minute AND per-day quotas both proved too restrictive to finish a ~99k-item
 build (94,450 keys + 4,416 qualifying values), hitting sustained 429s even right
 after a fresh daily reset; a local model finishes the same build in minutes.
 
-    python Scripts/build_mirror/build_concept_embeddings.py --db askslm_mirror.duckdb
+    python Scripts/build_mirror/steps/step6_embed_concepts.py --db askslm_mirror.duckdb
 """
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ class ConceptEmbeddingBuilder:
     def _qualifying_columns(self, con: duckdb.DuckDBPyConnection) -> list[tuple[str, str, str]]:
         """Only columns schema_catalog already shows a COMPLETE vocabulary for --
         truncated or NULL-valued columns are identifiers or free text, not vocabulary
-        (see build_schema_catalog.py's _is_identifier)."""
+        (see step5_catalog_schema.py's _is_identifier)."""
         rows = con.execute(
             "SELECT table_name, column_name, values_json FROM schema_catalog "
             "WHERE truncated = false AND values_json IS NOT NULL").fetchall()

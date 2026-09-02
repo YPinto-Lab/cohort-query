@@ -1,6 +1,6 @@
 """A mirror missing its enrichment tables must be rejected at open time, not hours later.
 
-`build_duckdb.py` builds seven of the eleven tables the package needs; attribute_keys,
+`step3_assemble_mirror.py` builds seven of the eleven tables the package needs; attribute_keys,
 schema_catalog and the two embedding tables come from three further scripts that were
 for a long time run by hand. A mirror built by the documented command was therefore
 silently missing the LLM's entire vocabulary, and the failure surfaced deep inside
@@ -31,12 +31,12 @@ def test_a_complete_mirror_passes(tmp_path):
     connection.close()
 
 
-def test_the_partial_mirror_build_duckdb_leaves_behind_is_rejected(tmp_path):
-    """Exactly the seven tables build_duckdb.py creates -- the shape that shipped."""
-    built_by_build_duckdb = {"sra_metadata", "sra_taxonomy", "stat_coverage",
+def test_the_partial_mirror_step3_leaves_behind_is_rejected(tmp_path):
+    """Exactly the seven tables step3_assemble_mirror.py creates -- the shape that shipped."""
+    built_by_step3 = {"sra_metadata", "sra_taxonomy", "stat_coverage",
                              "metalog_metadata", "metalog_metaphlan4",
                              "metalog_motus3", "metalog_spire_motus"}
-    connection = DuckDbConnection(_mirror(tmp_path / "partial.duckdb", built_by_build_duckdb))
+    connection = DuckDbConnection(_mirror(tmp_path / "partial.duckdb", built_by_step3))
 
     with pytest.raises(IncompleteMirror) as raised:
         verify_mirror(connection, tmp_path / "partial.duckdb")

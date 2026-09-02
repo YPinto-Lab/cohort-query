@@ -1,6 +1,6 @@
 """
 Rewrites `sra_metadata` (39.1M rows, `biosample` unclustered) into the same table
-sorted by `biosample`. The mirror of build_sorted_taxonomy.py, one level down.
+sorted by `biosample`. The mirror of step1_sort_taxonomy.py, one level down.
 
 Why: in a column store sort order IS the index. The cohort's biosamples are scattered
 across the current physical order, so a cohort filter touches ALL 319 row groups and
@@ -16,12 +16,12 @@ separate proposal to stop PROJECTING jattr belongs in metadata.py, not here.
 
 Reads `metadata_raw` straight from the STAT download, NOT from the mirror. The mirror
 is built AFTER this file and holds `sra_metadata` as a view over it, so sourcing from
-the mirror would be circular in a from-zero build. Same input as build_sorted_taxonomy.py.
+the mirror would be circular in a from-zero build. Same input as step1_sort_taxonomy.py.
 
 Never mutates the source. Writes a new file, source opened READ_ONLY throughout.
 
 Usage:
-    python scripts/build_sorted_metadata.py \
+    python scripts/step2_sort_metadata.py \
         --sra-db /private/pinto-lab/STAT/sra_processed.duckdb \
         --out /private/pinto-lab/tools/just-ask/mirror/sra_metadata_sorted.duckdb \
         --threads 16 --memory-limit 380GB --temp-dir /path/to/spill

@@ -1,6 +1,6 @@
 """Add a `schema_catalog` table to an existing mirror: columns + value vocabularies.
 
-Separate from build_duckdb.py on purpose. This reads an already-built mirror and
+Separate from step3_assemble_mirror.py on purpose. This reads an already-built mirror and
 adds one table -- it needs no raw TSVs, so it runs in seconds rather than hours,
 and the cardinality cutoff can be re-tuned against the translation eval set
 without rebuilding anything.
@@ -15,7 +15,7 @@ METADATA tables only: the LLM writes one query per METADATA source and never tou
 the profile tables (HLD E.2). That is also what keeps this cheap -- the profile
 tables are the big ones.
 
-    python Scripts/build_mirror/build_schema_catalog.py --db askslm_mirror.duckdb
+    python Scripts/build_mirror/steps/step5_catalog_schema.py --db askslm_mirror.duckdb
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ import duckdb
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
 from askslm.adapters import attach_sidecars          # noqa: E402
 
 
