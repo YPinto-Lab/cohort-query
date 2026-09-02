@@ -7,7 +7,7 @@ time. See Docs/superpowers/plans/2026-08-18-taxonomy-sort.html for the full plan
 Never mutates the source. Writes a new file, source opened READ_ONLY throughout.
 
 Usage:
-    python Scripts/build_mirror/build_sorted_taxonomy.py \
+    python Scripts/build_mirror/steps/step1_sort_taxonomy.py \
         --sra-db /private/pinto-lab/STAT/sra_processed.duckdb \
         --out /private/pinto-lab/tools/just-ask/mirror/sra_taxonomy_sorted.duckdb \
         --threads 16 --memory-limit 380GB --temp-dir /path/to/spill
@@ -20,10 +20,19 @@ from pathlib import Path
 
 import duckdb
 
-EXPECTED_ROWS = 13_613_810_995
-EXPECTED_COVERAGE = 35_681_228
+# No baked-in row count / coverage: this runs against whatever SRA download the user
+# has. The invariant is that the rewrite lost nothing, which is checked against the
+# source itself. (Counting 13.6B rows twice is minutes, against a multi-hour sort.)
 SAMPLE_ACCS = 200  # random accs pulled from the source for the bit-identical check
 
+
+
+def _staging_path(out_path: Path) -> Path:
+    """A sibling of the target, so the final rename stays on one filesystem and is
+    therefore atomic. Any leftover from a previous crashed run is discarded."""
+    staging = out_path.with_name(out_path.name + ".building")
+    staging.unlink(missing_ok=True)
+    return staging
 
 class SortedTaxonomyBuilder:
     """Builds and verifies the sorted tax_fact table. One method per build step."""
@@ -38,14 +47,29 @@ class SortedTaxonomyBuilder:
         self.temp_dir = temp_dir
 
     def build(self) -> None:
-        if self.out_path.exists():
-            self.out_path.unlink()
-        con = duckdb.connect(str(self.out_path))
-        self._configure(con)
-        con.execute(f"ATTACH '{self.sra_db}' AS src (READ_ONLY)")
-        self._sort(con)
-        self._verify(con)
-        con.close()
+        """Builds into a staging file and renames it over `out_path` only once every
+        check has passed. Never unlink the target first: these builds take minutes to
+        hours, so deleting up front leaves the lab with NOTHING for the whole run and
+        forever if it fails. Path.replace is os.replace -- atomic within a filesystem,
+        so readers see either the old file or the new one, never a half-written mirror.
+
+        DuckDB will not CREATE TABLE into a file that already has them, which is what
+        the unlink was really for; a fresh staging path solves that without risking the
+        live artifact.
+        """
+        staging = _staging_path(self.out_path)
+        try:
+            con = duckdb.connect(str(staging))
+            self._configure(con)
+            con.execute(f"ATTACH '{self.sra_db}' AS src (READ_ONLY)")
+            self._sort(con)
+            self._verify(con)
+            con.close()
+        except BaseException:
+            # never leave a partial artifact behind -- these run to 128GB
+            staging.unlink(missing_ok=True)
+            raise
+        staging.replace(self.out_path)
 
     def _configure(self, con: duckdb.DuckDBPyConnection) -> None:
         if self.threads:
@@ -72,12 +96,15 @@ class SortedTaxonomyBuilder:
 
     def _verify(self, con: duckdb.DuckDBPyConnection) -> None:
         row_count = con.execute("SELECT count(*) FROM tax_fact").fetchone()[0]
-        print(f"row count: {row_count} (expected {EXPECTED_ROWS})")
-        assert row_count == EXPECTED_ROWS, "row count changed across the rewrite"
+        expected = con.execute("SELECT count(*) FROM src.tax_raw").fetchone()[0]
+        print(f"row count: {row_count} (source has {expected})")
+        assert row_count == expected, "row count changed across the rewrite"
 
         coverage = con.execute("SELECT count(DISTINCT acc) FROM tax_fact").fetchone()[0]
-        print(f"distinct acc: {coverage} (expected {EXPECTED_COVERAGE})")
-        assert coverage == EXPECTED_COVERAGE, "stat_coverage no longer matches"
+        expected_coverage = con.execute(
+            "SELECT count(DISTINCT acc) FROM src.tax_raw").fetchone()[0]
+        print(f"distinct acc: {coverage} (source has {expected_coverage})")
+        assert coverage == expected_coverage, "stat_coverage no longer matches"
 
         accs = [r[0] for r in con.execute(
             f"SELECT DISTINCT acc FROM tax_fact USING SAMPLE {SAMPLE_ACCS} ROWS"

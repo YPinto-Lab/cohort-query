@@ -4,8 +4,13 @@ every row) -- not missing data, a foreign schema that was never looked up for th
 sample. Found on a real 16,721-column build: 992 samples had metalog_metadata's ~180
 columns stamped on as null, purely because metalog_metadata had no row for them at all.
 """
+import pandas as pd
+
 import askslm
 from askslm.adapters import CannedLlmBackend, DuckDbConnection
+from askslm.cohort import Accession
+from askslm.metadata import MetadataReader
+from askslm.sources import Source
 from askslm.translation import SourceQuery, Translation
 
 from fixtures.mirror import METALOG_ONLY, SHARED, SRA_ONLY, build_fixture_mirror
@@ -64,3 +69,27 @@ def test_metalog_only_biosamples_still_get_no_sra_columns_since_none_exist_for_t
     assert not biosamples_present & set(METALOG_ONLY)
 
     connection.close()
+
+
+def test_the_assembly_read_never_fetches_jattr_but_metalog_is_untouched():
+    """`jattr` is 60% of sra_metadata's bytes and `build._flattened` discards it on both
+    return paths -- `attributes` is the lossless form of the same key/value data. Fetching
+    it costs a 2.8x slowdown to produce byte-identical output.
+
+    DISCOVERY still filters on it (`json_extract_string(jattr, ...)`, see prompt.py); this
+    covers only the assembly-time read, where the cohort is already known. The metalog
+    tables have no such column and must not have it named.
+    """
+    captured = []
+
+    class _Recorder:
+        def query(self, sql, params=None):
+            captured.append(sql)
+            return pd.DataFrame()
+
+    reader = MetadataReader(_Recorder())
+    reader.read(Source.SRA_METADATA, frozenset({Accession("SAMN1")}))
+    reader.read(Source.METALOG_METADATA, frozenset({Accession("SAMN1")}))
+
+    assert "EXCLUDE (jattr)" in captured[0]
+    assert "jattr" not in captured[1]

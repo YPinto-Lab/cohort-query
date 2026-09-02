@@ -5,7 +5,7 @@ wording sharing no characters with the field or value that means the same thing.
 even runs, and even found, it shares no substring with ibd_sam or "Crohn's disease".
 Embedding search finds these by meaning: vectors for the field names and low-cardinality
 column values are computed once at mirror-build time
-(Scripts/build_mirror/build_concept_embeddings.py); this module embeds the question and
+(Scripts/build_mirror/steps/step6_embed_concepts.py); this module embeds the question and
 does nearest-neighbor lookup against them. See the design doc for what was measured.
 """
 from __future__ import annotations

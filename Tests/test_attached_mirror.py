@@ -119,3 +119,53 @@ def test_query_logs_the_sql_and_row_count(caplog, tmp_path):
     connection.close()
 
     assert any("SELECT * FROM t" in record.message for record in caplog.records)
+
+
+@pytest.fixture
+def three_file_mirror(tmp_path):
+    """The mirror as build_all.sh now leaves it: BOTH big tables are views over their
+    own sorted sidecar, and both paths are recorded."""
+    taxonomy = tmp_path / "sra_taxonomy_sorted.duckdb"
+    connection = duckdb.connect(str(taxonomy))
+    connection.execute("CREATE TABLE tax_fact (acc VARCHAR, tax_id INTEGER, self_count BIGINT)")
+    connection.execute("INSERT INTO tax_fact VALUES ('SRR1', 562, 10), ('SRR2', 562, 20)")
+    connection.close()
+
+    metadata = tmp_path / "sra_metadata_sorted.duckdb"
+    connection = duckdb.connect(str(metadata))
+    connection.execute("CREATE TABLE metadata_fact (acc VARCHAR, biosample VARCHAR, jattr VARCHAR)")
+    connection.execute("INSERT INTO metadata_fact VALUES ('SRR1', 'SAMN1', '{}')")
+    connection.close()
+
+    mirror = tmp_path / "mirror.duckdb"
+    connection = duckdb.connect(str(mirror))
+    connection.execute(f"ATTACH '{taxonomy}' AS sorted_src (READ_ONLY)")
+    connection.execute(f"ATTACH '{metadata}' AS sorted_meta (READ_ONLY)")
+    connection.execute("CREATE VIEW sra_taxonomy AS SELECT * FROM sorted_src.tax_fact")
+    connection.execute("CREATE VIEW sra_metadata AS SELECT * FROM sorted_meta.metadata_fact")
+    connection.execute("CREATE TABLE mirror_config (key VARCHAR, value VARCHAR)")
+    connection.execute("INSERT INTO mirror_config VALUES ('sra_db_path', ?), ('sra_metadata_path', ?)",
+                       [str(taxonomy), str(metadata)])
+    connection.close()
+    return mirror
+
+
+def test_both_sidecars_are_attached_and_both_views_resolve(three_file_mirror):
+    connection = DuckDbConnection(three_file_mirror)
+
+    taxonomy = connection.query("SELECT acc FROM sra_taxonomy ORDER BY acc")
+    metadata = connection.query("SELECT biosample FROM sra_metadata")
+
+    assert list(taxonomy["acc"]) == ["SRR1", "SRR2"]
+    assert list(metadata["biosample"]) == ["SAMN1"]
+    connection.close()
+
+
+def test_a_mirror_predating_the_metadata_sort_still_attaches_only_its_one_sidecar(split_mirror):
+    """Deploying this code must not require rebuilding the mirror first: a mirror with
+    only `sra_db_path` attaches that one and nothing else."""
+    connection = DuckDbConnection(split_mirror)
+
+    assert connection._attachments() == [
+        ("sorted_src", str(split_mirror.parent / "sra_taxonomy_sorted.duckdb"))]
+    connection.close()
