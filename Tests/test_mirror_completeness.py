@@ -8,6 +8,7 @@ discovery as a bare DuckDB "Table with name schema_catalog does not exist" -- af
 researcher had already typed a question and waited.
 """
 import duckdb
+import pandas as pd
 import pytest
 
 from askslm.adapters import (REQUIRED_TABLES, DuckDbConnection, IncompleteMirror,
@@ -23,11 +24,15 @@ def _mirror(path, tables):
 
 
 def test_a_complete_mirror_passes(tmp_path):
-    connection = DuckDbConnection(_mirror(tmp_path / "full.duckdb", REQUIRED_TABLES))
+    path = _mirror(tmp_path / "full.duckdb", REQUIRED_TABLES)
+    connection = DuckDbConnection(path)
 
     verify_mirror(connection)      # must not raise
 
-    assert missing_tables(connection._connection) == []
+    # missing_tables takes a raw connection -- the build scripts hold one of those.
+    # Reaching through DuckDbConnection._connection would undo the point of routing
+    # verification through the port.
+    assert missing_tables(duckdb.connect(str(path), read_only=True)) == []
     connection.close()
 
 
@@ -70,3 +75,41 @@ def test_mirror_config_is_not_required(tmp_path):
     verify_mirror(connection)
 
     connection.close()
+
+
+def test_a_rejected_mirror_is_not_cached_behind_the_global(tmp_path, monkeypatch):
+    """`runtime.database()` memoises into a module global. Assigning that global before
+    verifying would mean the first call raises, but the SECOND sails past the `is None`
+    guard and returns the very connection the first call rejected -- unvalidated, with
+    its DuckDB handle still open. So verification happens on a local, and only a mirror
+    that passes is ever published."""
+    import askslm
+    from askslm import runtime
+
+    closed = []
+
+    class _Partial:
+        """A Database that reports the seven tables step3 leaves behind."""
+
+        def __init__(self, db_path, gpu=False):
+            self.db_path = db_path
+
+        def query(self, sql, params=None):
+            return pd.DataFrame({"name": ["sra_metadata", "sra_taxonomy", "stat_coverage",
+                                          "metalog_metadata", "metalog_metaphlan4",
+                                          "metalog_motus3", "metalog_spire_motus"]})
+
+        def close(self):
+            closed.append(self)
+
+    monkeypatch.setattr("askslm.runtime.DuckDbConnection", _Partial)
+    db_path = tmp_path / "partial.duckdb"
+    db_path.touch()
+    askslm.config(db=db_path)
+
+    for _ in range(2):
+        with pytest.raises(IncompleteMirror):
+            runtime.database()
+
+    assert runtime._database is None       # never published
+    assert len(closed) == 2                # and never leaked

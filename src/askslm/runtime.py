@@ -59,11 +59,23 @@ def configure(settings: Settings, database: Database | None = None,
 
 
 def database() -> Database:
+    """Built once, and only published once it has been verified.
+
+    The connection is held in a local until `verify_mirror` passes: assigning the
+    global first would leave an unusable mirror cached behind it, so the second call
+    would sail past the `is None` guard and hand back the very connection the first
+    call rejected -- with its DuckDB handle still open.
+    """
     global _database
     if _database is None:
         settings = _require_settings()
-        _database = DuckDbConnection(settings.db_path, gpu=settings.gpu)
-        verify_mirror(_database, settings.db_path)
+        connection = DuckDbConnection(settings.db_path, gpu=settings.gpu)
+        try:
+            verify_mirror(connection, settings.db_path)
+        except BaseException:
+            connection.close()
+            raise
+        _database = connection
     return _database
 
 
