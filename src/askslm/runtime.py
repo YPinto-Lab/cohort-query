@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from askslm.adapters import DuckDbConnection
+from askslm.adapters import DuckDbConnection, verify_mirror
 from askslm.attributes import AttributeIndex
 from askslm.build import BiomFactory, CohortBuilder
 from askslm.catalog import SchemaCatalog
@@ -59,10 +59,23 @@ def configure(settings: Settings, database: Database | None = None,
 
 
 def database() -> Database:
+    """Built once, and only published once it has been verified.
+
+    The connection is held in a local until `verify_mirror` passes: assigning the
+    global first would leave an unusable mirror cached behind it, so the second call
+    would sail past the `is None` guard and hand back the very connection the first
+    call rejected -- with its DuckDB handle still open.
+    """
     global _database
     if _database is None:
         settings = _require_settings()
-        _database = DuckDbConnection(settings.db_path, gpu=settings.gpu)
+        connection = DuckDbConnection(settings.db_path, gpu=settings.gpu)
+        try:
+            verify_mirror(connection, settings.db_path)
+        except BaseException:
+            connection.close()
+            raise
+        _database = connection
     return _database
 
 
@@ -88,7 +101,7 @@ def embedder() -> Embedder:
     """An explicitly injected embedder always wins (tests). Otherwise: gemini mode
     gets a local model -- Gemini's embed_content free tier proved too rate-limited
     to finish the concept-embedding build even right after a fresh daily quota
-    reset (see build_concept_embeddings.py's docstring), so query-time embedding
+    reset (see step6_embed_concepts.py's docstring), so query-time embedding
     must match the same local model the build used. Canned mode has no model to
     call, so it keeps using the canned backend's own no-op embed() (retrieval
     degrades to substring matching), unchanged from before."""

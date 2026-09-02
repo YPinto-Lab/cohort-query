@@ -2,7 +2,7 @@
 
 Adding a database, metadata set, or profiler means adding one member here and
 nothing else. Table names are the mirror's, verified against
-Scripts/build_mirror/build_duckdb.py.
+Scripts/build_mirror/steps/step3_assemble_mirror.py.
 """
 from __future__ import annotations
 

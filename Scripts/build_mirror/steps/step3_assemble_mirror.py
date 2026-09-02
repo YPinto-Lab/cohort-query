@@ -12,15 +12,15 @@ metadata read went from 1,772s to 50s on sort alone (20 of 319 row groups touche
 
 This script is therefore step 3 of 3, and the first two must already have run:
 
-    build_sorted_taxonomy.py  tax_raw      -> sra_taxonomy_sorted.duckdb  (~2 h)
-    build_sorted_metadata.py  metadata_raw -> sra_metadata_sorted.duckdb  (~7 min)
-    build_duckdb.py           this file    -> askslm_mirror.duckdb        (~1 h)
+    step1_sort_taxonomy.py  tax_raw      -> sra_taxonomy_sorted.duckdb  (~2 h)
+    step2_sort_metadata.py  metadata_raw -> sra_metadata_sorted.duckdb  (~7 min)
+    step3_assemble_mirror.py           this file    -> askslm_mirror.duckdb        (~1 h)
 
 `build_all.sh` runs the three in order. The mirror itself stays small (~13 GB) and is
 cheap to rebuild; the expensive sorted artifacts are built once per SRA download.
 
 Usage:
-    python Scripts/build_mirror/build_duckdb.py \
+    python Scripts/build_mirror/steps/step3_assemble_mirror.py \
         --metalog-dir ~/Downloads/Metalog \
         --sorted-taxonomy /path/to/sra_taxonomy_sorted.duckdb \
         --sorted-metadata /path/to/sra_metadata_sorted.duckdb \
@@ -37,7 +37,7 @@ import duckdb
 # The mirror_config key -> ATTACH alias contract. A view definition bakes in the alias
 # it was written against, so the build and the runtime MUST agree; importing the single
 # definition is what guarantees that. See askslm.adapters.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
 from askslm.adapters import SIDECAR_ALIASES          # noqa: E402
 
 TAXONOMY_ALIAS = SIDECAR_ALIASES["sra_db_path"]
@@ -108,6 +108,7 @@ class MirrorBuilder:
             self._stat_coverage(con)
             self._create_indexes(con)
             self._verify(con)
+            self._report_partial()
             con.close()
         except BaseException:
             # never leave a partial artifact behind -- these run to 128GB
@@ -203,13 +204,25 @@ class MirrorBuilder:
         con.execute("CREATE INDEX idx_metalog_metadata_spire ON metalog_metadata (spire_sample_name)")
         con.execute("CREATE INDEX idx_metalog_metadata_biosample ON metalog_metadata (biosample)")
         # Neither SRA table is indexed here: both are VIEWs over their sorted sidecar,
-        # and a view cannot be indexed. build_sorted_metadata.py builds
+        # and a view cannot be indexed. step2_sort_metadata.py builds
         # idx_metadata_fact_{biosample,acc} inside its own file. Sort order is the
         # primary access path either way -- the indexes only serve point lookups.
         con.execute("CREATE INDEX idx_stat_coverage_acc ON stat_coverage (acc)")
         for table in PROFILE_SPECS:
             con.execute(f"CREATE INDEX idx_{table}_alias ON {table} (sample_alias)")
             con.execute(f"CREATE INDEX idx_{table}_biosample ON {table} (biosample)")
+
+    def _report_partial(self) -> None:
+        """This script builds SEVEN of the eleven tables the package needs. Saying so
+        is the difference between a user noticing now and discovering it mid-question,
+        which is exactly how this went wrong before."""
+        print("\n-- NOTE: this is a PARTIAL mirror --")
+        print("   attribute_keys, schema_catalog and the two embedding tables still")
+        print("   have to be built, or discovery has no vocabulary to work with:")
+        print("     step4_index_attributes.py --db <out>")
+        print("     step5_catalog_schema.py  --db <out>")
+        print("     step6_embed_concepts.py --db <out>")
+        print("   build_all.sh runs all of them in order.")
 
     def _verify(self, con: duckdb.DuckDBPyConnection) -> None:
         print("-- row counts --")
@@ -279,9 +292,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--metalog-dir", type=Path, required=True)
     parser.add_argument("--sorted-taxonomy", type=Path, required=True,
-                        help="sra_taxonomy_sorted.duckdb from build_sorted_taxonomy.py")
+                        help="sra_taxonomy_sorted.duckdb from step1_sort_taxonomy.py")
     parser.add_argument("--sorted-metadata", type=Path, required=True,
-                        help="sra_metadata_sorted.duckdb from build_sorted_metadata.py")
+                        help="sra_metadata_sorted.duckdb from step2_sort_metadata.py")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--threads", type=int, default=None)
     parser.add_argument("--memory-limit", default=None, help="e.g. 400GB")

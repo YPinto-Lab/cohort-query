@@ -6,7 +6,7 @@ small enough to build in milliseconds. This constructs it from literals -- no ra
 files, no network.
 
 Schema follows Docs/superpowers/plans/2026-06-18-metalog-duckdb-build.md and
-Scripts/build_mirror/build_duckdb.py, including the quirks that matter:
+Scripts/build_mirror/steps/step3_assemble_mirror.py, including the quirks that matter:
 
   - Metalog tables carry a build-stamped `biosample`, NULL for the orphan tail.
   - The Metalog profile lineage column differs per source: `clade_name` for
@@ -35,10 +35,10 @@ import duckdb
 
 from askslm.concept_search import EMBED_DIM
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "Scripts" / "build_mirror"))
-from build_attribute_index import AttributeIndexBuilder
-from build_concept_embeddings import ConceptEmbeddingBuilder
-from build_schema_catalog import SchemaCatalogBuilder
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "Scripts" / "build_mirror" / "steps"))
+from step4_index_attributes import AttributeIndexBuilder
+from step6_embed_concepts import ConceptEmbeddingBuilder
+from step5_catalog_schema import SchemaCatalogBuilder
 
 SHARED = [f"SAMN{n:05d}" for n in range(1, 9)]            # in both databases
 SRA_ONLY = [f"SAMN{n:05d}" for n in range(9, 15)]         # SRA metadata only

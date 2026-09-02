@@ -7,7 +7,7 @@ time. See Docs/superpowers/plans/2026-08-18-taxonomy-sort.html for the full plan
 Never mutates the source. Writes a new file, source opened READ_ONLY throughout.
 
 Usage:
-    python Scripts/build_mirror/build_sorted_taxonomy.py \
+    python Scripts/build_mirror/steps/step1_sort_taxonomy.py \
         --sra-db /private/pinto-lab/STAT/sra_processed.duckdb \
         --out /private/pinto-lab/tools/just-ask/mirror/sra_taxonomy_sorted.duckdb \
         --threads 16 --memory-limit 380GB --temp-dir /path/to/spill

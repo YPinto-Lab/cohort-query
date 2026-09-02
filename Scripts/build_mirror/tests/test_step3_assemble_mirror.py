@@ -1,12 +1,14 @@
-"""Runnable check for build_duckdb.py: builds the mirror from a tiny synthetic
+"""Runnable check for step3_assemble_mirror.py: builds the mirror from a tiny synthetic
 Metalog + SRA fixture and asserts the biosample-stamping and join invariants."""
 import csv
 import gzip
+import sys
 from pathlib import Path
 
 import pytest
 
-from build_duckdb import MirrorBuilder
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "steps"))
+from step3_assemble_mirror import MirrorBuilder          # noqa: E402
 
 
 def _write_tsv_gz(path: Path, rows: list[list[str]]) -> None:
@@ -46,7 +48,7 @@ def _build_fixture(tmp_path: Path) -> MirrorBuilder:
     ])
 
     # Both SRA tables now arrive as pre-sorted sidecar files, shaped exactly as
-    # build_sorted_taxonomy.py and build_sorted_metadata.py leave them. A1 and A2 are
+    # step1_sort_taxonomy.py and step2_sort_metadata.py leave them. A1 and A2 are
     # two RUNS of one BioSample (the B.3 case); A3 has no biosample.
     import duckdb
     sorted_taxonomy = tmp_path / "sra_taxonomy_sorted.duckdb"

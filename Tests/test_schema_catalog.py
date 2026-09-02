@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "Scripts" / "build_mirror"))
-from build_schema_catalog import SchemaCatalogBuilder
+sys.path.insert(0, str(Path(__file__).parent.parent / "Scripts" / "build_mirror" / "steps"))
+from step5_catalog_schema import SchemaCatalogBuilder
 
 from fixtures.mirror import build_fixture_mirror
 

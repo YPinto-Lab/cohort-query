@@ -22,12 +22,66 @@ SIRIUS_EXTENSION_PATH = "/private/pinto-lab/anna/sirius/build/sirius.duckdb_exte
 # mirror_config key -> ATTACH alias, for the big tables kept OUTSIDE the mirror file.
 # Sorting these by their read key is what makes a cohort filter prune row groups instead
 # of scanning the whole table, so they are built once and attached read-only rather than
-# copied into the mirror. build_duckdb.py writes the views against these same aliases.
+# copied into the mirror. step3_assemble_mirror.py writes the views against these same aliases.
 #
 # `sra_db_path` is the historical name for the sorted TAXONOMY file and is kept so that
 # mirrors built before the metadata sort keep resolving.
 SIDECAR_ALIASES = {"sra_db_path": "sorted_src",          # sra_taxonomy  -> tax_fact
                    "sra_metadata_path": "sorted_meta"}   # sra_metadata  -> metadata_fact
+
+
+# What a usable mirror must contain. `step3_assemble_mirror.py` produces only the first seven;
+# the last four come from step4_index_attributes.py, step5_catalog_schema.py and
+# step6_embed_concepts.py, which for a long time were run by hand -- so a mirror
+# built by the documented command was silently missing the LLM's entire vocabulary and
+# failed much later, deep in discovery, with a bare DuckDB "table does not exist".
+#
+# `mirror_config` is deliberately NOT required: a single-file mirror (the generated test
+# fixture) has no sidecars to record and is perfectly usable without it.
+REQUIRED_TABLES = frozenset({
+    "sra_metadata", "sra_taxonomy", "stat_coverage",
+    "metalog_metadata", "metalog_metaphlan4", "metalog_motus3", "metalog_spire_motus",
+    "attribute_keys",            # every jattr key, so a question can name a phenotype
+    "schema_catalog",            # columns + real value vocabularies for the prompt
+    "attribute_key_embeddings",  # concept search over those keys
+    "column_value_embeddings",   # concept search over those values
+})
+
+
+class IncompleteMirror(RuntimeError):
+    """Raised when a mirror is missing tables the package needs to answer anything."""
+
+
+_PRESENT_SQL = ("SELECT table_name AS name FROM duckdb_tables() "
+                "UNION ALL SELECT view_name FROM duckdb_views() WHERE NOT internal")
+
+
+def missing_tables(connection) -> list[str]:
+    """Which REQUIRED_TABLES a raw DuckDB connection lacks. For the build scripts,
+    which hold a connection rather than a Database."""
+    present = {row[0] for row in connection.execute(_PRESENT_SQL).fetchall()}
+    return sorted(REQUIRED_TABLES - present)
+
+
+def verify_mirror(database, db_path=None) -> None:
+    """Fail at open time, naming the missing tables and the command that adds them.
+
+    Checked here rather than in DuckDbConnection so that tests may still construct
+    deliberately partial fixtures directly; this guards the real path, where a
+    researcher has typed a question and would otherwise wait through discovery only to
+    hit a CatalogException that says nothing about which build step was skipped.
+
+    Goes through the Database port's own `query`, never a private attribute, so any
+    implementation of the port -- including a test double -- can be verified.
+    """
+    absent = sorted(REQUIRED_TABLES - set(database.query(_PRESENT_SQL)["name"]))
+    if not absent:
+        return
+    where = f" at {db_path}" if db_path else ""
+    raise IncompleteMirror(
+        f"The mirror{where} is incomplete -- missing: {', '.join(absent)}.\n"
+        f"Finish it with:  Scripts/build_mirror/build_all.sh --stage enrich "
+        f"--out-dir <the directory holding the mirror>")
 
 _logger = logging.getLogger(__name__)
 
@@ -121,7 +175,7 @@ class DuckDbConnection:
         """Which sidecar databases to attach, and under which alias.
 
         The mirror stores each big table as a VIEW, and a view definition BAKES IN the
-        alias it was written against -- so the aliases here and the ones build_duckdb.py
+        alias it was written against -- so the aliases here and the ones step3_assemble_mirror.py
         writes its views against are one contract, not two independent choices. That is
         why they live in SIDECAR_ALIASES, imported by both.
 
@@ -286,7 +340,7 @@ class LocalEmbedder:
     """Runs entirely on-node: no API key, no quota, no cost. Swapped in for
     GeminiBackend.embed() after gemini-embedding-001's free-tier quota (both the
     per-minute and per-day caps) proved too restrictive to finish a ~99k-item build
-    even right after a fresh daily reset -- see build_concept_embeddings.py's
+    even right after a fresh daily reset -- see step6_embed_concepts.py's
     docstring. Query-time embedding (ConceptIndex) MUST use this same model, not
     just the same EMBED_DIM: vectors from two different models aren't comparable
     even at matching width.
