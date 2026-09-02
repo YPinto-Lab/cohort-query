@@ -155,6 +155,19 @@ Sorting also shrinks the data: clustering same-study rows together took the meta
 python -m pytest Tests -q
 ```
 
+Those run against a generated fixture mirror and a canned LLM — no live database, no
+API key. The one path they cannot cover is the real one, so there is a smoke test for
+it, run deliberately rather than in CI because it costs an LLM call and reads the whole
+mirror:
+
+```bash
+python Scripts/smoke/full_cohort.py --out-dir /some/scratch
+```
+
+It asks a real question, materializes a real `.biom`, times both halves, and fails if
+nothing was written. `--expect-samples N` turns it into a regression check against a
+known cohort.
+
 Runs against a generated fixture mirror and a canned LLM backend — no live database or API key
 needed. `Scripts/eval/run_eval.py` is the separate, un-gated measurement against the real mirror
 and a real Gemini key; it is not part of this suite.
