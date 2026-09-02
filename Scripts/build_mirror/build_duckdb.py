@@ -108,6 +108,7 @@ class MirrorBuilder:
             self._stat_coverage(con)
             self._create_indexes(con)
             self._verify(con)
+            self._report_partial()
             con.close()
         except BaseException:
             # never leave a partial artifact behind -- these run to 128GB
@@ -210,6 +211,18 @@ class MirrorBuilder:
         for table in PROFILE_SPECS:
             con.execute(f"CREATE INDEX idx_{table}_alias ON {table} (sample_alias)")
             con.execute(f"CREATE INDEX idx_{table}_biosample ON {table} (biosample)")
+
+    def _report_partial(self) -> None:
+        """This script builds SEVEN of the eleven tables the package needs. Saying so
+        is the difference between a user noticing now and discovering it mid-question,
+        which is exactly how this went wrong before."""
+        print("\n-- NOTE: this is a PARTIAL mirror --")
+        print("   attribute_keys, schema_catalog and the two embedding tables still")
+        print("   have to be built, or discovery has no vocabulary to work with:")
+        print("     build_attribute_index.py --db <out>")
+        print("     build_schema_catalog.py  --db <out>")
+        print("     build_concept_embeddings.py --db <out>")
+        print("   build_all.sh runs all of them in order.")
 
     def _verify(self, con: duckdb.DuckDBPyConnection) -> None:
         print("-- row counts --")

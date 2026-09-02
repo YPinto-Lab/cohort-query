@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from askslm.adapters import DuckDbConnection
+from askslm.adapters import DuckDbConnection, verify_mirror
 from askslm.attributes import AttributeIndex
 from askslm.build import BiomFactory, CohortBuilder
 from askslm.catalog import SchemaCatalog
@@ -63,6 +63,7 @@ def database() -> Database:
     if _database is None:
         settings = _require_settings()
         _database = DuckDbConnection(settings.db_path, gpu=settings.gpu)
+        verify_mirror(_database, settings.db_path)
     return _database
 
 

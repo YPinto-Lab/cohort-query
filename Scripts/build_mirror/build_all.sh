@@ -142,7 +142,16 @@ if [ "$STAGE" = all ] || [ "$STAGE" = mirror ] || [ "$STAGE" = enrich ]; then
 fi
 
 echo "--- verifying the mirror is complete"
-"$PY" - "$MIRROR" <<'PYEOF'
+"$PY" - "$MIRROR" "$HERE" <<'PYEOF'
+import sys, duckdb
+sys.path.insert(0, f"{sys.argv[2]}/../../src")
+from askslm.adapters import missing_tables, REQUIRED_TABLES   # one definition, shared
+con = duckdb.connect(sys.argv[1], read_only=True)
+absent = missing_tables(con)
+if absent:
+    raise SystemExit(f"INCOMPLETE MIRROR -- missing: {absent}")
+print(f"  all {len(REQUIRED_TABLES)} required tables/views present")
+PYEOF'
 import sys, duckdb
 con = duckdb.connect(sys.argv[1], read_only=True)
 present = {r[0] for r in con.execute("SELECT table_name FROM duckdb_tables()").fetchall()}
