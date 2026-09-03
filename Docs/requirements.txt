@@ -1,15 +1,4 @@
-pandas
-pandera
-rich
-numpy
-seaborn
-pyarrow
-scikit-bio
-biom-format
-anthropic>=0.40
-pydantic>=2.5
-fastapi>=0.110
-uvicorn[standard]>=0.27
-jinja2>=3.1
-httpx>=0.27
-python-dotenv
+# Dev/build extras beyond pyproject.toml's runtime deps: running the test suite and the
+# mirror-build plotting scripts. Not needed to just use the package (pip install -e . covers that).
+pytest
+matplotlib

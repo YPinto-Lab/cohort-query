@@ -17,7 +17,9 @@ All data is read from **one prebuilt DuckDB mirror** of SRA × Metalog, opened r
 package never builds or writes it — `Scripts/build_mirror/` does, run once by the lab.
 
 **Design source of truth:** `Docs/superpowers/specs/2026-06-17-askslm-architecture-hld-lld.html`
-(HLD/LLD) and its parent `2026-06-17-askslm-sra-metalog-cohort-design.html` (the why).
+(HLD/LLD) and its parent `2026-06-17-askslm-sra-metalog-cohort-design.html` (the why). These
+`Docs/superpowers/` files are local-only (gitignored, not in the repo) — ask the user for a copy
+if you need them and don't have one.
 
 ## Layout
 
