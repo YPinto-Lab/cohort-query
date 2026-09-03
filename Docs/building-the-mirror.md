@@ -17,6 +17,30 @@ bash Scripts/build_mirror/build_all.sh \
 That is the whole procedure. It runs six steps in order and refuses to start if an
 input is missing, so a typo costs a second rather than two hours.
 
+## Getting the two raw inputs
+
+Neither input is something anyone has to hand you a copy of — both come straight from their
+public source.
+
+**`--metalog-dir`** — Metalog publishes direct, no-login downloads at
+[metalog.embl.de/downloads](https://metalog.embl.de/downloads):
+
+```bash
+Scripts/build_mirror/fetch_metalog.sh ~/downloads/Metalog
+```
+
+**`--sra-db`** — NCBI publishes SRA metadata and STAT taxonomic classifications as public
+parquet on AWS Open Data (`s3://sra-pub-metadata-us-east-1/...`), readable with the `aws` CLI's
+`--no-sign-request` — no AWS account needed:
+
+```bash
+sbatch Scripts/build_mirror/fetch_sra_raw.sh /path/with/space
+```
+
+This is the full SRA metadata + STAT results NCBI publishes, so the sync itself is hundreds of
+GB and runs for hours — that's the size of the dataset, not something the script can shrink.
+Run it as a Slurm job (`sbatch ...`) rather than interactively.
+
 ## What you need first
 
 | Input | What it is |

@@ -61,8 +61,8 @@ above.
 
 Only needed if you're building or refreshing the mirror yourself rather than being handed a
 finished `.duckdb` — see [`Docs/building-the-mirror.md`](Docs/building-the-mirror.md) for the
-full guide. Raw SRA + Metalog downloads: ask your lab for the current location <!-- TODO: link
-once the raw downloads have a hosted URL -->.
+full guide, including how to fetch both raw inputs (Metalog, SRA + STAT) straight from their
+public sources.
 
 ## Tests
 
