@@ -16,16 +16,23 @@
 # re-attaches them on connect, so all three must stay where you built them.
 #
 # Usage:
-#   build_all.sh --sra-db PATH --metalog-dir PATH --out-dir PATH [--stage STAGE]
-#   sbatch build_all.sh --sra-db ... --metalog-dir ... --out-dir ...
+#   build_all.sh --out-dir PATH [--sra-db PATH] [--metalog-dir PATH] [--stage STAGE]
+#   sbatch build_all.sh --out-dir ...
 #
-#   --sra-db        the SRA DuckDB you downloaded (holds metadata_raw and tax_raw)
-#   --metalog-dir   the Metalog download (must contain "Metadata" and "Taxonomic Profiles")
-#   --out-dir       where the three .duckdb files go; needs ~600 GB free
+#   --out-dir       where everything goes: raw/ (fetched inputs) + the three .duckdb
+#                    files; needs ~600 GB free, more if it's also doing the fetch
+#   --sra-db        an SRA DuckDB you already have (holds metadata_raw and tax_raw).
+#                    Omit it and fetch_sra_raw.sh fetches one into --out-dir/raw first.
+#   --metalog-dir   a Metalog download you already have (must contain "Metadata" and
+#                    "Taxonomic Profiles"). Omit it and fetch_metalog.sh fetches one
+#                    into --out-dir/raw/Metalog first.
 #   --stage         all (default) | sidecars (1-2) | mirror (3-6) | enrich (4-6 only)
 #   --python        interpreter to use (default: python3)
 #   --threads       (default: SLURM_CPUS_PER_TASK, else 8)
 #   --memory-limit  DuckDB memory limit (default: 80% of --mem, else 32GB)
+#
+# With no --sra-db/--metalog-dir this is the whole thing end to end: one command,
+# a long wait (the SRA fetch alone is hours), and a finished mirror.
 #
 # Re-running is safe: each step builds into a "<target>.building" file and renames it
 # over the target only after its checks pass, so an existing artifact survives a failure.
@@ -43,7 +50,7 @@ SRA_DB=""; METALOG_DIR=""; OUT_DIR=""; STAGE=all
 PY=python3; THREADS=""; MEMORY_LIMIT=""
 
 die() { echo "ERROR: $*" >&2; echo "Run with --help for usage." >&2; exit 1; }
-usage() { sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,38p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -68,30 +75,47 @@ fi
 # --- validate before doing hours of work ------------------------------------
 case "$STAGE" in all|sidecars|mirror|enrich) ;; *) die "--stage must be all, sidecars, mirror or enrich" ;; esac
 [ -n "$OUT_DIR" ] || die "--out-dir is required"
-case "$STAGE" in
-    all|sidecars) [ -n "$SRA_DB" ] || die "--sra-db is required for stage '$STAGE'" ;;
-esac
-case "$STAGE" in
-    all|mirror) [ -n "$METALOG_DIR" ] || die "--metalog-dir is required for stage '$STAGE'" ;;
-esac
-
-case "$STAGE" in all|sidecars) [ -r "$SRA_DB" ] || die "cannot read --sra-db: $SRA_DB" ;; esac
-if [ "$STAGE" = all ] || [ "$STAGE" = mirror ]; then
-    [ -d "$METALOG_DIR" ] || die "--metalog-dir is not a directory: $METALOG_DIR"
-    for sub in "Metadata" "Taxonomic Profiles"; do
-        [ -d "$METALOG_DIR/$sub" ] || die "--metalog-dir has no '$sub' subdirectory: $METALOG_DIR"
-    done
-fi
 command -v "$PY" >/dev/null || die "--python not executable: $PY"
 "$PY" -c "import duckdb" 2>/dev/null || die "$PY cannot import duckdb"
 
 mkdir -p "$OUT_DIR"
 OUT_DIR=$(cd -- "$OUT_DIR" && pwd)
+RAW_DIR=$OUT_DIR/raw
 TAXONOMY=$OUT_DIR/sra_taxonomy_sorted.duckdb
 METADATA=$OUT_DIR/sra_metadata_sorted.duckdb
 MIRROR=$OUT_DIR/askslm_mirror.duckdb
 TMP=$OUT_DIR/duckdb_tmp_build_all
 mkdir -p "$TMP"; trap 'rm -rf "$TMP"' EXIT
+
+# --- fetch what wasn't handed to us ------------------------------------------
+# --sra-db/--metalog-dir are optional: leave them out and we fetch both straight
+# from their public sources into --out-dir/raw. Already fetched (from a previous
+# run) is detected and not repeated.
+if [ "$STAGE" = all ] || [ "$STAGE" = sidecars ]; then
+    if [ -z "$SRA_DB" ]; then
+        SRA_DB=$RAW_DIR/sra_processed.duckdb
+        if [ ! -r "$SRA_DB" ]; then
+            echo "--- fetching raw SRA metadata + STAT (no --sra-db given; this is hours) ---"
+            mkdir -p "$RAW_DIR"
+            "$HERE/fetch_sra_raw.sh" "$RAW_DIR"
+        fi
+    fi
+    [ -r "$SRA_DB" ] || die "cannot read --sra-db: $SRA_DB"
+fi
+
+if [ "$STAGE" = all ] || [ "$STAGE" = mirror ]; then
+    if [ -z "$METALOG_DIR" ]; then
+        METALOG_DIR=$RAW_DIR/Metalog
+        if [ ! -d "$METALOG_DIR/Metadata" ]; then
+            echo "--- fetching Metalog (no --metalog-dir given) ---"
+            "$HERE/fetch_metalog.sh" "$METALOG_DIR"
+        fi
+    fi
+    [ -d "$METALOG_DIR" ] || die "--metalog-dir is not a directory: $METALOG_DIR"
+    for sub in "Metadata" "Taxonomic Profiles"; do
+        [ -d "$METALOG_DIR/$sub" ] || die "--metalog-dir has no '$sub' subdirectory: $METALOG_DIR"
+    done
+fi
 
 # Space needed scales with YOUR download, not with the Pinto lab's. The sorted
 # sidecars together came to ~0.25x the source (the taxonomy is narrowed to 4 of 9

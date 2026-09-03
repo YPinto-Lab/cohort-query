@@ -68,3 +68,9 @@ Workspaces/*/results/agent_log/
 
 # Secrets — never commit
 .env
+
+# Internal design/process docs — local only, not for the end-user repo
+Docs/superpowers/
+Docs/agent-code-standards.md
+Docs/research_capabilities.md
+Docs/feature-table-and-library-palette.html
