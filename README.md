@@ -4,73 +4,61 @@ A read-only Python package that turns a research question into a cross-study met
 table. Ask in plain language; an LLM translates it into SQL over a prebuilt SRA × Metalog DuckDB
 mirror; review the cohort; materialize one `.biom`.
 
+**Contents:** [Quick start](#quick-start) · [How it works](#how-it-works) · [Setup](#setup) ·
+[Building the mirror](#building-the-mirror) · [Tests](#tests)
+
+## Quick start
+
+Orange is what you type; everything else is `askslm` talking back — the question, its
+translation, the cohort preview, and a menu to run it, refine it, or save the plan for later.
+
+![`askslm` interactive session: asking a cohort question and previewing the result](Docs/img/askslm-session.png)
+
+"Run it" walks you through picking a feature space and sources, then submits the build. Scope
+ends at the `.biom` — open it in whatever you already use.
+
+## How it works
+
 ```
-$ askslm
-? What cohort do you need? fecal metagenomes from adults with IBD, Western countries
-  … 412 biosamples · STAT 380 · MetaPhlAn 228 · mOTUs 222
-? What now? (↑/↓)
-  › Run it
-    Refine the question
-    Show the SQL and overlap
-    Save plan and quit
-    Quit
-```
-
-First run asks for the database path and a Gemini API key once, and remembers them in
-`~/.askslm/config.toml` (or set `ASKSLM_DB`/`ASKSLM_LLM_KEY` — the environment always wins, so
-the lab server and CI never see a prompt). "Save plan and quit" writes the question, its
-translation, and the cohort preview as JSON; replay it without touching the LLM:
-
-```bash
-askslm run plans/ibd-western.json
-```
-
-Scope ends at the `.biom` — open it in whatever you already use.
-
-## Status
-
-**Walking skeleton.** The question -> `.biom` path is real end to end: a real LLM (Gemini)
-translates the question into SQL per metadata source, the cohort is previewed against the real
-mirror, `run()` materializes a real biom, and the `$ askslm` terminal app and plan persistence
-(above) both exist and are hand-verified against the fixture mirror. What's still rough: the
-terminal app is not unit-tested (it's thin glue over `ask()`/`run()`, verified by driving it, not
-by a test suite), and Translation accuracy against the eval set has not yet been measured — see
-below.
-
-The two verbs underneath the terminal app are also usable directly from Python:
-
-```python
-import os
-import askslm
-
-askslm.config(db="askslm_mirror.duckdb", llm="gemini", llm_key=os.environ["GEMINI_KEY"])
-plan = askslm.ask("fecal metagenomes from adults with IBD, Western countries", save="plans/ibd.json")
-print(plan)
-table, report = plan.run(profile_sources=askslm.Source.METALOG_MOTUS3, out="cohort.biom")
-
-# later, no LLM hop:
-replayed = askslm.load_plan("plans/ibd.json")
-table, report = replayed.run(profile_sources=askslm.Source.METALOG_MOTUS3, out="cohort.biom")
+question (plain English)
+        │  LLM translation, per metadata source
+        ▼
+   SQL over the SRA × Metalog DuckDB mirror  ──►  cohort preview (counts, overlap)
+        │  confirm
+        ▼
+   run(profile_sources=...)  ──►  one feature_table.biom
+                                   (counts × samples, + sample & feature metadata)
 ```
 
-`llm="canned"` plus an injected backend is what the test suite uses instead of live Gemini calls.
-Translation accuracy against the eval set in `Scripts/eval/` has not yet been measured — that
-script needs the real mirror and a live API key, so it has never been run.
+One biom holds one profiler family — STAT, MetaPhlAn, or mOTUs — since pooling across
+different abundance estimators isn't valid; bioms ship each source's native taxonomic
+granularity, no rank knob.
 
-The design is complete and reviewed:
-
-- `Docs/superpowers/specs/2026-06-17-askslm-architecture-hld-lld.html` — HLD/LLD, the *how*
-- `Docs/superpowers/specs/2026-06-17-askslm-sra-metalog-cohort-design.html` — the *why*
-- `Docs/superpowers/plans/2026-06-18-metalog-duckdb-build.md` — the mirror ETL
-
-## Install
+## Setup
 
 ```bash
 pip install -r Docs/requirements.txt
 pip install -e .
 ```
 
-Python 3.12+. The ete3 NCBI database (`~/.etetoolkit/taxa.sqlite`) must be built locally.
+Python 3.12+. The ete3 NCBI taxonomy database (`~/.etetoolkit/taxa.sqlite`) must be built
+locally — `ete3` does this itself on first use.
+
+You need two things before the first `askslm` run:
+
+- **The mirror** — one prebuilt DuckDB that `askslm` opens read-only. On a lab install it's
+  already built and handed to you as a single `.duckdb` file — ask your lab for the current
+  path. Building it yourself from raw downloads is a separate, one-time ETL; see
+  [Building the mirror](#building-the-mirror) below if that's your job.
+- **A Gemini API key** — for the LLM translation step.
+
+Run `askslm`. The first time, it asks for the database path and the key once and remembers them
+in `~/.askslm/config.toml` (or set `ASKSLM_DB` / `ASKSLM_LLM_KEY` — the environment always wins,
+so the lab server and CI never see a prompt). Every run after that just opens the prompt shown
+above.
+
+Design docs: `Docs/superpowers/specs/2026-06-17-askslm-architecture-hld-lld.html` (HLD/LLD, the
+*how*) and `Docs/superpowers/specs/2026-06-17-askslm-sra-metalog-cohort-design.html` (the *why*).
 
 ## Building the mirror
 
@@ -168,6 +156,5 @@ It asks a real question, materializes a real `.biom`, times both halves, and fai
 nothing was written. `--expect-samples N` turns it into a regression check against a
 known cohort.
 
-Runs against a generated fixture mirror and a canned LLM backend — no live database or API key
-needed. `Scripts/eval/run_eval.py` is the separate, un-gated measurement against the real mirror
-and a real Gemini key; it is not part of this suite.
+`Scripts/eval/run_eval.py` is the separate, un-gated measurement of Translation accuracy against
+the real mirror and a real Gemini key; it is not part of this suite either.
