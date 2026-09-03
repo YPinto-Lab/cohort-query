@@ -48,7 +48,7 @@ You need two things before the first `askslm` run:
 
 - **The mirror** — one prebuilt DuckDB that `askslm` opens read-only. On a lab install it's
   already built and handed to you as a single `.duckdb` file — ask your lab for the current
-  path. Building it yourself from raw downloads is a separate, one-time ETL; see
+  path. Building it yourself is a separate, one-time ETL that fetches its own raw inputs; see
   [Building the mirror](#building-the-mirror) below if that's your job.
 - **A Gemini API key** — for the LLM translation step.
 
@@ -60,9 +60,15 @@ above.
 ## Building the mirror
 
 Only needed if you're building or refreshing the mirror yourself rather than being handed a
-finished `.duckdb` — see [`Docs/building-the-mirror.md`](Docs/building-the-mirror.md) for the
-full guide, including how to fetch both raw inputs (Metalog, SRA + STAT) straight from their
-public sources.
+finished `.duckdb`. With nowhere to point it, one command does the whole thing — fetches both
+raw inputs (Metalog, SRA + STAT) straight from their public sources, then builds:
+
+```bash
+sbatch Scripts/build_mirror/build_all.sh --out-dir /path/with/space
+```
+
+See [`Docs/building-the-mirror.md`](Docs/building-the-mirror.md) for the full guide, including
+using inputs you already have instead of fetching, and resuming a partial build.
 
 ## Tests
 
