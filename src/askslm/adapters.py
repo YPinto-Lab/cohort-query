@@ -159,6 +159,7 @@ class DuckDbConnection:
     """
 
     def __init__(self, db_path: Path, gpu: bool = False):
+        start = time.monotonic()
         self._connection = duckdb.connect(str(db_path), read_only=True)
         self._connection.execute("INSTALL vss")
         self._connection.execute("LOAD vss")
@@ -167,6 +168,7 @@ class DuckDbConnection:
         if gpu:
             self._connection.execute(f"LOAD '{SIRIUS_EXTENSION_PATH}'")
             self._connection.execute("SELECT gpu_buffer_init()")
+        _logger.info("connect %s (%.2fs)", db_path, time.monotonic() - start)
 
     def _attach_sources(self) -> None:
         attach_sidecars(self._connection)
@@ -383,12 +385,16 @@ class LocalEmbedder:
 def open_local_embedder() -> LocalEmbedder:
     """Imported lazily so `import askslm` does not require transformers/torch for
     anyone using Gemini-only. Downloads MODEL_NAME to the HuggingFace cache on first
-    use."""
+    use -- unlogged otherwise, this one-time download/load showed up as an
+    unexplained multi-minute gap between SQL log lines (2026-09-06 run)."""
+    start = time.monotonic()
     from transformers import AutoModel, AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(LocalEmbedder.MODEL_NAME)
     model = AutoModel.from_pretrained(LocalEmbedder.MODEL_NAME)
     model.eval()
+    _logger.info("load local embedder %s (%.2fs)", LocalEmbedder.MODEL_NAME,
+                time.monotonic() - start)
     return LocalEmbedder(tokenizer, model)
 
 
