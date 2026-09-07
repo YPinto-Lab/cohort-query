@@ -1,6 +1,6 @@
 # Building the mirror
 
-`askslm` reads one prebuilt DuckDB. This directory builds it, in **six steps** that
+`askslm` reads one prebuilt DuckDB. This directory builds it, in **five steps** that
 produce **three files**. Run them with one command:
 
 ```bash
@@ -19,20 +19,25 @@ bash build_all.sh \
 | 1 | `steps/step1_sort_taxonomy.py` | `sra_taxonomy_sorted.duckdb` — `tax_fact`, sorted by `acc`, 4 of 9 columns | ~2 h |
 | 2 | `steps/step2_sort_metadata.py` | `sra_metadata_sorted.duckdb` — `metadata_fact`, sorted by `biosample` | ~10 min |
 | 3 | `steps/step3_assemble_mirror.py` | `askslm_mirror.duckdb` — views over 1 and 2, Metalog tables, `stat_coverage` | ~15 min |
-| 4 | `steps/step4_index_attributes.py` | `attribute_keys` — every `jattr` key, so a question can name a phenotype | ~10 min |
-| 5 | `steps/step5_catalog_schema.py` | `schema_catalog` — columns and real value vocabularies, for the LLM prompt | ~1 min |
-| 6 | `steps/step6_embed_concepts.py` | `attribute_key_embeddings`, `column_value_embeddings` — local SapBERT vectors | ~10 min |
+| 4 | `steps/step5_catalog_schema.py` | `schema_catalog` — columns and real value vocabularies, for the LLM prompt | ~1 min |
+| 5 | `steps/step6_embed_concepts.py` | `column_value_embeddings` — local SapBERT vectors over native-column values | ~10 min |
 
 Steps 1 and 2 read only the SRA download and are independent. Step 3 needs both, since
 it defines its views against them and derives `stat_coverage` from the taxonomy. Steps
-4–6 write **into** the mirror from step 3, in that order — step 6 reads the output of
-both 4 and 5.
+4–5 write **into** the mirror from step 3, in that order — step 5 reads step 4's output.
 
-**Steps 4–6 are not optional.** Without them the LLM has no column vocabulary, no
-attribute lookup and no concept search, so discovery fails on any question that names a
-phenotype. They were run by hand for a long time and `step3` alone was mistaken for a
-finished mirror; `build_all.sh` now verifies all eleven required tables before reporting
-success, and the package refuses to open a mirror that is missing any of them.
+**Steps 4–5 are not optional.** Without them the LLM has no column vocabulary and no
+concept search over native-column values.
+
+**Transitional state (2026-09-07):** `attribute_keys` and `attribute_key_embeddings` —
+formerly built by a `step4_index_attributes.py` this pipeline no longer runs — are being
+replaced by a build-time embedding index over `jattr` (see the Obsidian design note,
+"Inverted Index Plan"). Until that replacement ships, `verify_mirror()`'s
+`REQUIRED_TABLES` check still expects both tables, so **`build_all.sh`'s own final
+verification step will fail** on a fresh build — this is intentional (a loud failure
+beats `ask()` silently breaking on a missing table), not a bug. Don't "fix" it by
+resurrecting `step4_index_attributes.py`; either build against an existing mirror that
+already has these tables, or wait for the replacement.
 
 ## Resuming
 

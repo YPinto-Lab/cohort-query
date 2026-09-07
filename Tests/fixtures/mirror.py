@@ -36,7 +36,6 @@ import duckdb
 from askslm.concept_search import EMBED_DIM
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "Scripts" / "build_mirror" / "steps"))
-from step4_index_attributes import AttributeIndexBuilder
 from step6_embed_concepts import ConceptEmbeddingBuilder
 from step5_catalog_schema import SchemaCatalogBuilder
 
@@ -88,10 +87,37 @@ def build_fixture_mirror(path: Path) -> Path:
     # here on purpose: the fixture must exercise BOTH the complete-vocabulary and the
     # truncated branch, and its columns have only a handful of values each.
     SchemaCatalogBuilder(path, max_distinct=5).build()
-    AttributeIndexBuilder(path).build()
+    _build_attribute_key_tables(path)
     ConceptEmbeddingBuilder(path, embedder=_FixtureEmbedder(), dim=EMBED_DIM).build()
 
     return path
+
+
+def _build_attribute_key_tables(path: Path) -> None:
+    """attribute_keys / attribute_key_embeddings: still REQUIRED_TABLES, still read by
+    AttributeIndex/ConceptIndex, even though Scripts/build_mirror no longer builds them
+    (superseded by a build-time embedding index over jattr -- see the "Inverted Index
+    Plan" design note). Inlined here, not resurrected as a build step, because the
+    fixture's jattr is a handful of literal rows -- the real builder's two-pass
+    sample/count split exists to survive 39M rows, which doesn't apply here."""
+    con = duckdb.connect(str(path))
+    con.execute("""
+        CREATE TABLE attribute_keys (key TEXT, occurrences BIGINT, samples_json TEXT)
+    """)
+    con.execute("""
+        INSERT INTO attribute_keys
+        SELECT k, count(*), to_json(list(DISTINCT v)[1:3])
+        FROM (
+            SELECT k, json_extract_string(jattr, '$.' || k) AS v
+            FROM (SELECT jattr, unnest(json_keys(jattr)) AS k FROM sra_metadata)
+        )
+        GROUP BY k
+    """)
+    keys = [row[0] for row in con.execute("SELECT key FROM attribute_keys").fetchall()]
+    vectors = _FixtureEmbedder().embed(keys)
+    con.execute(f"CREATE TABLE attribute_key_embeddings (key TEXT, vector FLOAT[{EMBED_DIM}])")
+    con.executemany("INSERT INTO attribute_key_embeddings VALUES (?, ?)", list(zip(keys, vectors)))
+    con.close()
 
 
 # --- SRA side -------------------------------------------------------------

@@ -4,13 +4,12 @@
 #   1. sra_taxonomy_sorted.duckdb   tax_raw sorted by acc, narrowed to 4 columns   (~2 h)
 #   2. sra_metadata_sorted.duckdb   metadata_raw sorted by biosample, all columns  (~10 min)
 #   3. askslm_mirror.duckdb         views over 1 and 2 + Metalog tables + indexes  (~15 min)
-#   4. + attribute_keys             every jattr key, so a phenotype can be found    (~10 min)
-#   5. + schema_catalog             columns and value vocabularies for the prompt   (~1 min)
-#   6. + *_embeddings               local SapBERT vectors for concept search        (~10 min)
+#   4. + schema_catalog             columns and value vocabularies for the prompt   (~1 min)
+#   5. + column_value_embeddings    local SapBERT vectors for native-column values  (~10 min)
 #
-# Steps 4-6 add tables INTO the mirror from step 3 and are not optional: without them
-# the LLM has no column vocabulary, no attribute lookup and no concept search, so
-# discovery fails on questions that name a phenotype. They used to be run by hand.
+# Steps 4-5 add tables INTO the mirror from step 3 and are not optional: without them
+# the LLM has no column vocabulary and no concept search over native-column values.
+# They used to be run by hand.
 #
 # Only #3 is passed to askslm.config(db=...). It records the paths of #1 and #2 and
 # re-attaches them on connect, so all three must stay where you built them.
@@ -134,11 +133,11 @@ echo "  stage=$STAGE threads=$THREADS memory_limit=$MEMORY_LIMIT"
 echo "  out-dir=$OUT_DIR (${free_gb}G free)"
 
 if [ "$STAGE" = all ] || [ "$STAGE" = sidecars ]; then
-    echo "--- 1/6 sorted taxonomy -> $TAXONOMY"
+    echo "--- 1/5 sorted taxonomy -> $TAXONOMY"
     time "$PY" "$HERE/steps/step1_sort_taxonomy.py" --sra-db "$SRA_DB" --out "$TAXONOMY" \
         --threads "$THREADS" --memory-limit "$MEMORY_LIMIT" --temp-dir "$TMP"
 
-    echo "--- 2/6 sorted metadata -> $METADATA"
+    echo "--- 2/5 sorted metadata -> $METADATA"
     time "$PY" "$HERE/steps/step2_sort_metadata.py" --sra-db "$SRA_DB" --out "$METADATA" \
         --threads "$THREADS" --memory-limit "$MEMORY_LIMIT" --temp-dir "$TMP"
 fi
@@ -147,7 +146,7 @@ if [ "$STAGE" = all ] || [ "$STAGE" = mirror ]; then
     for f in "$TAXONOMY" "$METADATA"; do
         [ -r "$f" ] || die "missing $f -- run with --stage sidecars first"
     done
-    echo "--- 3/6 mirror -> $MIRROR"
+    echo "--- 3/5 mirror -> $MIRROR"
     time "$PY" "$HERE/steps/step3_assemble_mirror.py" --metalog-dir "$METALOG_DIR" \
         --sorted-taxonomy "$TAXONOMY" --sorted-metadata "$METADATA" --out "$MIRROR" \
         --threads "$THREADS" --memory-limit "$MEMORY_LIMIT" --temp-dir "$TMP"
@@ -155,13 +154,11 @@ fi
 
 if [ "$STAGE" = all ] || [ "$STAGE" = mirror ] || [ "$STAGE" = enrich ]; then
     [ -r "$MIRROR" ] || die "missing $MIRROR -- run with --stage mirror first"
-    # These three WRITE INTO the mirror, in this order: concept embeddings read both
-    # attribute_keys and schema_catalog, so they must come last.
-    echo "--- 4/6 attribute index"
-    time "$PY" "$HERE/steps/step4_index_attributes.py" --db "$MIRROR"
-    echo "--- 5/6 schema catalog"
+    # These two WRITE INTO the mirror, in this order: concept embeddings read
+    # schema_catalog, so it must come last.
+    echo "--- 4/5 schema catalog"
     time "$PY" "$HERE/steps/step5_catalog_schema.py" --db "$MIRROR"
-    echo "--- 6/6 concept embeddings (local SapBERT, no API key)"
+    echo "--- 5/5 concept embeddings (local SapBERT, no API key)"
     time "$PY" "$HERE/steps/step6_embed_concepts.py" --db "$MIRROR"
 fi
 

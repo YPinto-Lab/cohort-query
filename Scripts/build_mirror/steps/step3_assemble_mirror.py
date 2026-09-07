@@ -217,12 +217,10 @@ class MirrorBuilder:
         is the difference between a user noticing now and discovering it mid-question,
         which is exactly how this went wrong before."""
         print("\n-- NOTE: this is a PARTIAL mirror --")
-        print("   attribute_keys, schema_catalog and the two embedding tables still")
-        print("   have to be built, or discovery has no vocabulary to work with:")
-        print("     step4_index_attributes.py --db <out>")
+        print("   schema_catalog and column_value_embeddings still have to be built:")
         print("     step5_catalog_schema.py  --db <out>")
         print("     step6_embed_concepts.py --db <out>")
-        print("   build_all.sh runs all of them in order.")
+        print("   build_all.sh runs both in order.")
 
     def _verify(self, con: duckdb.DuckDBPyConnection) -> None:
         print("-- row counts --")

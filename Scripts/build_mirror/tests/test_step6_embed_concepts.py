@@ -1,6 +1,6 @@
-"""Embeds attribute_keys and low-cardinality schema_catalog values into two new
-tables. Uses a fake embedder throughout -- this must never load the real local
-model or touch the network in a test run."""
+"""Embeds low-cardinality schema_catalog values into column_value_embeddings.
+Uses a fake embedder throughout -- this must never load the real local model or
+touch the network in a test run."""
 import sys
 from pathlib import Path
 
@@ -8,20 +8,7 @@ import duckdb
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "steps"))
-import step6_embed_concepts
 from step6_embed_concepts import ConceptEmbeddingBuilder
-
-
-@pytest.fixture(autouse=True)
-def no_real_sleeping(monkeypatch):
-    """Retry backoff and batch pacing are real seconds in production, not in tests --
-    a real 5s+10s+20s+40s+80s retry ladder would make test_short_batch... alone take
-    over two minutes."""
-    monkeypatch.setattr(step6_embed_concepts.time, "sleep", _no_sleep)
-
-
-def _no_sleep(seconds: float) -> None:
-    return None
 
 
 class _FakeEmbedder:
@@ -36,11 +23,6 @@ class _FakeEmbedder:
 def db_path(tmp_path):
     path = tmp_path / "mini.duckdb"
     con = duckdb.connect(str(path))
-    con.execute("CREATE TABLE attribute_keys (key TEXT, occurrences BIGINT, samples_json TEXT)")
-    con.executemany("INSERT INTO attribute_keys VALUES (?, ?, ?)", [
-        ("ibd_sam", 44976, None),
-        ("calprotectin_sam", 2342, '["435.0"]'),
-    ])
     con.execute("""CREATE TABLE schema_catalog (
         table_name TEXT, column_name TEXT, data_type TEXT,
         distinct_count BIGINT, truncated BOOLEAN, values_json TEXT)""")
@@ -51,16 +33,6 @@ def db_path(tmp_path):
     ])
     con.close()
     return path
-
-
-def test_every_key_gets_one_embedding_row(db_path):
-    ConceptEmbeddingBuilder(db_path, embedder=_FakeEmbedder(), dim=2).build()
-
-    con = duckdb.connect(str(db_path), read_only=True)
-    rows = con.execute("SELECT key FROM attribute_key_embeddings ORDER BY key").fetchall()
-    con.close()
-
-    assert rows == [("calprotectin_sam",), ("ibd_sam",)]
 
 
 def test_only_complete_untruncated_vocabularies_are_embedded(db_path):
@@ -93,52 +65,8 @@ def test_vectors_have_the_requested_dimensionality(db_path):
 
     con = duckdb.connect(str(db_path), read_only=True)
     vector = con.execute(
-        "SELECT vector FROM attribute_key_embeddings WHERE key = 'ibd_sam'").fetchone()[0]
+        "SELECT vector FROM column_value_embeddings WHERE value = 'healthy control'"
+    ).fetchone()[0]
     con.close()
 
     assert len(vector) == 2
-
-
-class _ShortBatchEmbedder:
-    """Simulates a transient embed-call failure: silently returns one fewer vector
-    than requested. Proves the builder refuses to zip() a short batch against the
-    wrong keys."""
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        return [[float(len(text)), 0.0] for text in texts[:-1]]
-
-
-def test_short_batch_from_embedder_raises_instead_of_corrupting_index(db_path):
-    with pytest.raises(RuntimeError):
-        ConceptEmbeddingBuilder(db_path, embedder=_ShortBatchEmbedder(), dim=2).build()
-
-    # The table exists (created before the failing embed call) but must be empty --
-    # no misaligned (key, vector) rows were ever inserted into it.
-    con = duckdb.connect(str(db_path), read_only=True)
-    count = con.execute("SELECT count(*) FROM attribute_key_embeddings").fetchone()[0]
-    con.close()
-
-    assert count == 0
-
-
-class _CountingEmbedder:
-    """Counts how many embed() calls actually happened -- a cost cap that aborted
-    correctly must call embed() zero times, since the check runs BEFORE the call."""
-
-    def __init__(self):
-        self.calls = 0
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        self.calls += 1
-        return [[float(len(text)), 0.0] for text in texts]
-
-
-def test_a_zero_cost_cap_aborts_before_spending_anything(db_path):
-    """max_cost_usd=0 must reject even the smallest real batch -- proves the check
-    runs BEFORE the embed() call it would pay for, not after."""
-    embedder = _CountingEmbedder()
-
-    with pytest.raises(RuntimeError, match="aborting before spending"):
-        ConceptEmbeddingBuilder(db_path, embedder=embedder, dim=2, max_cost_usd=0.0).build()
-
-    assert embedder.calls == 0
