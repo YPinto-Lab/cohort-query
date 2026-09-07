@@ -9,7 +9,6 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from askslm.concept_search import EMBED_DIM
 from askslm.expansion import MAX_TERMS
 from askslm.expansion import SYSTEM_INSTRUCTION as EXPANSION_INSTRUCTION
 from askslm.prompt import SYSTEM_INSTRUCTION
@@ -242,12 +241,6 @@ class GeminiBackend:
     # question costs one request from each, not two from the same one.
     HELPER_MODEL = "gemini-2.5-flash-lite"
 
-    # gemini-embedding-001 is the current recommended text embedding model
-    # (text-embedding-004 was deprecated January 2026) -- free tier, separate
-    # quota pool from both the translation and helper models. Confirm this is
-    # still current before relying on it; Google deprecates on ~annual cadence.
-    EMBEDDING_MODEL = "gemini-embedding-001"
-
     def __init__(self, client, model: str):
         self._client = client
         self._model = model
@@ -295,24 +288,6 @@ class GeminiBackend:
                    time.monotonic() - start, sql, error, fixed)
         return fixed
 
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        """Never raises: a failed embedding call must degrade to substring-only
-        retrieval, not take down ask(). Batched into ONE call -- embed_content
-        accepts a list of contents and returns one vector per input, same order."""
-        if not texts:
-            return []
-        start = time.monotonic()
-        try:
-            response = self._client.models.embed_content(
-                model=self.EMBEDDING_MODEL, contents=texts,
-                config={"output_dimensionality": EMBED_DIM})
-        except Exception as exc:
-            _log_safely("embed (%.2fs) failed for %d texts: %r",
-                       time.monotonic() - start, len(texts), exc)
-            return []
-        _log_safely("embed (%.2fs) for %d texts", time.monotonic() - start, len(texts))
-        return [list(embedding.values) for embedding in response.embeddings]
-
     def translate(self, prompt: TranslationPrompt) -> Translation:
         start = time.monotonic()
         response = self._client.models.generate_content(
@@ -339,13 +314,12 @@ def open_gemini(api_key: str, model: str) -> GeminiBackend:
 
 
 class LocalEmbedder:
-    """Runs entirely on-node: no API key, no quota, no cost. Swapped in for
-    GeminiBackend.embed() after gemini-embedding-001's free-tier quota (both the
-    per-minute and per-day caps) proved too restrictive to finish a ~99k-item build
-    even right after a fresh daily reset -- see step6_embed_concepts.py's
-    docstring. Query-time embedding (ConceptIndex) MUST use this same model, not
-    just the same EMBED_DIM: vectors from two different models aren't comparable
-    even at matching width.
+    """Runs entirely on-node: no API key, no quota, no cost. A hosted embeddings API's
+    free-tier quota (both per-minute and per-day caps) proved too restrictive to finish
+    a ~99k-item build even right after a fresh daily reset -- see
+    step6_embed_concepts.py's docstring. Query-time embedding (ConceptIndex) MUST use
+    this same model, not just the same output width: vectors from two different models
+    aren't comparable even at matching width.
 
     A general-purpose model (all-MiniLM-L6-v2) was tried first and failed the
     feature's own flagship case: it ranked "IBS" closer to "IBD" than "Crohn's

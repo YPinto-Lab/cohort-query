@@ -3,7 +3,7 @@ find a field or value that means the same thing without sharing its spelling.
 
 Run AFTER step4_index_attributes.py and step5_catalog_schema.py -- this reads both of
 their output tables. Runs entirely locally (sentence-transformers on CPU) -- no API
-key, no quota, no cost. Switched from Gemini's embed_content after its free-tier
+key, no quota, no cost. Switched from a hosted embeddings API after its free-tier
 per-minute AND per-day quotas both proved too restrictive to finish a ~99k-item
 build (94,450 keys + 4,416 qualifying values), hitting sustained 429s even right
 after a fresh daily reset; a local model finishes the same build in minutes.

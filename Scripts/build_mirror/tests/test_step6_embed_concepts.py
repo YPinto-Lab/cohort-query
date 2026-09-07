@@ -1,6 +1,6 @@
 """Embeds attribute_keys and low-cardinality schema_catalog values into two new
-tables. Uses a fake embedder throughout -- this must never call the real Gemini API
-in a test run."""
+tables. Uses a fake embedder throughout -- this must never load the real local
+model or touch the network in a test run."""
 import sys
 from pathlib import Path
 
@@ -101,8 +101,8 @@ def test_vectors_have_the_requested_dimensionality(db_path):
 
 class _ShortBatchEmbedder:
     """Simulates a transient embed-call failure: silently returns one fewer vector
-    than requested, mimicking GeminiBackend.embed()'s degrade-to-[]-on-error contract.
-    Proves the builder refuses to zip() a short batch against the wrong keys."""
+    than requested. Proves the builder refuses to zip() a short batch against the
+    wrong keys."""
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         return [[float(len(text)), 0.0] for text in texts[:-1]]

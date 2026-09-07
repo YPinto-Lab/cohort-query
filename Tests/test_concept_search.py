@@ -113,8 +113,8 @@ def test_matching_values_finds_disease_subtypes_for_an_umbrella_term():
 
 
 def test_no_embedder_degrades_to_no_candidates():
-    """A CannedLlmBackend (or a failed Gemini call) returns [] from embed() -- this
-    must not raise, just contribute nothing."""
+    """A CannedLlmBackend (or a failed local-embedder call) returns [] from embed() --
+    this must not raise, just contribute nothing."""
     embedder = _FakeEmbedder({})
 
     class _EmptyEmbedder:
