@@ -20,6 +20,7 @@ from pathlib import Path
 
 import questionary
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 import askslm
@@ -161,7 +162,9 @@ def _session() -> None:
 
 def _ask(question: str, plan_dir: Path) -> Plan | None:
     """A question the model cannot translate is a screen, not a stack trace."""
-    with console.status("thinking"):
+    with Progress(SpinnerColumn(), TextColumn("thinking"), TimeElapsedColumn(),
+                  console=console, transient=True) as progress:
+        progress.add_task("")
         plan = askslm.ask(question)
     if plan.error is not None:
         console.print(f"[red]Could not translate that into a query.[/red]\n{plan.error}")

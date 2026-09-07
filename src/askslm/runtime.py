@@ -99,7 +99,7 @@ def _named_backend(settings: Settings) -> LlmBackend:
 
 def embedder() -> Embedder:
     """An explicitly injected embedder always wins (tests). Otherwise: gemini mode
-    gets a local model -- Gemini's embed_content free tier proved too rate-limited
+    gets a local model -- a hosted embeddings API's free tier proved too rate-limited
     to finish the concept-embedding build even right after a fresh daily quota
     reset (see step6_embed_concepts.py's docstring), so query-time embedding
     must match the same local model the build used. Canned mode has no model to
