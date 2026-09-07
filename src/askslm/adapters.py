@@ -369,16 +369,18 @@ class LocalEmbedder:
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
+        start = time.monotonic()
         import torch
 
         vectors = []
-        for start in range(0, len(texts), self.BATCH_SIZE):
-            batch = texts[start:start + self.BATCH_SIZE]
+        for batch_start in range(0, len(texts), self.BATCH_SIZE):
+            batch = texts[batch_start:batch_start + self.BATCH_SIZE]
             inputs = self._tokenizer(batch, padding=True, truncation=True,
                                      return_tensors="pt", max_length=self.MAX_TOKENS)
             with torch.no_grad():
                 output = self._model(**inputs)
             vectors.extend(output.last_hidden_state[:, 0, :].tolist())   # [CLS] token
+        _logger.info("embed (%.2fs) for %d texts (local)", time.monotonic() - start, len(texts))
         return vectors
 
 
