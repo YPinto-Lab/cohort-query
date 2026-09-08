@@ -39,6 +39,7 @@ from pathlib import Path
 import duckdb
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+from askslm.adapters import attach_sidecars          # noqa: E402
 from askslm.concept_search import EMBED_DIM, Embedder
 
 SAMPLE_ROWS_FOR_CLASSIFICATION = 200_000    # matches the removed step4's sampling rate
@@ -78,19 +79,39 @@ def classify_key(key: str, samples: list[str]) -> str:
 
 class AttributeIndexBuilder:
     def __init__(self, db_path: Path, embedder: Embedder, dim: int = EMBED_DIM,
-                 batch_size: int = EXTRACTION_BATCH_SIZE):
+                 batch_size: int = EXTRACTION_BATCH_SIZE,
+                 threads: int | None = None, memory_limit: str | None = None,
+                 temp_dir: Path | None = None):
         self.db_path = db_path
         self.embedder = embedder
         self.dim = dim
         self.batch_size = batch_size
+        self.threads = threads
+        self.memory_limit = memory_limit
+        self.temp_dir = temp_dir
 
     def build(self) -> None:
         con = duckdb.connect(str(self.db_path))
+        self._configure(con)
+        attach_sidecars(con)
         useful_keys = self._useful_text_keys(con)
         self._build_keys_index(con, useful_keys)
         self._build_values_index(con, useful_keys)
         self._report(con)
         con.close()
+
+    def _configure(self, con: duckdb.DuckDBPyConnection) -> None:
+        """Same convention as step3_assemble_mirror.py: this touches millions of
+        rows with biosample lists attached, so the default temp directory (/tmp --
+        small, shared on this cluster) and unbounded memory are not safe defaults
+        for an unattended multi-hour job."""
+        if self.threads:
+            con.execute(f"SET threads = {self.threads}")
+        if self.memory_limit:
+            con.execute(f"SET memory_limit = '{self.memory_limit}'")
+        if self.temp_dir:
+            Path(self.temp_dir).mkdir(parents=True, exist_ok=True)
+            con.execute(f"SET temp_directory = '{self.temp_dir}'")
 
     def _useful_text_keys(self, con: duckdb.DuckDBPyConnection) -> list[str]:
         """Census + classify, replacing the removed attribute_keys table's job."""
@@ -238,16 +259,32 @@ def _log(msg: str) -> None:
 
 
 def main() -> None:
+    import os
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=Path, required=True)
     parser.add_argument("--dim", type=int, default=EMBED_DIM)
     parser.add_argument("--batch-size", type=int, default=EXTRACTION_BATCH_SIZE)
+    parser.add_argument("--threads", type=int, default=None,
+                        help="default: SLURM_CPUS_PER_TASK, else DuckDB's own default")
+    parser.add_argument("--memory-limit", type=str, default=None,
+                        help="e.g. 120GB; default: 80%% of SLURM_MEM_PER_NODE if set, "
+                             "else DuckDB's own default")
+    parser.add_argument("--temp-dir", type=Path, default=None,
+                        help="default: unset (DuckDB's own default, /tmp)")
     args = parser.parse_args()
+
+    threads = args.threads or (int(os.environ["SLURM_CPUS_PER_TASK"])
+                               if "SLURM_CPUS_PER_TASK" in os.environ else None)
+    memory_limit = args.memory_limit
+    if memory_limit is None and "SLURM_MEM_PER_NODE" in os.environ:
+        memory_limit = f"{int(os.environ['SLURM_MEM_PER_NODE']) * 8 // 10}MB"
 
     from askslm.adapters import open_local_embedder
 
-    AttributeIndexBuilder(args.db, open_local_embedder(), args.dim,
-                          args.batch_size).build()
+    AttributeIndexBuilder(args.db, open_local_embedder(), args.dim, args.batch_size,
+                          threads=threads, memory_limit=memory_limit,
+                          temp_dir=args.temp_dir).build()
 
 
 if __name__ == "__main__":
