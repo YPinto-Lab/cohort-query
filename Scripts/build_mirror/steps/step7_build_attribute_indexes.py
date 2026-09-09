@@ -201,7 +201,8 @@ class AttributeIndexBuilder:
             con.execute("""
                 INSERT INTO value_biosamples
                 SELECT
-                    CASE WHEN raw LIKE '[%]' THEN json_extract_string(raw, '$[0]')
+                    CASE WHEN json_valid(raw) AND json_type(raw) = 'ARRAY'
+                         THEN json_extract_string(raw, '$[0]')
                          ELSE raw END AS value,
                     biosample
                 FROM (
