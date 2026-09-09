@@ -13,10 +13,14 @@ neighbor hit already carries its answer, no second query needed. See the
                                                            (key is discarded by
                                                            design -- see the note).
 
-Scope: only "useful text" jattr keys. numeric/date/id-like keys are excluded by a
-key-level classifier using each key's own sampled values -- this drops ~45% of the
-raw (row,key) corpus before any embedding work happens. This step no longer reads
-the old attribute_keys table (deleted); it recomputes the key census itself.
+Scope: two layers. (1) a key-level classifier (classify_key) picks which KEYS are
+worth extracting from at all, using each key's own sampled values -- this drops
+~78% of the raw key corpus before any embedding work happens, mainly for speed.
+(2) VALUE_EXCLUDE_SQL then filters every individual VALUE pulled from a surviving
+key -- a key can mix free text with numbers/dates/IDs (e.g. "5", "10", "unknown"
+under the same key), and the key-level sample vote lets those through. This step
+no longer reads the old attribute_keys table (deleted); it recomputes the key
+census itself.
 
 Correctness note: jattr wraps most values in a single-element JSON array
 (`["IBD"]`, not `"IBD"`) -- confirmed on the live mirror 2026-09-08, ~52% of
@@ -58,23 +62,38 @@ EXTRACTION_BATCH_SIZE = 250
 EMBED_CHUNK_SIZE = 50_000
 
 NUMERIC_RE = re.compile(r"^-?\d+(\.\d+)?([eE]-?\d+)?$")
-DATE_RE = re.compile(r"^\d{4}[-/]\d{1,2}([-/]\d{1,2})?$|^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$")
 ID_NAME_RE = re.compile(
     r"(id|accession|barcode|uuid|guid|checksum|md5|url|_path$|filename|_name$|doi|isbn|"
     r"^ena_|^sra_|ncbi|_gid$|run_|index|number|code$)", re.IGNORECASE)
 ID_VALUE_RE = re.compile(r"^[A-Za-z0-9]{16,}$")
 
+# Per-VALUE filter applied at extraction time, in SQL, on every individual value
+# regardless of which key it came from -- classify_key's per-KEY sample vote lets
+# numeric/date/id values through whenever they're mixed into an otherwise-textual
+# key (confirmed on the live mirror 2026-09-09: 54% of a 200K sample of the
+# resulting table were bare numbers). No space-stripping before the id-value
+# check here (unlike classify_key) -- stripping spaces first would misclassify
+# multi-word free text like "human sperm individual 3" as an opaque ID.
+VALUE_EXCLUDE_SQL = r"""
+    regexp_matches(value, '^-?[0-9]+(\.[0-9]+)?([eE]-?[0-9]+)?$')
+    OR regexp_matches(value, '^[0-9]{4}[-/][0-9]{1,2}([-/][0-9]{1,2})?$')
+    OR regexp_matches(value, '^[0-9]{1,2}[-/][0-9]{1,2}[-/][0-9]{2,4}$')
+    OR (regexp_matches(value, '^[A-Za-z0-9]{16,}$') AND regexp_matches(value, '[0-9]'))
+"""
+
 
 def classify_key(key: str, samples: list[str]) -> str:
-    """key-name pattern first (catches an ID column with no ID-shaped SAMPLE, e.g.
-    only nulls sampled), then majority vote over the sampled values. Same heuristic
-    used to size these tables on 2026-09-08 against the live mirror."""
+    """Coarse, fast pre-filter over which KEYS are worth extracting from at all
+    (an "any sample looks like a date -> drop the whole key" rule used to live
+    here too, but that drops legitimate free text sharing a key with one
+    date-shaped sample -- date-ness, like numeric-ness and id-ness, is now a
+    per-VALUE decision, see VALUE_EXCLUDE_SQL). key-name pattern first (catches
+    an ID column with no ID-shaped SAMPLE, e.g. only nulls sampled), then
+    majority vote over the sampled values."""
     if not samples:
         return "empty"
     if all(NUMERIC_RE.match(s) for s in samples):
         return "numeric"
-    if any(DATE_RE.match(s) for s in samples):
-        return "date"
     if ID_NAME_RE.search(key):
         return "id_like_name"
     if all(ID_VALUE_RE.match(s.replace(" ", "")) for s in samples) and any(
@@ -239,19 +258,22 @@ class AttributeIndexBuilder:
             total_batches = (len(useful_keys) + self.batch_size - 1) // self.batch_size
             _log(f"  batch {batch_no}/{total_batches} ({len(batch)} keys)...")
             paths = [f"$.{k}" for k in batch]
-            con.execute("""
+            con.execute(f"""
                 INSERT INTO value_biosamples
-                SELECT
-                    CASE WHEN json_valid(raw) AND json_type(raw) = 'ARRAY'
-                         THEN json_extract_string(raw, '$[0]')
-                         ELSE raw END AS value,
-                    biosample
-                FROM (
-                    SELECT biosample, UNNEST(json_extract_string(jattr, $paths)) AS raw
-                    FROM sra_metadata
-                    WHERE jattr IS NOT NULL
+                SELECT value, biosample FROM (
+                    SELECT
+                        CASE WHEN json_valid(raw) AND json_type(raw) = 'ARRAY'
+                             THEN json_extract_string(raw, '$[0]')
+                             ELSE raw END AS value,
+                        biosample
+                    FROM (
+                        SELECT biosample, UNNEST(json_extract_string(jattr, $paths)) AS raw
+                        FROM sra_metadata
+                        WHERE jattr IS NOT NULL
+                    )
+                    WHERE raw IS NOT NULL
                 )
-                WHERE raw IS NOT NULL
+                WHERE NOT ({VALUE_EXCLUDE_SQL})
             """, {"paths": paths})
 
         _log(f"  extraction done ({time.monotonic() - start:.1f}s), "
