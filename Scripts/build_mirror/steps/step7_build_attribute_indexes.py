@@ -50,6 +50,13 @@ MAX_SAMPLES_PER_KEY = 3
 # that as a safety margin, not pushed to the observed ceiling.
 EXTRACTION_BATCH_SIZE = 250
 
+# How many values get embedded (and committed) per round-trip in
+# _embed_values_in_chunks. Each chunk is a durability checkpoint -- a crash
+# mid-embedding only re-embeds the chunk in flight, not the whole table. Not yet
+# tuned against the real mirror's true scale (millions of distinct values); this
+# is a starting point, not a measured optimum.
+EMBED_CHUNK_SIZE = 50_000
+
 NUMERIC_RE = re.compile(r"^-?\d+(\.\d+)?([eE]-?\d+)?$")
 DATE_RE = re.compile(r"^\d{4}[-/]\d{1,2}([-/]\d{1,2})?$|^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$")
 ID_NAME_RE = re.compile(
@@ -80,12 +87,14 @@ def classify_key(key: str, samples: list[str]) -> str:
 class AttributeIndexBuilder:
     def __init__(self, db_path: Path, embedder: Embedder, dim: int = EMBED_DIM,
                  batch_size: int = EXTRACTION_BATCH_SIZE,
+                 embed_chunk_size: int = EMBED_CHUNK_SIZE,
                  threads: int | None = None, memory_limit: str | None = None,
                  temp_dir: Path | None = None):
         self.db_path = db_path
         self.embedder = embedder
         self.dim = dim
         self.batch_size = batch_size
+        self.embed_chunk_size = embed_chunk_size
         self.threads = threads
         self.memory_limit = memory_limit
         self.temp_dir = temp_dir
@@ -183,10 +192,42 @@ class AttributeIndexBuilder:
         """CONTENT table: distinct values, DEDUPED ACROSS ALL KEYS -- key is
         discarded by design (a value means the same thing regardless which field
         it came from). Batched: one json_extract_string(jattr, [paths...]) call
-        per batch covers many keys in a single JSON parse per row."""
+        per batch covers many keys in a single JSON parse per row.
+
+        Durability: the extraction+dedup pass (the expensive, hours-long part) is
+        committed to a real table BEFORE embedding starts -- a crash during the
+        embedding step must not cost that work again. Embedding itself runs in
+        chunks, each committed as it completes and re-querying `WHERE embedding
+        IS NULL` fresh rather than caching row identifiers up front (DuckDB's
+        `rowid` is reassigned on UPDATE, confirmed directly 2026-09-09 -- caching
+        rowids across chunks would silently target the wrong rows after the first
+        chunk). This also makes the step naturally resumable: rerunning after a
+        crash picks up wherever embedding left off instead of restarting."""
         start = time.monotonic()
         _log("building attribute_values_index (content)...")
+        if not self._values_extracted(con):
+            self._extract_and_persist_values(con, useful_keys, start)
+        else:
+            _log("  values already extracted and persisted (resuming) -- "
+                f"skipping extraction+dedup")
+        self._embed_values_in_chunks(con, self.embed_chunk_size)
+        self._create_hnsw_index(con, "attribute_values_index")
+        _log(f"  attribute_values_index built ({time.monotonic() - start:.1f}s total)")
+
+    def _values_extracted(self, con: duckdb.DuckDBPyConnection) -> bool:
+        exists = con.execute(
+            "SELECT count(*) FROM duckdb_tables() WHERE table_name = 'attribute_values_index'"
+        ).fetchone()[0]
+        return bool(exists) and con.execute(
+            "SELECT count(*) FROM attribute_values_index").fetchone()[0] > 0
+
+    def _extract_and_persist_values(self, con: duckdb.DuckDBPyConnection,
+                                    useful_keys: list[str], start: float) -> None:
         con.execute("DROP TABLE IF EXISTS attribute_values_index")
+        con.execute(f"""
+            CREATE TABLE attribute_values_index (
+                value VARCHAR, embedding FLOAT[{self.dim}], biosample VARCHAR[])
+        """)
         con.execute("""
             CREATE OR REPLACE TEMP TABLE value_biosamples (
                 value VARCHAR, biosample VARCHAR)
@@ -216,34 +257,60 @@ class AttributeIndexBuilder:
         _log(f"  extraction done ({time.monotonic() - start:.1f}s), "
             f"deduping values across all keys...")
         dedup_start = time.monotonic()
-        values_df = con.execute("""
-            SELECT value, list(DISTINCT biosample) AS biosamples
+        con.execute("""
+            INSERT INTO attribute_values_index (value, biosample)
+            SELECT value, list(DISTINCT biosample)
             FROM value_biosamples
             GROUP BY value
-        """).fetchdf()
-        _log(f"  {len(values_df)} distinct values ({time.monotonic() - dedup_start:.1f}s)")
-
-        con.execute(f"""
-            CREATE TABLE attribute_values_index (
-                value VARCHAR, embedding FLOAT[{self.dim}], biosample VARCHAR[])
         """)
-        values = values_df["value"].tolist()
-        vectors = self.embedder.embed(values)
-        if len(vectors) != len(values):
-            raise RuntimeError(
-                f"embedder returned {len(vectors)} vectors for {len(values)} values")
-        con.executemany(
-            "INSERT INTO attribute_values_index VALUES (?, ?, ?)",
-            [(value, vector, biosamples) for value, vector, biosamples
-             in zip(values, vectors, values_df["biosamples"])])
-        self._create_hnsw_index(con, "attribute_values_index")
+        n_values = con.execute("SELECT count(*) FROM attribute_values_index").fetchone()[0]
+        _log(f"  {n_values} distinct values ({time.monotonic() - dedup_start:.1f}s) "
+            f"-- persisted, safe from here")
         con.execute("DROP TABLE value_biosamples")
-        _log(f"  attribute_values_index built ({time.monotonic() - start:.1f}s total)")
+
+    def _embed_values_in_chunks(self, con: duckdb.DuckDBPyConnection,
+                                chunk_size: int = EMBED_CHUNK_SIZE) -> None:
+        total_remaining = con.execute(
+            "SELECT count(*) FROM attribute_values_index WHERE embedding IS NULL"
+        ).fetchone()[0]
+        total = con.execute("SELECT count(*) FROM attribute_values_index").fetchone()[0]
+        already_done = total - total_remaining
+        _log(f"  embedding values in chunks of {chunk_size} "
+            f"({already_done} already done, {total_remaining} remaining)...")
+        embed_start = time.monotonic()
+        done_this_run = 0
+        while True:
+            chunk = con.execute(
+                "SELECT value FROM attribute_values_index "
+                "WHERE embedding IS NULL LIMIT ?", [chunk_size]).fetchall()
+            if not chunk:
+                break
+            values = [row[0] for row in chunk]
+            vectors = self.embedder.embed(values)
+            if len(vectors) != len(values):
+                raise RuntimeError(
+                    f"embedder returned {len(vectors)} vectors for {len(values)} values")
+            con.execute("CREATE OR REPLACE TEMP TABLE chunk_vectors "
+                       f"(value VARCHAR, vector FLOAT[{self.dim}])")
+            con.executemany("INSERT INTO chunk_vectors VALUES (?, ?)",
+                           list(zip(values, vectors)))
+            con.execute("""
+                UPDATE attribute_values_index a SET embedding = c.vector
+                FROM chunk_vectors c WHERE a.value = c.value
+            """)
+            done_this_run += len(values)
+            _log(f"    embedded {already_done + done_this_run}/{total} "
+                f"({time.monotonic() - embed_start:.1f}s elapsed this run)")
+        con.execute("DROP TABLE IF EXISTS chunk_vectors")
 
     def _create_hnsw_index(self, con: duckdb.DuckDBPyConnection, table: str) -> None:
         con.execute("INSTALL vss")
         con.execute("LOAD vss")
         con.execute("SET hnsw_enable_experimental_persistence = true")
+        # IF NOT EXISTS: attribute_values_index is resumable (see
+        # _build_values_index) -- a crash right after this index was already
+        # built, on an otherwise-fully-embedded table, must not fail on retry.
+        con.execute(f"DROP INDEX IF EXISTS {table}_idx")
         con.execute(f"CREATE INDEX {table}_idx ON {table} USING HNSW (embedding) "
                     "WITH (metric = 'cosine')")
 
@@ -266,6 +333,8 @@ def main() -> None:
     parser.add_argument("--db", type=Path, required=True)
     parser.add_argument("--dim", type=int, default=EMBED_DIM)
     parser.add_argument("--batch-size", type=int, default=EXTRACTION_BATCH_SIZE)
+    parser.add_argument("--embed-chunk-size", type=int, default=EMBED_CHUNK_SIZE,
+                        help="values embedded (and committed) per checkpoint")
     parser.add_argument("--threads", type=int, default=None,
                         help="default: SLURM_CPUS_PER_TASK, else DuckDB's own default")
     parser.add_argument("--memory-limit", type=str, default=None,
@@ -284,8 +353,8 @@ def main() -> None:
     from askslm.adapters import open_local_embedder
 
     AttributeIndexBuilder(args.db, open_local_embedder(), args.dim, args.batch_size,
-                          threads=threads, memory_limit=memory_limit,
-                          temp_dir=args.temp_dir).build()
+                          args.embed_chunk_size, threads=threads,
+                          memory_limit=memory_limit, temp_dir=args.temp_dir).build()
 
 
 if __name__ == "__main__":
