@@ -178,8 +178,19 @@ class AttributeIndexBuilder:
     def _build_keys_index(self, con: duckdb.DuckDBPyConnection,
                           useful_keys: list[str]) -> None:
         """PRESENCE table: which biosamples have this key at all, regardless of
-        value. Cheap -- reuses the key-only unnest, no value extraction."""
+        value. Cheap -- reuses the key-only unnest, no value extraction.
+
+        Resumable the same way as attribute_values_index: if the table AND its
+        HNSW index already exist, skip rebuilding entirely. Without this check
+        a script restart (SLURM requeue, or a retry after attribute_values_index
+        fails downstream) silently drops and redoes ~60-70min of already-correct
+        work every time -- confirmed wasted 2026-09-10/11 across three restarts
+        of the real build."""
         start = time.monotonic()
+        if self._index_built(con, "attribute_keys_index"):
+            _log("attribute_keys_index already built and indexed (resuming) -- "
+                "skipping")
+            return
         _log("building attribute_keys_index (presence)...")
         con.execute("DROP TABLE IF EXISTS attribute_keys_index")
         con.execute(f"""
@@ -239,6 +250,27 @@ class AttributeIndexBuilder:
         ).fetchone()[0]
         return bool(exists) and con.execute(
             "SELECT count(*) FROM attribute_values_index").fetchone()[0] > 0
+
+    def _index_built(self, con: duckdb.DuckDBPyConnection, table: str) -> bool:
+        """True iff `table` exists, has rows, and already has an HNSW index --
+        i.e. this table is fully done and must never be dropped/rebuilt again.
+        DuckDB's CREATE INDEX ... USING HNSW is one atomic call with no native
+        mid-build checkpointing, so a crash *during* index construction can't be
+        resumed from a partial graph -- but a crash *after* it succeeds must not
+        cost a redo either. This is the check that prevents that (confirmed live
+        2026-09-11: the HNSW build over 14.9M values OOM-killed the job right
+        after all 14.9M values had already been durably embedded -- a rerun must
+        not re-embed, and once the HNSW build itself succeeds, a rerun must not
+        redo that either)."""
+        exists = con.execute(
+            "SELECT count(*) FROM duckdb_tables() WHERE table_name = ?", [table]
+        ).fetchone()[0]
+        if not exists or con.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0:
+            return False
+        has_index = con.execute(
+            "SELECT count(*) FROM duckdb_indexes() WHERE table_name = ?", [table]
+        ).fetchone()[0]
+        return bool(has_index)
 
     def _extract_and_persist_values(self, con: duckdb.DuckDBPyConnection,
                                     useful_keys: list[str], start: float) -> None:
@@ -329,10 +361,16 @@ class AttributeIndexBuilder:
         con.execute("INSTALL vss")
         con.execute("LOAD vss")
         con.execute("SET hnsw_enable_experimental_persistence = true")
-        # IF NOT EXISTS: attribute_values_index is resumable (see
-        # _build_values_index) -- a crash right after this index was already
-        # built, on an otherwise-fully-embedded table, must not fail on retry.
-        con.execute(f"DROP INDEX IF EXISTS {table}_idx")
+        existing = con.execute(
+            "SELECT count(*) FROM duckdb_indexes() WHERE table_name = ?", [table]
+        ).fetchone()[0]
+        if existing:
+            # Skip, don't drop+rebuild: HNSW construction over 14.9M vectors is
+            # itself the expensive, crash-prone step (OOM-killed once already,
+            # 2026-09-11) -- a retry must never discard a successfully-built
+            # index just because some later step in the script failed.
+            _log(f"  {table}: HNSW index already exists (resuming) -- skipping")
+            return
         con.execute(f"CREATE INDEX {table}_idx ON {table} USING HNSW (embedding) "
                     "WITH (metric = 'cosine')")
 
