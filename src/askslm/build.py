@@ -10,7 +10,7 @@ import biom
 import pandas as pd
 
 from askslm import checkpoint
-from askslm.cohort import Accession, Cohort, CohortDiscovery
+from askslm.cohort import Accession, Cohort, CriterionResolver
 from askslm.metadata import MetadataReconciler, ReconciledMetadata
 from askslm.profiles import ProfileMatrix, ProfileReconciler, one_family
 from askslm.sources import ProfilerFamily, Source, SourceKind
@@ -185,7 +185,7 @@ def _resolved_by_visit(row: dict) -> dict:
 
 
 class CohortBuilder:
-    def __init__(self, discovery: CohortDiscovery, profiles: ProfileReconciler,
+    def __init__(self, discovery: CriterionResolver, profiles: ProfileReconciler,
                  metadata: MetadataReconciler, factory: BiomFactory):
         self._discovery = discovery
         self._profiles = profiles

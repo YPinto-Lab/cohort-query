@@ -36,7 +36,7 @@ import duckdb
 from askslm.concept_search import EMBED_DIM
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "Scripts" / "build_mirror" / "steps"))
-from step4_index_attributes import AttributeIndexBuilder
+from step7_build_attribute_indexes import AttributeIndexBuilder
 from step6_embed_concepts import ConceptEmbeddingBuilder
 from step5_catalog_schema import SchemaCatalogBuilder
 
@@ -88,7 +88,7 @@ def build_fixture_mirror(path: Path) -> Path:
     # here on purpose: the fixture must exercise BOTH the complete-vocabulary and the
     # truncated branch, and its columns have only a handful of values each.
     SchemaCatalogBuilder(path, max_distinct=5).build()
-    AttributeIndexBuilder(path).build()
+    AttributeIndexBuilder(path, embedder=_FixtureEmbedder(), dim=EMBED_DIM).build()
     ConceptEmbeddingBuilder(path, embedder=_FixtureEmbedder(), dim=EMBED_DIM).build()
 
     return path

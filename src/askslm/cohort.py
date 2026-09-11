@@ -7,17 +7,16 @@ the fallback the column-id rule already had (HLD B.3).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import NewType
+from dataclasses import dataclass, field
 
 import duckdb
 import pandas as pd
 
+from askslm.accession import Accession
+from askslm.jattr_concepts import JattrConceptIndex, JattrMatch
 from askslm.ports import Database
 from askslm.sources import Source
 from askslm.translation import SourceQuery
-
-Accession = NewType("Accession", str)
 
 
 class InvalidCohortQuery(RuntimeError):
@@ -38,6 +37,11 @@ class InvalidCohortQuery(RuntimeError):
 @dataclass(frozen=True)
 class Cohort:
     by_source: dict[Source, frozenset[Accession]]      # METADATA sources only
+    # per source, per JattrCriterion.concept -> its own standalone matches,
+    # independent of how jattr_combinator combined it into by_source. This is
+    # what the explain/BioProject-rollup layer reads: "IBD alone: 35,000" even
+    # when the combined cohort (an "all" combinator) is 0.
+    jattr_matches: dict[Source, dict[str, list[JattrMatch]]] = field(default_factory=dict)
 
     def union(self) -> frozenset[Accession]:
         return frozenset().union(*self.by_source.values()) if self.by_source else frozenset()
@@ -53,21 +57,61 @@ class Cohort:
         return sum(1 for keys in self.by_source.values() if key in keys)
 
 
-class CohortDiscovery:
-    """Runs each metadata query and groups the returned keys by source."""
+class CriterionResolver:
+    """Runs each metadata query and groups the resulting biosamples by source.
 
-    def __init__(self, database: Database):
+    A SourceQuery mixes up to two independent things: SQL against native columns
+    (buckets 1/2) and JattrCriterion concepts resolved via nearest-neighbor lookup
+    against attribute_keys_index/attribute_values_index (buckets 2/3). Two
+    separate combination rules, not in conflict:
+      - sql's result UNIONS with jattr_criteria's combined result -- bucket 2's
+        same-fact-recorded-twice case (e.g. collection_date_sam).
+      - jattr_criteria combine with EACH OTHER per query.jattr_combinator:
+        "all" intersects (can genuinely be empty -- that is the true answer to
+        an AND the data does not support, not something to silently soften),
+        "any" unions. Either way, each criterion's own standalone reach is kept
+        in Cohort.jattr_matches regardless of the combinator or the combined
+        result, so an empty "all" is never a silent dead end.
+    """
+
+    def __init__(self, database: Database, jattr: JattrConceptIndex):
         self._database = database
+        self._jattr = jattr
 
     def discover(self, queries: tuple[SourceQuery, ...]) -> Cohort:
-        return Cohort({query.source: self._keys(query) for query in queries})
+        by_source = {}
+        jattr_matches = {}
+        for query in queries:
+            matches = self._jattr.matching(query.jattr_criteria)
+            by_source[query.source] = self._resolve(query, matches)
+            if matches:
+                jattr_matches[query.source] = matches
+        return Cohort(by_source, jattr_matches)
 
-    def _keys(self, query: SourceQuery) -> frozenset[Accession]:
+    def _resolve(self, query: SourceQuery, matches: dict[str, list[JattrMatch]]
+                ) -> frozenset[Accession]:
+        sql_result = self._run_sql(query) if query.sql else frozenset()
+        return sql_result | self._combined(query.jattr_combinator, matches)
+
+    def _run_sql(self, query: SourceQuery) -> frozenset[Accession]:
         try:
             frame = self._database.query(query.sql)
         except duckdb.Error as error:
             raise InvalidCohortQuery(query.source, str(error)) from error
         return accessions_of(frame)
+
+    def _combined(self, combinator: str, matches: dict[str, list[JattrMatch]]
+                 ) -> frozenset[Accession]:
+        if not matches:
+            return frozenset()
+        sets = [_standalone(concept_matches) for concept_matches in matches.values()]
+        if combinator == "all":
+            return frozenset.intersection(*sets)
+        return frozenset().union(*sets)
+
+
+def _standalone(matches: list[JattrMatch]) -> frozenset[Accession]:
+    return frozenset().union(*(match.biosamples for match in matches)) if matches else frozenset()
 
 
 def accessions_of(frame: pd.DataFrame) -> frozenset[Accession]:

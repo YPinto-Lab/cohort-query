@@ -10,6 +10,7 @@ build.py/adapters.py, which do have tests.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 from datetime import datetime
@@ -24,8 +25,12 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 import askslm
+from askslm import runtime
+from askslm.bioproject_rollup import BioProjectRollup
 from askslm.cli import jobs, progress, rundir, watch
-from askslm.cli.render import narrow_warning, overlap_rows, preview_line
+from askslm.cli.render import (bioproject_choice_label, bioproject_columns,
+                               bioproject_table_rows, narrow_warning, overlap_rows,
+                               preview_line)
 from askslm.plan import Plan, load_plan
 from askslm.settings_file import CONFIG_PATH, stored_settings, write_settings
 from askslm.sources import ProfilerFamily, Source, SourceKind
@@ -179,7 +184,37 @@ def _ask(question: str, plan_dir: Path) -> Plan | None:
     return plan
 
 
+def _select_bioprojects(plan: Plan, plan_dir: Path) -> Plan | None:
+    """Recall-first discovery means the same project can satisfy one criterion,
+    several, or none the researcher actually meant -- the researcher decides
+    which to keep, not the system (see the explain design). Every BioProject
+    starts CHECKED: deselecting what you don't want is the google-style
+    surface-everything default, not opting in to each one."""
+    if plan.discovered is None:
+        return plan
+    rows = BioProjectRollup(runtime.database()).rows(plan.discovered)
+    if not rows:
+        return plan
+    columns = bioproject_columns(rows)
+    table = Table("project", "biosamples", *columns)
+    for row in bioproject_table_rows(rows, columns):
+        table.add_row(*row)
+    console.print(table)
+    choices = [questionary.Choice(title=bioproject_choice_label(row), value=row.project,
+                                  checked=True)
+              for row in rows]
+    selected = questionary.checkbox("Which BioProjects to include?", choices=choices).ask()
+    if not selected:
+        return None
+    narrowed = dataclasses.replace(plan, selected_bioprojects=frozenset(selected))
+    narrowed.save(plan_dir / "plan.json")
+    return narrowed
+
+
 def _run(plan: Plan, plan_dir: Path) -> None:
+    plan = _select_bioprojects(plan, plan_dir)
+    if plan is None:
+        return
     families = _families(plan)
     if len(families) == 1:
         family_name = families[0]

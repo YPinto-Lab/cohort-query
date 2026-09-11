@@ -9,11 +9,9 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from askslm.expansion import MAX_TERMS
-from askslm.expansion import SYSTEM_INSTRUCTION as EXPANSION_INSTRUCTION
 from askslm.prompt import SYSTEM_INSTRUCTION
 from askslm.sources import Source, SourceKind
-from askslm.translation import SourceQuery, Translation, TranslationPrompt
+from askslm.translation import JattrCriterion, SourceQuery, Translation, TranslationPrompt
 
 
 SIRIUS_EXTENSION_PATH = "/private/pinto-lab/anna/sirius/build/sirius.duckdb_extension"
@@ -30,8 +28,8 @@ SIDECAR_ALIASES = {"sra_db_path": "sorted_src",          # sra_taxonomy  -> tax_
 
 
 # What a usable mirror must contain. `step3_assemble_mirror.py` produces only the first seven;
-# the last four come from step4_index_attributes.py, step5_catalog_schema.py and
-# step6_embed_concepts.py, which for a long time were run by hand -- so a mirror
+# the rest come from step5_catalog_schema.py, step6_embed_concepts.py, and
+# step7_build_attribute_indexes.py, which for a long time were run by hand -- so a mirror
 # built by the documented command was silently missing the LLM's entire vocabulary and
 # failed much later, deep in discovery, with a bare DuckDB "table does not exist".
 #
@@ -40,10 +38,10 @@ SIDECAR_ALIASES = {"sra_db_path": "sorted_src",          # sra_taxonomy  -> tax_
 REQUIRED_TABLES = frozenset({
     "sra_metadata", "sra_taxonomy", "stat_coverage",
     "metalog_metadata", "metalog_metaphlan4", "metalog_motus3", "metalog_spire_motus",
-    "attribute_keys",            # every jattr key, so a question can name a phenotype
     "schema_catalog",            # columns + real value vocabularies for the prompt
-    "attribute_key_embeddings",  # concept search over those keys
-    "column_value_embeddings",   # concept search over those values
+    "attribute_keys_index",      # jattr PRESENCE: has this key at all, any value?
+    "attribute_values_index",    # jattr CONTENT: has a value that means X, under any key
+    "column_value_embeddings",   # concept search over native low-cardinality column values
 })
 
 
@@ -209,11 +207,6 @@ class CannedLlmBackend:
     def __init__(self, translation: Translation):
         self._translation = translation
 
-    def expand(self, question: str) -> list[str]:
-        """No model behind this backend, so no synonyms -- retrieval falls back to the
-        words of the question, which is what the tests exercise."""
-        return []
-
     def repair(self, sql: str, error: str, columns: str) -> str:
         """No model, nothing to repair with."""
         return sql
@@ -244,25 +237,6 @@ class GeminiBackend:
     def __init__(self, client, model: str):
         self._client = client
         self._model = model
-
-    def expand(self, question: str) -> list[str]:
-        """Never raises: a failed expansion must degrade to plain lexical matching,
-        not take down ask()."""
-        start = time.monotonic()
-        try:
-            response = self._client.models.generate_content(
-                model=self.HELPER_MODEL, contents=question,
-                config={"system_instruction": EXPANSION_INSTRUCTION,
-                        "response_mime_type": "application/json",
-                        "automatic_function_calling": {"disable": True}})
-            terms = json.loads(_unfenced(response.text)).get("terms", [])
-        except Exception:
-            _log_safely("expand (%.2fs) failed for question=%r",
-                       time.monotonic() - start, question)
-            return []
-        _log_safely("expand (%.2fs)\nQUESTION: %s\nRESPONSE: %s",
-                   time.monotonic() - start, question, response.text)
-        return [str(term).lower() for term in terms][:MAX_TERMS]
 
     def repair(self, sql: str, error: str, columns: str) -> str:
         """One targeted retry. Never raises -- a failed repair leaves the original SQL
@@ -404,4 +378,7 @@ def _source_query_of(entry: dict) -> SourceQuery:
     source = Source[entry["source"]]
     if source.kind() is not SourceKind.METADATA:
         raise ValueError(f"model returned a non-metadata source: {source.name}")
-    return SourceQuery(source, entry["sql"])
+    criteria = tuple(JattrCriterion(concept=concept)
+                     for concept in entry.get("jattr_criteria", []))
+    return SourceQuery(source, entry.get("sql"), jattr_criteria=criteria,
+                       jattr_combinator=entry.get("jattr_combinator", "any"))

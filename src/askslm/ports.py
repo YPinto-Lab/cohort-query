@@ -34,14 +34,6 @@ class LlmBackend(Protocol):
         the SQL unchanged.
         """
 
-    def expand(self, question: str) -> list[str]:
-        """Field-name fragments to search the attribute index with.
-
-        A separate, tiny call: a sentence in, a few words out, no schema attached.
-        A backend with no model behind it returns [] and retrieval falls back to the
-        words of the question itself.
-        """
-
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Vector per input string, batched into one call, same order as `texts`.
 

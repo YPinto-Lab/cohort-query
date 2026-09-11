@@ -12,6 +12,14 @@ TRANSLATION = Translation(
                          "SELECT * FROM metalog_metadata"),))
 
 
+class _EmbedderThatMustNotBeCalled:
+    """TRANSLATION has no jattr_criteria, so a correct CriterionResolver never
+    calls embed() at all -- this proves it, rather than silently degrading."""
+
+    def embed(self, texts):
+        raise AssertionError("embed() called with no jattr_criteria present")
+
+
 def test_on_step_is_called_for_each_phase_in_order(tmp_path):
     path = build_fixture_mirror(tmp_path / "fixture.duckdb")
     connection = DuckDbConnection(path)
@@ -46,13 +54,15 @@ def test_a_cached_cohort_skips_rediscovery_and_gets_a_distinct_label(tmp_path):
     table before this test could ever reach its assertions."""
     from askslm import runtime
     from askslm.build import Materialization
-    from askslm.cohort import CohortDiscovery
+    from askslm.cohort import CriterionResolver
+    from askslm.jattr_concepts import JattrConceptIndex
 
     path = build_fixture_mirror(tmp_path / "fixture.duckdb")
     connection = DuckDbConnection(path)
     askslm.config(db=path, database=connection, backend=CannedLlmBackend(TRANSLATION))
     plan = askslm.ask("gut metagenomes")
-    cohort = CohortDiscovery(connection).discover(plan.translation.queries)
+    jattr = JattrConceptIndex(connection, embedder=_EmbedderThatMustNotBeCalled())
+    cohort = CriterionResolver(connection, jattr).discover(plan.translation.queries)
     poisoned_queries = (SourceQuery(askslm.Source.METALOG_METADATA,
                                     "SELECT * FROM no_such_table_at_all"),)
     request = Materialization(profile_sources=(askslm.Source.METALOG_MOTUS3,),

@@ -10,11 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from askslm.adapters import DuckDbConnection, verify_mirror
-from askslm.attributes import AttributeIndex
 from askslm.build import BiomFactory, CohortBuilder
 from askslm.catalog import SchemaCatalog
-from askslm.cohort import CohortDiscovery
+from askslm.cohort import CriterionResolver
 from askslm.concept_search import ConceptIndex, Embedder
+from askslm.jattr_concepts import JattrConceptIndex
 from askslm.metadata import MetadataReader, MetadataReconciler
 from askslm.ports import Database, LlmBackend
 from askslm.profiles import ProfileReader, ProfileReconciler
@@ -119,15 +119,31 @@ def embedder() -> Embedder:
 
 def translator() -> Translator:
     db = database()
-    llm = backend()
-    concepts = ConceptIndex(db, db, embedder=embedder())
-    return Translator(llm, SchemaCatalog(db),
-                      AttributeIndex(db, expander=llm, concepts=concepts), concepts)
+    concepts = ConceptIndex(db, embedder=embedder())
+    return Translator(backend(), SchemaCatalog(db), concepts)
+
+
+class _LazyEmbedder:
+    """Defers resolving the real embedder until embed() is actually called.
+
+    run() must stay LLM-free when a query has no jattr_criteria (JattrConceptIndex
+    never calls embed() in that case) -- "one LLM hop lives on the ask edge, every
+    run() after it is free" (module docstring). Resolving embedder() eagerly here
+    would force a worker replaying a saved plan, with no backend injected, to fail
+    even when nothing it does needs embedding."""
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return embedder().embed(texts)
+
+
+def criterion_resolver() -> CriterionResolver:
+    connection = database()
+    return CriterionResolver(connection, JattrConceptIndex(connection, embedder=_LazyEmbedder()))
 
 
 def cohort_builder() -> CohortBuilder:
     connection = database()
-    return CohortBuilder(CohortDiscovery(connection),
+    return CohortBuilder(criterion_resolver(),
                          ProfileReconciler(ProfileReader(connection)),
                          MetadataReconciler(MetadataReader(connection)),
                          BiomFactory())

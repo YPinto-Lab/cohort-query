@@ -4,7 +4,10 @@
 #   1. sra_taxonomy_sorted.duckdb   tax_raw sorted by acc, narrowed to 4 columns   (~2 h)
 #   2. sra_metadata_sorted.duckdb   metadata_raw sorted by biosample, all columns  (~10 min)
 #   3. askslm_mirror.duckdb         views over 1 and 2 + Metalog tables + indexes  (~15 min)
-#   4. + attribute_keys             every jattr key, so a phenotype can be found    (~10 min)
+#   4. + attribute_keys_index/      jattr presence + content, embedding-indexed    (~4-6 h,
+#      attribute_values_index       needs a high-memory node -- the HNSW build over
+#                                    ~15M values OOM-killed at 185GB, needed 450GB+
+#                                    measured live on the real mirror 2026-09-11/12)
 #   5. + schema_catalog             columns and value vocabularies for the prompt   (~1 min)
 #   6. + *_embeddings               local SapBERT vectors for concept search        (~10 min)
 #
@@ -39,7 +42,7 @@
 #
 #SBATCH --job-name=askslm-build-all
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=400G
+#SBATCH --mem=450G
 #SBATCH --time=48:00:00
 #SBATCH --open-mode=append
 
@@ -122,7 +125,10 @@ fi
 # columns, and sorting compresses better); 0.6x leaves room for the merge-sort spill.
 free_gb=$(df -BG --output=avail "$OUT_DIR" | tail -1 | tr -dc '0-9')
 case "$STAGE" in
-    enrich) need=5 ;;                                  # adds a few small tables in place
+    # attribute_values_index alone is ~45GB of embeddings (14.9M rows x 768 floats)
+    # before its HNSW index, measured on the real mirror 2026-09-12; the rest of
+    # this stage's tables are small by comparison.
+    enrich) need=80 ;;
     mirror) need=$(( $(du -BG -s "$TAXONOMY" 2>/dev/null | tr -dc '0-9' || echo 50) / 5 + 5 )) ;;
     *)      need=$(( $(du -BG -s "$SRA_DB" | tr -dc '0-9') * 6 / 10 + 5 )) ;;
 esac
@@ -155,10 +161,11 @@ fi
 
 if [ "$STAGE" = all ] || [ "$STAGE" = mirror ] || [ "$STAGE" = enrich ]; then
     [ -r "$MIRROR" ] || die "missing $MIRROR -- run with --stage mirror first"
-    # These three WRITE INTO the mirror, in this order: concept embeddings read both
-    # attribute_keys and schema_catalog, so they must come last.
-    echo "--- 4/6 attribute index"
-    time "$PY" "$HERE/steps/step4_index_attributes.py" --db "$MIRROR"
+    # These three WRITE INTO the mirror. step7 doesn't depend on the other two and
+    # could run in any order, but runs first here since it's by far the longest.
+    echo "--- 4/6 attribute_keys_index / attribute_values_index"
+    time "$PY" "$HERE/steps/step7_build_attribute_indexes.py" --db "$MIRROR" \
+        --threads "$THREADS" --memory-limit "$MEMORY_LIMIT" --temp-dir "$TMP"
     echo "--- 5/6 schema catalog"
     time "$PY" "$HERE/steps/step5_catalog_schema.py" --db "$MIRROR"
     echo "--- 6/6 concept embeddings (local SapBERT, no API key)"

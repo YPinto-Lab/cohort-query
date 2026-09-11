@@ -22,24 +22,11 @@ class _FixtureEmbedder:
         return vector
 
 
-def test_a_short_acronym_finds_ibd_sam_through_real_duckdb_vss(tmp_path):
-    path = build_fixture_mirror(tmp_path / "fixture.duckdb")
-    connection = DuckDbConnection(path)
-    try:
-        index = ConceptIndex(connection, connection, embedder=_FixtureEmbedder())
-
-        found = index.matching_keys("IBD")
-
-        assert "ibd_sam" in found
-    finally:
-        connection.close()
-
-
 def test_ibd_finds_both_disease_subtypes_through_real_duckdb_vss(tmp_path):
     path = build_fixture_mirror(tmp_path / "fixture.duckdb")
     connection = DuckDbConnection(path)
     try:
-        index = ConceptIndex(connection, connection, embedder=_FixtureEmbedder())
+        index = ConceptIndex(connection, embedder=_FixtureEmbedder())
 
         found = index.matching_values("IBD")
 

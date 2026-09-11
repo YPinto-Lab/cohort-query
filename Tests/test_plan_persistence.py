@@ -78,6 +78,84 @@ def test_discovered_cohort_round_trips(tmp_path):
            == frozenset({"SAMN001", "SAMN002"}))
 
 
+def test_jattr_matches_round_trip_with_the_cohort():
+    """The explain data (which key/value each concept matched on, and which
+    biosamples) must survive a save/load cycle -- a researcher reopening a saved
+    plan should see the same "why" they saw when they first asked."""
+    from askslm.cohort import Cohort
+    from askslm.jattr_concepts import JattrMatch
+
+    cohort = Cohort(
+        {askslm.Source.SRA_METADATA: frozenset({"SAMN001"})},
+        jattr_matches={askslm.Source.SRA_METADATA: {
+            "IBD": [JattrMatch(concept="IBD", matched_on="ibd_sam",
+                               biosamples=frozenset({"SAMN001"}))]}})
+    plan = Plan(
+        question=ResearchQuestion("IBD"),
+        translation=Translation(interpretation="x",
+                                queries=(SourceQuery(askslm.Source.SRA_METADATA, sql=None),)),
+        preview=CohortPreview(union=1), discovered=cohort)
+
+    from tempfile import TemporaryDirectory
+    with TemporaryDirectory() as tmp:
+        path = f"{tmp}/matches.json"
+        plan.save(path)
+        loaded = load_plan(path)
+
+    match = loaded.discovered.jattr_matches[askslm.Source.SRA_METADATA]["IBD"][0]
+    assert match.matched_on == "ibd_sam"
+    assert match.biosamples == frozenset({"SAMN001"})
+
+
+def test_selected_bioprojects_round_trips(tmp_path):
+    path = tmp_path / "selected.json"
+    plan = Plan(question=ResearchQuestion("x"),
+               translation=Translation(interpretation="x", queries=()),
+               preview=CohortPreview(),
+               selected_bioprojects=frozenset({"PRJEB18471", "PRJNA999"}))
+
+    plan.save(path)
+    loaded = load_plan(path)
+
+    assert loaded.selected_bioprojects == frozenset({"PRJEB18471", "PRJNA999"})
+
+
+def test_selected_bioprojects_defaults_to_none_meaning_everything_kept(tmp_path):
+    path = tmp_path / "unselected.json"
+    _plan().save(path)
+
+    loaded = load_plan(path)
+
+    assert loaded.selected_bioprojects is None
+
+
+def test_run_applies_the_bioproject_selection(tmp_path):
+    """The multi-select's whole point: run() must materialize only the projects
+    the researcher kept, not the full discovered cohort."""
+    from askslm.adapters import CannedLlmBackend, DuckDbConnection
+    from askslm.bioproject_rollup import BioProjectRollup
+    from fixtures.mirror import build_fixture_mirror
+
+    path = build_fixture_mirror(tmp_path / "fixture.duckdb")
+    connection = DuckDbConnection(path)
+    translation = Translation(
+        interpretation="everyone",
+        queries=(SourceQuery(askslm.Source.METALOG_METADATA,
+                             "SELECT * FROM metalog_metadata"),))
+    askslm.config(db=path, database=connection, backend=CannedLlmBackend(translation))
+    plan = askslm.ask("everyone")
+    rows = BioProjectRollup(connection).rows(plan.discovered)
+    kept = rows[0]
+
+    narrowed = Plan(plan.question, plan.translation, plan.preview,
+                    discovered=plan.discovered,
+                    selected_bioprojects=frozenset({kept.project}))
+    _, report = narrowed.run(profile_sources=askslm.Source.METALOG_MOTUS3)
+
+    assert report.biosamples + len(report.dropped) == kept.biosample_count
+    connection.close()
+
+
 def test_an_old_plan_json_with_no_discovered_key_still_loads(tmp_path):
     """An old plan.json, saved before this field existed, has no "discovered" key
     at all -- it must still load, with discovered=None, and fall back to fresh
