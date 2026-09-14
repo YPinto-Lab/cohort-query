@@ -217,9 +217,10 @@ class MirrorBuilder:
         is the difference between a user noticing now and discovering it mid-question,
         which is exactly how this went wrong before."""
         print("\n-- NOTE: this is a PARTIAL mirror --")
-        print("   attribute_keys, schema_catalog and the two embedding tables still")
-        print("   have to be built, or discovery has no vocabulary to work with:")
-        print("     step4_index_attributes.py --db <out>")
+        print("   attribute_keys_index/attribute_values_index, schema_catalog and")
+        print("   column_value_embeddings still have to be built, or discovery has")
+        print("   no vocabulary to work with:")
+        print("     step7_build_attribute_indexes.py --db <out>")
         print("     step5_catalog_schema.py  --db <out>")
         print("     step6_embed_concepts.py --db <out>")
         print("   build_all.sh runs all of them in order.")

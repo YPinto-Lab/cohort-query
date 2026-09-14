@@ -1,8 +1,8 @@
 """A mirror missing its enrichment tables must be rejected at open time, not hours later.
 
-`step3_assemble_mirror.py` builds seven of the eleven tables the package needs; attribute_keys,
-schema_catalog and the two embedding tables come from three further scripts that were
-for a long time run by hand. A mirror built by the documented command was therefore
+`step3_assemble_mirror.py` builds seven of the ten tables the package needs; schema_catalog,
+the two attribute indexes and column_value_embeddings come from three further scripts that
+were for a long time run by hand. A mirror built by the documented command was therefore
 silently missing the LLM's entire vocabulary, and the failure surfaced deep inside
 discovery as a bare DuckDB "Table with name schema_catalog does not exist" -- after the
 researcher had already typed a question and waited.
@@ -47,8 +47,8 @@ def test_the_partial_mirror_step3_leaves_behind_is_rejected(tmp_path):
         verify_mirror(connection, tmp_path / "partial.duckdb")
 
     message = str(raised.value)
-    for table in ("attribute_keys", "schema_catalog",
-                  "attribute_key_embeddings", "column_value_embeddings"):
+    for table in ("schema_catalog", "attribute_keys_index",
+                  "attribute_values_index", "column_value_embeddings"):
         assert table in message
     assert "build_all.sh --stage enrich" in message      # the message says how to fix it
     connection.close()

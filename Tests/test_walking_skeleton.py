@@ -265,7 +265,7 @@ def test_invalid_generated_sql_becomes_plan_error_not_a_crash(configured):
 
     Distinct from the model DECLINING to translate (Translation.failure, tested
     below) -- this is the model producing SQL that DuckDB itself rejects, e.g. an
-    ILIKE against a numeric column. Nothing on the ask() -> CohortDiscovery path
+    ILIKE against a numeric column. Nothing on the ask() -> CriterionResolver path
     caught that before, so it surfaced as a raw duckdb.BinderException out of ask().
     """
     askslm.config(db=configured / "fixture.duckdb",

@@ -1,12 +1,15 @@
-"""Embed attribute_keys and low-cardinality schema_catalog values, so a question can
-find a field or value that means the same thing without sharing its spelling.
+"""Embed low-cardinality schema_catalog values, so a question can find a NATIVE
+column value that means the same thing without sharing its spelling
+("shotgun" -> librarysource = 'METAGENOMIC'). jattr key/value concept search is a
+separate mechanism now (step7_build_attribute_indexes.py) -- this step used to
+also embed every jattr key into attribute_key_embeddings, superseded by that
+step's attribute_keys_index.
 
-Run AFTER step4_index_attributes.py and step5_catalog_schema.py -- this reads both of
-their output tables. Runs entirely locally (sentence-transformers on CPU) -- no API
-key, no quota, no cost. Switched from a hosted embeddings API after its free-tier
-per-minute AND per-day quotas both proved too restrictive to finish a ~99k-item
-build (94,450 keys + 4,416 qualifying values), hitting sustained 429s even right
-after a fresh daily reset; a local model finishes the same build in minutes.
+Run AFTER step5_catalog_schema.py -- this reads its output table. Runs entirely
+locally (sentence-transformers on CPU) -- no API key, no quota, no cost. Switched
+from a hosted embeddings API after its free-tier per-minute AND per-day quotas
+both proved too restrictive to finish the build, hitting sustained 429s even
+right after a fresh daily reset; a local model finishes the same build in minutes.
 
     python Scripts/build_mirror/steps/step6_embed_concepts.py --db askslm_mirror.duckdb
 """
@@ -24,8 +27,8 @@ from askslm.concept_search import EMBED_DIM, Embedder
 
 
 class ConceptEmbeddingBuilder:
-    """Two tables: attribute_key_embeddings (every jattr key) and
-    column_value_embeddings (every value of every low-cardinality metadata column)."""
+    """column_value_embeddings: every value of every low-cardinality native
+    metadata column."""
 
     def __init__(self, db_path: Path, embedder: Embedder, dim: int = EMBED_DIM):
         self.db_path = db_path
@@ -34,19 +37,9 @@ class ConceptEmbeddingBuilder:
 
     def build(self) -> None:
         con = duckdb.connect(str(self.db_path))
-        self._build_key_embeddings(con=con)
         self._build_value_embeddings(con=con)
         self._report(con=con)
         con.close()
-
-    def _build_key_embeddings(self, con: duckdb.DuckDBPyConnection) -> None:
-        con.execute("DROP TABLE IF EXISTS attribute_key_embeddings")
-        con.execute(f"CREATE TABLE attribute_key_embeddings (key TEXT, vector FLOAT[{self.dim}])")
-        keys = [row[0] for row in con.execute("SELECT key FROM attribute_keys").fetchall()]
-        vectors = self.embedder.embed(keys)
-        con.executemany("INSERT INTO attribute_key_embeddings VALUES (?, ?)",
-                        list(zip(keys, vectors)))
-        self._create_hnsw_index(con=con, table="attribute_key_embeddings")
 
     def _build_value_embeddings(self, con: duckdb.DuckDBPyConnection) -> None:
         con.execute("DROP TABLE IF EXISTS column_value_embeddings")
@@ -78,11 +71,8 @@ class ConceptEmbeddingBuilder:
                 for value in json.loads(values_json)]
 
     def _report(self, con: duckdb.DuckDBPyConnection) -> None:
-        keys, values = con.execute(
-            "SELECT (SELECT count(*) FROM attribute_key_embeddings), "
-            "       (SELECT count(*) FROM column_value_embeddings)").fetchone()
-        print(f"attribute_key_embeddings: {keys} keys · "
-              f"column_value_embeddings: {values} values")
+        values = con.execute("SELECT count(*) FROM column_value_embeddings").fetchone()[0]
+        print(f"column_value_embeddings: {values} values")
 
 
 def main() -> None:

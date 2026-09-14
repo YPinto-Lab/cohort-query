@@ -9,6 +9,8 @@ description = "Ask-SLM: build a cross-study metagenomic feature table from a res
 requires-python = ">=3.12"
 dependencies = [
     "duckdb>=1.5",
+    "lancedb>=0.15",
+    "pyarrow>=14.0",
     "pandas>=3.0",
     "biom-format>=2.1",
     "ete3>=3.1",

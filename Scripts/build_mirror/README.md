@@ -19,14 +19,14 @@ bash build_all.sh \
 | 1 | `steps/step1_sort_taxonomy.py` | `sra_taxonomy_sorted.duckdb` — `tax_fact`, sorted by `acc`, 4 of 9 columns | ~2 h |
 | 2 | `steps/step2_sort_metadata.py` | `sra_metadata_sorted.duckdb` — `metadata_fact`, sorted by `biosample` | ~10 min |
 | 3 | `steps/step3_assemble_mirror.py` | `askslm_mirror.duckdb` — views over 1 and 2, Metalog tables, `stat_coverage` | ~15 min |
-| 4 | `steps/step4_index_attributes.py` | `attribute_keys` — every `jattr` key, so a question can name a phenotype | ~10 min |
+| 4 | `steps/step7_build_attribute_indexes.py` | `attribute_keys_index`, `attribute_values_index` — jattr presence/content, embedding-indexed | ~4-6 h, needs a high-memory node (450GB+) |
 | 5 | `steps/step5_catalog_schema.py` | `schema_catalog` — columns and real value vocabularies, for the LLM prompt | ~1 min |
-| 6 | `steps/step6_embed_concepts.py` | `attribute_key_embeddings`, `column_value_embeddings` — local SapBERT vectors | ~10 min |
+| 6 | `steps/step6_embed_concepts.py` | `column_value_embeddings` — local SapBERT vectors over native low-cardinality columns | ~10 min |
 
 Steps 1 and 2 read only the SRA download and are independent. Step 3 needs both, since
 it defines its views against them and derives `stat_coverage` from the taxonomy. Steps
-4–6 write **into** the mirror from step 3, in that order — step 6 reads the output of
-both 4 and 5.
+4–6 write **into** the mirror from step 3 -- step 4 (attribute indexes) doesn't depend
+on 5 or 6 and could run in any order, but goes first here since it's by far the longest.
 
 **Steps 4–6 are not optional.** Without them the LLM has no column vocabulary, no
 attribute lookup and no concept search, so discovery fails on any question that names a

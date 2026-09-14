@@ -54,6 +54,40 @@ def test_parses_queries_into_typed_source_queries():
     assert translation.failure is None
 
 
+def test_parses_jattr_criteria_and_combinator():
+    payload = json.dumps({
+        "interpretation": "IBD samples with a calprotectin measurement",
+        "queries": [{"source": "SRA_METADATA", "sql": None,
+                     "jattr_criteria": ["IBD diagnosis", "calprotectin measurement"],
+                     "jattr_combinator": "all"}],
+        "failure": None,
+    })
+
+    translation = GeminiBackend(StubClient(payload), model="test-model").translate(_prompt())
+
+    query = translation.queries[0]
+    assert query.sql is None
+    assert [criterion.concept for criterion in query.jattr_criteria] == [
+        "IBD diagnosis", "calprotectin measurement"]
+    assert query.jattr_combinator == "all"
+
+
+def test_jattr_criteria_and_combinator_default_when_absent():
+    """An sql-only query omits jattr_criteria/jattr_combinator entirely -- must
+    not crash parsing, must default to empty/"any"."""
+    payload = json.dumps({
+        "interpretation": "x",
+        "queries": [{"source": "SRA_METADATA", "sql": "SELECT biosample FROM sra_metadata"}],
+        "failure": None,
+    })
+
+    translation = GeminiBackend(StubClient(payload), model="test-model").translate(_prompt())
+
+    query = translation.queries[0]
+    assert query.jattr_criteria == ()
+    assert query.jattr_combinator == "any"
+
+
 def test_a_refusal_becomes_a_failure_sentence_with_no_queries():
     """The model saying "I can't" is a first-class outcome, not an exception. It reaches
     the user as Plan.error and _guard_runnable refuses to run()."""

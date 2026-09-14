@@ -26,7 +26,7 @@ from pathlib import Path
 
 from askslm import runtime
 from askslm.build import BuildReport, Materialization
-from askslm.cohort import Accession, Cohort, CohortDiscovery, InvalidCohortQuery
+from askslm.cohort import Accession, Cohort, InvalidCohortQuery
 from askslm.plan import CohortPreview, Plan, TranslationError, load_plan
 from askslm.ports import Database, LlmBackend
 from askslm.profiles import ProfileReader
@@ -99,10 +99,17 @@ def _sql_for(translation: Translation, source: Source) -> str:
 
 
 def _with_sql(translation: Translation, source: Source, sql: str) -> Translation:
-    queries = tuple(SourceQuery(query.source, sql) if query.source is source else query
+    queries = tuple(_replace_sql(query, sql) if query.source is source else query
                     for query in translation.queries)
     return Translation(interpretation=translation.interpretation, queries=queries,
                        failure=translation.failure)
+
+
+def _replace_sql(query: SourceQuery, sql: str) -> SourceQuery:
+    """Repair only ever rewrites `sql` -- the jattr_criteria/jattr_combinator
+    half of the query was never rejected by DuckDB and must survive unchanged."""
+    return SourceQuery(query.source, sql, jattr_criteria=query.jattr_criteria,
+                       jattr_combinator=query.jattr_combinator)
 
 
 def _columns_of(source: Source) -> str:
@@ -118,7 +125,7 @@ class _Discovery:
 
 
 def _discover(translation: Translation) -> _Discovery:
-    cohort = CohortDiscovery(runtime.database()).discover(translation.queries)
+    cohort = runtime.criterion_resolver().discover(translation.queries)
     reader = ProfileReader(runtime.database())
     preview = CohortPreview(
         by_metadata_source={source: len(keys) for source, keys in cohort.by_source.items()},
