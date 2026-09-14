@@ -42,7 +42,6 @@ from pathlib import Path
 
 import duckdb
 import lancedb
-import pyarrow as pa
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from askslm.adapters import attach_sidecars          # noqa: E402
@@ -96,17 +95,6 @@ def _ivf_num_partitions(row_count: int) -> int:
     heuristic = max(1, int(row_count ** 0.5))
     max_supported = max(1, row_count // LANCE_MIN_ROWS_PER_PARTITION)
     return min(heuristic, max_supported)
-
-
-def _lance_schema(text_column: str, dim: int) -> pa.Schema:
-    """Same shape for both tables -- only the text column name differs (`key`
-    vs `value`), per the interface contract shared with jattr_concepts.py and
-    the test fixtures being written in parallel."""
-    return pa.schema([
-        pa.field(text_column, pa.string()),
-        pa.field("embedding", pa.list_(pa.float32(), dim)),
-        pa.field("biosample", pa.list_(pa.string())),
-    ])
 
 
 NUMERIC_RE = re.compile(r"^-?\d+(\.\d+)?([eE]-?\d+)?$")
@@ -492,9 +480,13 @@ class AttributeIndexBuilder:
             f"SELECT {text_column}, embedding, biosample FROM {duckdb_table}"
         ).fetch_record_batch(rows_per_batch=LANCE_WRITE_BATCH_ROWS)
         db = lancedb.connect(str(lance_dir.parent))
-        table = db.create_table(lance_dir.stem, data=reader,
-                                schema=_lance_schema(text_column, self.dim),
-                                mode="overwrite")
+        # No explicit schema: arrow_large_buffer_size makes DuckDB emit
+        # large_string/large_list types for this data, and a hand-declared
+        # regular-string schema forces a cast that fails on the very data too
+        # big to fit without large buffers in the first place (confirmed live
+        # 2026-09-14: "Failed casting from large_string to string: input array
+        # too large"). Infer from the reader's own (correct) schema instead.
+        table = db.create_table(lance_dir.stem, data=reader, mode="overwrite")
         self._create_ivf_pq_index(table, expected_rows)
         _log(f"  {lance_dir.name} written ({time.monotonic() - start:.1f}s)")
 
