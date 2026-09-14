@@ -115,6 +115,24 @@ ID_NAME_RE = re.compile(
     r"^ena_|^sra_|ncbi|_gid$|run_|index|number|code$)", re.IGNORECASE)
 ID_VALUE_RE = re.compile(r"^[A-Za-z0-9]{16,}$")
 
+# Submission/lab-process bookkeeping, not sample biology -- found live 2026-09-14
+# investigating attribute_keys_index's most-skewed rows (primary_search alone
+# touches all 39.1M sra_metadata rows). Deliberately narrow: broad-but-real
+# biological fields (host_disease_sam, tissue_sam, collection_date_sam...) also
+# have huge biosample counts and stay IN the index -- high coverage means "many
+# samples record this fact", not "worthless". Precision for a specific query
+# like "IBD" vs. a generic key like host_disease_sam is a similarity-threshold
+# problem at query time (see jattr_concepts.py's TOP_K), not a build-time
+# deletion -- this denylist is only for keys that carry no biological signal at
+# all, regardless of coverage.
+ADMIN_KEY_RE = re.compile(
+    r"^primary_search$|^insdc_|collector_name|collected_by|collecting_institution|"
+    r"broker_name|sequenced_by|project_name|study_name|research_project|"
+    r"sample_center|experiment_center|work_request|^phs$|gap_parent_phs|"
+    r"submission_tool|processing_robot|extraction_robot|_tool_exp$|extractionkit_lot|"
+    r"water_lot|^plating_exp$|instrument_name|library_type|alignment_software|"
+    r"^lane_run$|avgreadlength|^coverage_run$|nominal_length", re.IGNORECASE)
+
 # Per-VALUE filter applied at extraction time, in SQL, on every individual value
 # regardless of which key it came from -- classify_key's per-KEY sample vote lets
 # numeric/date/id values through whenever they're mixed into an otherwise-textual
@@ -144,6 +162,8 @@ def classify_key(key: str, samples: list[str]) -> str:
         return "numeric"
     if ID_NAME_RE.search(key):
         return "id_like_name"
+    if ADMIN_KEY_RE.search(key):
+        return "administrative_metadata"
     if all(ID_VALUE_RE.match(s.replace(" ", "")) for s in samples) and any(
         any(c.isdigit() for c in s) for s in samples
     ):
