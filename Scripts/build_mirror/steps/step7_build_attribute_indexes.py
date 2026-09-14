@@ -514,7 +514,8 @@ class AttributeIndexBuilder:
             return
         try:
             table.create_index(index_type="IVF_PQ", num_partitions=num_partitions,
-                              num_sub_vectors=LANCE_NUM_SUB_VECTORS, metric="cosine")
+                              num_sub_vectors=LANCE_NUM_SUB_VECTORS, metric="cosine",
+                              vector_column_name="embedding")
         except Exception as exc:
             # LanceDB errors (rather than degrades) when a table has too few
             # rows to train the requested number of partitions -- the table
