@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -338,6 +339,8 @@ def open_local_embedder() -> LocalEmbedder:
     use -- unlogged otherwise, this one-time download/load showed up as an
     unexplained multi-minute gap between SQL log lines (2026-09-06 run)."""
     start = time.monotonic()
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
     from transformers import AutoModel, AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(LocalEmbedder.MODEL_NAME)
