@@ -482,6 +482,12 @@ class AttributeIndexBuilder:
             return
         _log(f"  writing {lance_dir.name} ({expected_rows} rows)...")
         start = time.monotonic()
+        # A single 100K-row batch can hold a row like "Homo sapiens" (11M+
+        # biosamples) whose serialized biosample-list string data alone
+        # approaches Arrow's classic 2GB (int32-offset) string buffer limit --
+        # confirmed live on the real attribute_values_index build 2026-09-14.
+        # 64-bit offsets remove that ceiling.
+        con.execute("SET arrow_large_buffer_size=true")
         reader = con.execute(
             f"SELECT {text_column}, embedding, biosample FROM {duckdb_table}"
         ).fetch_record_batch(rows_per_batch=LANCE_WRITE_BATCH_ROWS)
