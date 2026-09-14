@@ -42,7 +42,6 @@ from pathlib import Path
 
 import duckdb
 import lancedb
-import pyarrow as pa
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from askslm.adapters import attach_sidecars          # noqa: E402
@@ -63,11 +62,14 @@ EXTRACTION_BATCH_SIZE = 250
 # is a starting point, not a measured optimum.
 EMBED_CHUNK_SIZE = 50_000
 
-# LanceDB write path, added alongside the DuckDB/HNSW path above while the two
-# are compared -- see step7's module docstring in the PR that introduced this.
+# Search now goes through LanceDB/IVF_PQ, not DuckDB's vss/HNSW extension.
 # HNSW's graph-walk rematerializes fully into RAM on every fresh connection
 # (confirmed live: ~14min/~90GB RSS cold-query against the 14.9M-row values
-# table); IVF_PQ's cluster-based access pattern is disk-friendly instead.
+# table, regardless of OS page-cache warmth); IVF_PQ's cluster-based access
+# pattern is disk-friendly instead. The DuckDB tables below are now purely a
+# computation staging area for extraction/dedup/embedding -- attribute_keys_index
+# and attribute_values_index are read from here once and streamed into Lance;
+# nothing queries them via DuckDB SQL anymore.
 
 # rows written per Arrow batch when streaming a DuckDB table into Lance -- keeps
 # peak memory bounded for the 14.9M-row values table without adding a second
@@ -96,17 +98,6 @@ def _ivf_num_partitions(row_count: int) -> int:
     heuristic = max(1, int(row_count ** 0.5))
     max_supported = max(1, row_count // LANCE_MIN_ROWS_PER_PARTITION)
     return min(heuristic, max_supported)
-
-
-def _lance_schema(text_column: str, dim: int) -> pa.Schema:
-    """Same shape for both tables -- only the text column name differs (`key`
-    vs `value`), per the interface contract shared with jattr_concepts.py and
-    the test fixtures being written in parallel."""
-    return pa.schema([
-        pa.field(text_column, pa.string()),
-        pa.field("embedding", pa.list_(pa.float32(), dim)),
-        pa.field("biosample", pa.list_(pa.string())),
-    ])
 
 
 NUMERIC_RE = re.compile(r"^-?\d+(\.\d+)?([eE]-?\d+)?$")
@@ -272,16 +263,14 @@ class AttributeIndexBuilder:
         """PRESENCE table: which biosamples have this key at all, regardless of
         value. Cheap -- reuses the key-only unnest, no value extraction.
 
-        Resumable the same way as attribute_values_index: if the table AND its
-        HNSW index already exist, skip rebuilding entirely. Without this check
-        a script restart (SLURM requeue, or a retry after attribute_values_index
-        fails downstream) silently drops and redoes ~60-70min of already-correct
-        work every time -- confirmed wasted 2026-09-10/11 across three restarts
-        of the real build."""
+        Resumable the same way as attribute_values_index: if the table already
+        has rows, skip rebuilding entirely. Without this check a script restart
+        (SLURM requeue, or a retry after attribute_values_index fails downstream)
+        silently drops and redoes ~60-70min of already-correct work every time --
+        confirmed wasted 2026-09-10/11 across three restarts of the real build."""
         start = time.monotonic()
-        if self._index_built(con, "attribute_keys_index"):
-            _log("attribute_keys_index already built and indexed (resuming) -- "
-                "skipping")
+        if self._table_has_rows(con, "attribute_keys_index"):
+            _log("attribute_keys_index already built (resuming) -- skipping")
             return
         _log("building attribute_keys_index (presence)...")
         con.execute("DROP TABLE IF EXISTS attribute_keys_index")
@@ -305,7 +294,6 @@ class AttributeIndexBuilder:
         con.executemany(
             "INSERT INTO attribute_keys_index VALUES (?, ?, ?)",
             [(key, vector, row[1]) for key, vector, row in zip(keys, vectors, rows)])
-        self._create_hnsw_index(con, "attribute_keys_index")
         con.execute("DROP TABLE key_presence")
         _log(f"  {len(keys)} keys indexed ({time.monotonic() - start:.1f}s)")
 
@@ -333,36 +321,17 @@ class AttributeIndexBuilder:
             _log("  values already extracted and persisted (resuming) -- "
                 f"skipping extraction+dedup")
         self._embed_values_in_chunks(con, self.embed_chunk_size)
-        self._create_hnsw_index(con, "attribute_values_index")
         _log(f"  attribute_values_index built ({time.monotonic() - start:.1f}s total)")
 
     def _values_extracted(self, con: duckdb.DuckDBPyConnection) -> bool:
-        exists = con.execute(
-            "SELECT count(*) FROM duckdb_tables() WHERE table_name = 'attribute_values_index'"
-        ).fetchone()[0]
-        return bool(exists) and con.execute(
-            "SELECT count(*) FROM attribute_values_index").fetchone()[0] > 0
+        return self._table_has_rows(con, "attribute_values_index")
 
-    def _index_built(self, con: duckdb.DuckDBPyConnection, table: str) -> bool:
-        """True iff `table` exists, has rows, and already has an HNSW index --
-        i.e. this table is fully done and must never be dropped/rebuilt again.
-        DuckDB's CREATE INDEX ... USING HNSW is one atomic call with no native
-        mid-build checkpointing, so a crash *during* index construction can't be
-        resumed from a partial graph -- but a crash *after* it succeeds must not
-        cost a redo either. This is the check that prevents that (confirmed live
-        2026-09-11: the HNSW build over 14.9M values OOM-killed the job right
-        after all 14.9M values had already been durably embedded -- a rerun must
-        not re-embed, and once the HNSW build itself succeeds, a rerun must not
-        redo that either)."""
+    def _table_has_rows(self, con: duckdb.DuckDBPyConnection, table: str) -> bool:
         exists = con.execute(
             "SELECT count(*) FROM duckdb_tables() WHERE table_name = ?", [table]
         ).fetchone()[0]
-        if not exists or con.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0:
-            return False
-        has_index = con.execute(
-            "SELECT count(*) FROM duckdb_indexes() WHERE table_name = ?", [table]
-        ).fetchone()[0]
-        return bool(has_index)
+        return bool(exists) and con.execute(
+            f"SELECT count(*) FROM {table}").fetchone()[0] > 0
 
     def _extract_and_persist_values(self, con: duckdb.DuckDBPyConnection,
                                     useful_keys: list[str], start: float) -> None:
@@ -449,23 +418,6 @@ class AttributeIndexBuilder:
                 f"({time.monotonic() - embed_start:.1f}s elapsed this run)")
         con.execute("DROP TABLE IF EXISTS chunk_vectors")
 
-    def _create_hnsw_index(self, con: duckdb.DuckDBPyConnection, table: str) -> None:
-        con.execute("INSTALL vss")
-        con.execute("LOAD vss")
-        con.execute("SET hnsw_enable_experimental_persistence = true")
-        existing = con.execute(
-            "SELECT count(*) FROM duckdb_indexes() WHERE table_name = ?", [table]
-        ).fetchone()[0]
-        if existing:
-            # Skip, don't drop+rebuild: HNSW construction over 14.9M vectors is
-            # itself the expensive, crash-prone step (OOM-killed once already,
-            # 2026-09-11) -- a retry must never discard a successfully-built
-            # index just because some later step in the script failed.
-            _log(f"  {table}: HNSW index already exists (resuming) -- skipping")
-            return
-        con.execute(f"CREATE INDEX {table}_idx ON {table} USING HNSW (embedding) "
-                    "WITH (metric = 'cosine')")
-
     def _write_lance_table(self, con: duckdb.DuckDBPyConnection, duckdb_table: str,
                            text_column: str, lance_dir: Path) -> None:
         """Reads the already-embedded rows straight out of the DuckDB table built
@@ -482,13 +434,23 @@ class AttributeIndexBuilder:
             return
         _log(f"  writing {lance_dir.name} ({expected_rows} rows)...")
         start = time.monotonic()
+        # A single 100K-row batch can hold a row like "Homo sapiens" (11M+
+        # biosamples) whose serialized biosample-list string data alone
+        # approaches Arrow's classic 2GB (int32-offset) string buffer limit --
+        # confirmed live on the real attribute_values_index build 2026-09-14.
+        # 64-bit offsets remove that ceiling.
+        con.execute("SET arrow_large_buffer_size=true")
         reader = con.execute(
             f"SELECT {text_column}, embedding, biosample FROM {duckdb_table}"
         ).fetch_record_batch(rows_per_batch=LANCE_WRITE_BATCH_ROWS)
         db = lancedb.connect(str(lance_dir.parent))
-        table = db.create_table(lance_dir.stem, data=reader,
-                                schema=_lance_schema(text_column, self.dim),
-                                mode="overwrite")
+        # No explicit schema: arrow_large_buffer_size makes DuckDB emit
+        # large_string/large_list types for this data, and a hand-declared
+        # regular-string schema forces a cast that fails on the very data too
+        # big to fit without large buffers in the first place (confirmed live
+        # 2026-09-14: "Failed casting from large_string to string: input array
+        # too large"). Infer from the reader's own (correct) schema instead.
+        table = db.create_table(lance_dir.stem, data=reader, mode="overwrite")
         self._create_ivf_pq_index(table, expected_rows)
         _log(f"  {lance_dir.name} written ({time.monotonic() - start:.1f}s)")
 
@@ -508,7 +470,8 @@ class AttributeIndexBuilder:
             return
         try:
             table.create_index(index_type="IVF_PQ", num_partitions=num_partitions,
-                              num_sub_vectors=LANCE_NUM_SUB_VECTORS, metric="cosine")
+                              num_sub_vectors=LANCE_NUM_SUB_VECTORS, metric="cosine",
+                              vector_column_name="embedding")
         except Exception as exc:
             # LanceDB errors (rather than degrades) when a table has too few
             # rows to train the requested number of partitions -- the table

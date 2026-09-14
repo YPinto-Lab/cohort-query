@@ -4,10 +4,12 @@
 #   1. sra_taxonomy_sorted.duckdb   tax_raw sorted by acc, narrowed to 4 columns   (~2 h)
 #   2. sra_metadata_sorted.duckdb   metadata_raw sorted by biosample, all columns  (~10 min)
 #   3. askslm_mirror.duckdb         views over 1 and 2 + Metalog tables + indexes  (~15 min)
-#   4. + attribute_keys_index/      jattr presence + content, embedding-indexed    (~4-6 h,
-#      attribute_values_index       needs a high-memory node -- the HNSW build over
-#                                    ~15M values OOM-killed at 185GB, needed 450GB+
-#                                    measured live on the real mirror 2026-09-11/12)
+#   4. + attribute_keys_index/      jattr presence + content, embedded and written  (~4-6 h,
+#      attribute_values_index       into LanceDB with an IVF_PQ index for search --
+#                                    extraction+embedding dominates the time, not
+#                                    indexing; unlike the DuckDB HNSW index this
+#                                    replaced, the IVF_PQ build itself is cheap on
+#                                    memory, ~2GB RSS measured live 2026-09-14)
 #   5. + schema_catalog             columns and value vocabularies for the prompt   (~1 min)
 #   6. + *_embeddings               local SapBERT vectors for concept search        (~10 min)
 #
@@ -125,10 +127,12 @@ fi
 # columns, and sorting compresses better); 0.6x leaves room for the merge-sort spill.
 free_gb=$(df -BG --output=avail "$OUT_DIR" | tail -1 | tr -dc '0-9')
 case "$STAGE" in
-    # attribute_values_index alone is ~45GB of embeddings (14.9M rows x 768 floats)
-    # before its HNSW index, measured on the real mirror 2026-09-12; the rest of
-    # this stage's tables are small by comparison.
-    enrich) need=80 ;;
+    # attribute_values_index's ~45GB of embeddings (14.9M rows x 768 floats,
+    # measured on the real mirror 2026-09-12) is now stored TWICE -- once in its
+    # DuckDB staging table, once in the LanceDB dataset built from it -- plus a
+    # ~1.5GB IVF_PQ index (measured live 2026-09-14). The rest of this stage's
+    # tables are small by comparison.
+    enrich) need=110 ;;
     mirror) need=$(( $(du -BG -s "$TAXONOMY" 2>/dev/null | tr -dc '0-9' || echo 50) / 5 + 5 )) ;;
     *)      need=$(( $(du -BG -s "$SRA_DB" | tr -dc '0-9') * 6 / 10 + 5 )) ;;
 esac
@@ -175,13 +179,14 @@ fi
 echo "--- verifying the mirror is complete"
 "$PY" - "$MIRROR" "$HERE" <<'PYEOF'
 import sys, duckdb
+from pathlib import Path
 sys.path.insert(0, f"{sys.argv[2]}/../../src")
-from askslm.adapters import missing_tables, REQUIRED_TABLES   # one definition, shared
+from askslm.adapters import missing_tables, missing_lance_tables, REQUIRED_TABLES, REQUIRED_LANCE_TABLES
 con = duckdb.connect(sys.argv[1], read_only=True)
-absent = missing_tables(con)
+absent = missing_tables(con) + [f"{name}.lance" for name in missing_lance_tables(Path(sys.argv[1]).parent)]
 if absent:
     raise SystemExit(f"INCOMPLETE MIRROR -- missing: {absent}")
-print(f"  all {len(REQUIRED_TABLES)} required tables/views present")
+print(f"  all {len(REQUIRED_TABLES) + len(REQUIRED_LANCE_TABLES)} required tables/views present")
 PYEOF
 
 echo "=== done at $(date -Is) ==="

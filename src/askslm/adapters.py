@@ -40,9 +40,14 @@ REQUIRED_TABLES = frozenset({
     "sra_metadata", "sra_taxonomy", "stat_coverage",
     "metalog_metadata", "metalog_metaphlan4", "metalog_motus3", "metalog_spire_motus",
     "schema_catalog",            # columns + real value vocabularies for the prompt
+    "column_value_embeddings",   # concept search over native low-cardinality column values
+})
+
+# jattr search lives in LanceDB now, not the DuckDB catalog -- these are directory
+# names (mirror_path.parent / f"{name}.lance"), checked on disk, not via SQL.
+REQUIRED_LANCE_TABLES = frozenset({
     "attribute_keys_index",      # jattr PRESENCE: has this key at all, any value?
     "attribute_values_index",    # jattr CONTENT: has a value that means X, under any key
-    "column_value_embeddings",   # concept search over native low-cardinality column values
 })
 
 
@@ -61,6 +66,13 @@ def missing_tables(connection) -> list[str]:
     return sorted(REQUIRED_TABLES - present)
 
 
+def missing_lance_tables(mirror_dir: Path) -> list[str]:
+    """Which REQUIRED_LANCE_TABLES are missing beside the mirror file. A Lance
+    dataset is a directory, not a DuckDB catalog entry -- checked on disk."""
+    return sorted(name for name in REQUIRED_LANCE_TABLES
+                 if not (mirror_dir / f"{name}.lance").exists())
+
+
 def verify_mirror(database, db_path=None) -> None:
     """Fail at open time, naming the missing tables and the command that adds them.
 
@@ -71,8 +83,14 @@ def verify_mirror(database, db_path=None) -> None:
 
     Goes through the Database port's own `query`, never a private attribute, so any
     implementation of the port -- including a test double -- can be verified.
+
+    The Lance check only runs when `db_path` is given -- same precedent as
+    `mirror_config` being optional: a test double with no real file on disk has
+    nowhere to look for a sibling `.lance` directory.
     """
     absent = sorted(REQUIRED_TABLES - set(database.query(_PRESENT_SQL)["name"]))
+    if db_path is not None:
+        absent += [f"{name}.lance" for name in missing_lance_tables(Path(db_path).parent)]
     if not absent:
         return
     where = f" at {db_path}" if db_path else ""
