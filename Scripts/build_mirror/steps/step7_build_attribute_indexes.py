@@ -41,6 +41,8 @@ import time
 from pathlib import Path
 
 import duckdb
+import lancedb
+import pyarrow as pa
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from askslm.adapters import attach_sidecars          # noqa: E402
@@ -60,6 +62,52 @@ EXTRACTION_BATCH_SIZE = 250
 # tuned against the real mirror's true scale (millions of distinct values); this
 # is a starting point, not a measured optimum.
 EMBED_CHUNK_SIZE = 50_000
+
+# LanceDB write path, added alongside the DuckDB/HNSW path above while the two
+# are compared -- see step7's module docstring in the PR that introduced this.
+# HNSW's graph-walk rematerializes fully into RAM on every fresh connection
+# (confirmed live: ~14min/~90GB RSS cold-query against the 14.9M-row values
+# table); IVF_PQ's cluster-based access pattern is disk-friendly instead.
+
+# rows written per Arrow batch when streaming a DuckDB table into Lance -- keeps
+# peak memory bounded for the 14.9M-row values table without adding a second
+# chunking scheme distinct from EMBED_CHUNK_SIZE above.
+LANCE_WRITE_BATCH_ROWS = 100_000
+
+# num_sub_vectors for IVF_PQ: dim(768) / 8, a common starting ratio for product
+# quantization. Placeholder, not yet tuned -- same convention as this file's own
+# TOP_K-style placeholders elsewhere in the codebase (e.g. jattr_concepts.py's
+# TOP_K = 5). Revisit once the full 14.9M-row build actually runs.
+LANCE_NUM_SUB_VECTORS = 96
+
+# LanceDB's own rule of thumb wants a few hundred training vectors per IVF
+# partition; below that it warns or errors about insufficient training data.
+# Used to clamp num_partitions down for small tables (the 21,430-row keys
+# table) instead of crashing the whole build.
+LANCE_MIN_ROWS_PER_PARTITION = 256
+
+
+def _ivf_num_partitions(row_count: int) -> int:
+    """sqrt(row_count) is the textbook IVF starting point -- ~146 partitions for
+    the 21,430-row keys table, ~3,860 for a 14.9M-row values table. Unverified,
+    needs real tuning once the full build runs (see LANCE_NUM_SUB_VECTORS).
+    Clamped so a table never asks for more partitions than it has training
+    vectors for at LANCE_MIN_ROWS_PER_PARTITION each."""
+    heuristic = max(1, int(row_count ** 0.5))
+    max_supported = max(1, row_count // LANCE_MIN_ROWS_PER_PARTITION)
+    return min(heuristic, max_supported)
+
+
+def _lance_schema(text_column: str, dim: int) -> pa.Schema:
+    """Same shape for both tables -- only the text column name differs (`key`
+    vs `value`), per the interface contract shared with jattr_concepts.py and
+    the test fixtures being written in parallel."""
+    return pa.schema([
+        pa.field(text_column, pa.string()),
+        pa.field("embedding", pa.list_(pa.float32(), dim)),
+        pa.field("biosample", pa.list_(pa.string())),
+    ])
+
 
 NUMERIC_RE = re.compile(r"^-?\d+(\.\d+)?([eE]-?\d+)?$")
 ID_NAME_RE = re.compile(
@@ -125,8 +173,18 @@ class AttributeIndexBuilder:
         useful_keys = self._useful_text_keys(con)
         self._build_keys_index(con, useful_keys)
         self._build_values_index(con, useful_keys)
+        self._write_lance_table(con, "attribute_keys_index", "key", self._lance_keys_dir)
+        self._write_lance_table(con, "attribute_values_index", "value", self._lance_values_dir)
         self._report(con)
         con.close()
+
+    @property
+    def _lance_keys_dir(self) -> Path:
+        return self.db_path.parent / "attribute_keys_index.lance"
+
+    @property
+    def _lance_values_dir(self) -> Path:
+        return self.db_path.parent / "attribute_values_index.lance"
 
     def _configure(self, con: duckdb.DuckDBPyConnection) -> None:
         """Same convention as step3_assemble_mirror.py: this touches millions of
@@ -373,6 +431,57 @@ class AttributeIndexBuilder:
             return
         con.execute(f"CREATE INDEX {table}_idx ON {table} USING HNSW (embedding) "
                     "WITH (metric = 'cosine')")
+
+    def _write_lance_table(self, con: duckdb.DuckDBPyConnection, duckdb_table: str,
+                           text_column: str, lance_dir: Path) -> None:
+        """Reads the already-embedded rows straight out of the DuckDB table built
+        above (extraction, dedup, and embedding are NOT redone here) and streams
+        them into a sibling LanceDB dataset with an IVF_PQ index. See this file's
+        module-level LanceDB comment for why IVF_PQ instead of HNSW.
+
+        Resumable the same way as the DuckDB tables: if the Lance dataset already
+        has the expected row count, skip the (expensive, full-table) rewrite."""
+        expected_rows = con.execute(f"SELECT count(*) FROM {duckdb_table}").fetchone()[0]
+        if self._lance_table_built(lance_dir, expected_rows):
+            _log(f"  {lance_dir.name} already built ({expected_rows} rows, "
+                "resuming) -- skipping")
+            return
+        _log(f"  writing {lance_dir.name} ({expected_rows} rows)...")
+        start = time.monotonic()
+        reader = con.execute(
+            f"SELECT {text_column}, embedding, biosample FROM {duckdb_table}"
+        ).fetch_record_batch(rows_per_batch=LANCE_WRITE_BATCH_ROWS)
+        db = lancedb.connect(str(lance_dir.parent))
+        table = db.create_table(lance_dir.stem, data=reader,
+                                schema=_lance_schema(text_column, self.dim),
+                                mode="overwrite")
+        self._create_ivf_pq_index(table, expected_rows)
+        _log(f"  {lance_dir.name} written ({time.monotonic() - start:.1f}s)")
+
+    def _lance_table_built(self, lance_dir: Path, expected_rows: int) -> bool:
+        if not lance_dir.exists():
+            return False
+        db = lancedb.connect(str(lance_dir.parent))
+        if lance_dir.stem not in db.table_names():
+            return False
+        return db.open_table(lance_dir.stem).count_rows() == expected_rows
+
+    def _create_ivf_pq_index(self, table: "lancedb.table.Table", row_count: int) -> None:
+        num_partitions = _ivf_num_partitions(row_count)
+        if num_partitions < 2:
+            _log(f"    skipping IVF_PQ index: {row_count} rows is too few to "
+                "partition meaningfully -- revisit once real row counts are known")
+            return
+        try:
+            table.create_index(index_type="IVF_PQ", num_partitions=num_partitions,
+                              num_sub_vectors=LANCE_NUM_SUB_VECTORS, metric="cosine")
+        except Exception as exc:
+            # LanceDB errors (rather than degrades) when a table has too few
+            # rows to train the requested number of partitions -- the table
+            # itself is still written and usable via brute-force scan, so a
+            # failed index build here must not crash the whole step.
+            _log(f"    IVF_PQ index build failed ({exc}) -- table written but "
+                "unindexed, revisit once real row counts are known")
 
     def _report(self, con: duckdb.DuckDBPyConnection) -> None:
         keys, values = con.execute(

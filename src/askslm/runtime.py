@@ -9,12 +9,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import lancedb
+
 from askslm.adapters import DuckDbConnection, verify_mirror
 from askslm.build import BiomFactory, CohortBuilder
 from askslm.catalog import SchemaCatalog
 from askslm.cohort import CriterionResolver
 from askslm.concept_search import ConceptIndex, Embedder
-from askslm.jattr_concepts import JattrConceptIndex
+from askslm.jattr_concepts import JattrConceptIndex, LanceAttributeIndexes
 from askslm.metadata import MetadataReader, MetadataReconciler
 from askslm.ports import Database, LlmBackend
 from askslm.profiles import ProfileReader, ProfileReconciler
@@ -138,7 +140,18 @@ class _LazyEmbedder:
 
 def criterion_resolver() -> CriterionResolver:
     connection = database()
-    return CriterionResolver(connection, JattrConceptIndex(connection, embedder=_LazyEmbedder()))
+    indexes = _lance_attribute_indexes()
+    return CriterionResolver(connection, JattrConceptIndex(indexes, embedder=_LazyEmbedder()))
+
+
+def _lance_attribute_indexes() -> LanceAttributeIndexes:
+    """The two jattr search tables live as Lance datasets beside the DuckDB mirror
+    file -- same directory `step7_build_attribute_indexes.py` writes them into."""
+    mirror_directory = _require_settings().db_path.parent
+    connection = lancedb.connect(mirror_directory)
+    return LanceAttributeIndexes(
+        keys_table=connection.open_table("attribute_keys_index"),
+        values_table=connection.open_table("attribute_values_index"))
 
 
 def cohort_builder() -> CohortBuilder:

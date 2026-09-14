@@ -1,10 +1,9 @@
-"""Proves the real SQL against a real DuckDB file -- the unit tests in
-test_jattr_concepts.py fake the Database port; this one does not."""
-from askslm.adapters import DuckDbConnection
+"""Proves real vector search against real Lance tables -- the unit tests in
+test_jattr_concepts.py fake the two Lance table handles; this one does not."""
 from askslm.concept_search import EMBED_DIM
 from askslm.jattr_concepts import JattrConceptIndex
 from askslm.translation import JattrCriterion
-from fixtures.mirror import build_fixture_mirror
+from fixtures.mirror import build_fixture_mirror, open_fixture_attribute_indexes
 
 
 class _FixtureEmbedder:
@@ -24,18 +23,16 @@ class _FixtureEmbedder:
         return vector
 
 
-def test_a_short_acronym_finds_ibd_sam_through_real_duckdb_vss(tmp_path):
+def test_a_short_acronym_finds_ibd_sam_through_real_lance_search(tmp_path):
     """The bug this feature exists to fix: "IBD" (3 chars) shares no substring
     with ibd_sam. Embedding search finds it by meaning, through the real
-    attribute_keys_index table and a real HNSW query, not a fake."""
+    attribute_keys_index Lance table and a real (brute-force, unindexed at
+    this scale) vector search, not a fake."""
     path = build_fixture_mirror(tmp_path / "fixture.duckdb")
-    connection = DuckDbConnection(path)
-    try:
-        index = JattrConceptIndex(connection, embedder=_FixtureEmbedder())
+    indexes = open_fixture_attribute_indexes(path)
+    index = JattrConceptIndex(indexes, embedder=_FixtureEmbedder())
 
-        found = index.matching((JattrCriterion(concept="IBD"),))
+    found = index.matching((JattrCriterion(concept="IBD"),))
 
-        matched_on = {match.matched_on for match in found["IBD"]}
-        assert "ibd_sam" in matched_on
-    finally:
-        connection.close()
+    matched_on = {match.matched_on for match in found["IBD"]}
+    assert "ibd_sam" in matched_on

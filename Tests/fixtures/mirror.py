@@ -32,8 +32,10 @@ import sys
 from pathlib import Path
 
 import duckdb
+import lancedb
 
 from askslm.concept_search import EMBED_DIM
+from askslm.jattr_concepts import LanceAttributeIndexes
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "Scripts" / "build_mirror" / "steps"))
 from step7_build_attribute_indexes import AttributeIndexBuilder
@@ -92,6 +94,21 @@ def build_fixture_mirror(path: Path) -> Path:
     ConceptEmbeddingBuilder(path, embedder=_FixtureEmbedder(), dim=EMBED_DIM).build()
 
     return path
+
+
+def open_fixture_attribute_indexes(mirror_path: Path) -> LanceAttributeIndexes:
+    """Open the two Lance datasets AttributeIndexBuilder.build() writes as
+    siblings of the fixture DuckDB file (attribute_keys_index.lance,
+    attribute_values_index.lance -- see step7's _write_lance_table), ready to
+    hand to JattrConceptIndex. At fixture scale (a handful of rows) these
+    tables carry no IVF_PQ index -- step7 skips the index build below its own
+    LANCE_MIN_ROWS_PER_PARTITION floor, and an unindexed Lance table still
+    answers .search() correctly via brute-force scan, which is exactly what a
+    tiny test fixture needs."""
+    db = lancedb.connect(str(mirror_path.parent))
+    return LanceAttributeIndexes(
+        keys_table=db.open_table("attribute_keys_index"),
+        values_table=db.open_table("attribute_values_index"))
 
 
 # --- SRA side -------------------------------------------------------------

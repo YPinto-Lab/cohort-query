@@ -4,32 +4,44 @@ per-criterion "which table" judgment call. See jattr_concepts.py."""
 import pandas as pd
 
 from askslm.accession import Accession
-from askslm.jattr_concepts import JattrConceptIndex
+from askslm.jattr_concepts import JattrConceptIndex, LanceAttributeIndexes
 from askslm.translation import JattrCriterion
 
 
-class _FakeIndexDatabase:
-    """Stands in for the Database port over attribute_keys_index /
-    attribute_values_index. `key_rows` is (key, biosample_list, vector);
-    `value_rows` is (value, biosample_list, vector)."""
+class _FakeLanceTable:
+    """Stands in for a Lance table handle (LanceAttributeIndexes.keys_table /
+    values_table). `rows` is (text, biosample_list, vector); `column` is
+    "key" or "value" -- the table's own text column name, matching the real
+    Lance schema so JattrConceptIndex's itertuples() row.key / row.value
+    access works unchanged against the fake."""
 
-    def __init__(self, key_rows=(), value_rows=()):
-        self._key_rows = key_rows
-        self._value_rows = value_rows
+    def __init__(self, rows, column):
+        self._rows = rows
+        self._column = column
 
-    def query(self, sql, params=None):
-        query_vector = params[0]
-        limit = params[1]
-        if "attribute_keys_index" in sql:
-            return _scored_frame(self._key_rows, query_vector, limit, "key")
-        return _scored_frame(self._value_rows, query_vector, limit, "value")
+    def search(self, query_vector):
+        return _FakeSearch(self._rows, query_vector, self._column)
 
 
-def _scored_frame(rows, query_vector, limit, column):
-    scored = sorted(rows, key=_distance_to(query_vector))
-    top = scored[:limit]
-    return pd.DataFrame([(name, biosamples) for name, biosamples, _ in top],
-                        columns=[column, "biosample"])
+class _FakeSearch:
+    """Stands in for the Lance query builder .search(vector).limit(n) returns,
+    ending in .to_pandas() -- exactly the chain JattrConceptIndex calls."""
+
+    def __init__(self, rows, query_vector, column):
+        self._rows = rows
+        self._query_vector = query_vector
+        self._column = column
+        self._limit = len(rows)
+
+    def limit(self, n):
+        self._limit = n
+        return self
+
+    def to_pandas(self):
+        scored = sorted(self._rows, key=_distance_to(self._query_vector))
+        top = scored[:self._limit]
+        return pd.DataFrame([(name, biosamples) for name, biosamples, _ in top],
+                            columns=[self._column, "biosample"])
 
 
 def _distance(a, b):
@@ -40,6 +52,12 @@ def _distance_to(query_vector):
     def row_distance(row):
         return _distance(row[2], query_vector)
     return row_distance
+
+
+def _fake_indexes(key_rows=(), value_rows=()):
+    return LanceAttributeIndexes(
+        keys_table=_FakeLanceTable(key_rows, "key"),
+        values_table=_FakeLanceTable(value_rows, "value"))
 
 
 class _FakeEmbedder:
@@ -59,7 +77,7 @@ def test_a_presence_concept_matches_through_the_keys_table():
     """"calprotectin measurement" naturally lands on a KEY, via attribute_keys_index --
     no upfront "presence vs content" declaration needed."""
     index = JattrConceptIndex(
-        _FakeIndexDatabase(
+        _fake_indexes(
             key_rows=[("calprotectin_sam", ["SAMN001", "SAMN002"], CALPROTECTIN_VECTOR),
                      ("unrelated_key", ["SAMN099"], UNRELATED_VECTOR)]),
         embedder=_FakeEmbedder({"calprotectin measurement": CALPROTECTIN_VECTOR}))
@@ -75,7 +93,7 @@ def test_a_presence_concept_matches_through_the_keys_table():
 def test_a_content_concept_matches_through_the_values_table():
     """"IBD" naturally lands on a VALUE, via attribute_values_index."""
     index = JattrConceptIndex(
-        _FakeIndexDatabase(
+        _fake_indexes(
             value_rows=[("IBD", ["SAMN003"], IBD_VECTOR),
                        ("unrelated value", ["SAMN098"], UNRELATED_VECTOR)]),
         embedder=_FakeEmbedder({"IBD diagnosis": IBD_VECTOR}))
@@ -91,7 +109,7 @@ def test_both_tables_are_always_searched_and_unioned():
     searches always run, nothing is skipped based on a guess about which kind
     of match the concept "should" be."""
     index = JattrConceptIndex(
-        _FakeIndexDatabase(
+        _fake_indexes(
             key_rows=[("ibd_sam", ["SAMN001"], IBD_VECTOR)],
             value_rows=[("IBD", ["SAMN002"], IBD_VECTOR)]),
         embedder=_FakeEmbedder({"IBD": IBD_VECTOR}))
@@ -116,7 +134,7 @@ def test_multiple_criteria_embed_in_one_call():
             return [self._vectors[text] for text in texts]
 
     embedder = _SpyEmbedder({"IBD": IBD_VECTOR, "calprotectin measurement": CALPROTECTIN_VECTOR})
-    index = JattrConceptIndex(_FakeIndexDatabase(), embedder=embedder)
+    index = JattrConceptIndex(_fake_indexes(), embedder=embedder)
 
     index.matching((JattrCriterion(concept="IBD"),
                     JattrCriterion(concept="calprotectin measurement")))
@@ -129,6 +147,6 @@ def test_no_criteria_skips_the_embed_call_entirely():
         def embed(self, texts):
             raise AssertionError("embed() called with no criteria")
 
-    index = JattrConceptIndex(_FakeIndexDatabase(), embedder=_EmbedderThatMustNotBeCalled())
+    index = JattrConceptIndex(_fake_indexes(), embedder=_EmbedderThatMustNotBeCalled())
 
     assert index.matching(()) == {}

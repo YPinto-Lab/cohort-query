@@ -12,12 +12,12 @@ absent criterion). See the "Inverted Index Plan" design note.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
 
 from askslm.accession import Accession
-from askslm.concept_search import EMBED_DIM, Embedder
-from askslm.ports import Database
+from askslm.concept_search import Embedder
 from askslm.translation import JattrCriterion
 
 # Plain top-N per table, no distance cutoff -- same placeholder-not-yet-tuned
@@ -28,6 +28,15 @@ TOP_K = 5
 
 
 @dataclass(frozen=True)
+class LanceAttributeIndexes:
+    """The two Lance tables JattrConceptIndex searches -- keys (PRESENCE) and
+    values (CONTENT). Bundled so the constructor stays at one collaborator
+    instead of two positionally-similar table handles."""
+    keys_table: Any
+    values_table: Any
+
+
+@dataclass(frozen=True)
 class JattrMatch:
     concept: str                        # the criterion this match came from
     matched_on: str                     # the actual key or value found in the data
@@ -35,8 +44,8 @@ class JattrMatch:
 
 
 class JattrConceptIndex:
-    def __init__(self, database: Database, embedder: Embedder):
-        self._database = database
+    def __init__(self, indexes: LanceAttributeIndexes, embedder: Embedder):
+        self._indexes = indexes
         self._embedder = embedder
 
     def matching(self, criteria: tuple[JattrCriterion, ...]) -> dict[str, list[JattrMatch]]:
@@ -61,13 +70,7 @@ class JattrConceptIndex:
                           biosamples=frozenset(Accession(sample) for sample in biosamples))
 
     def _nearest_keys(self, vector: list[float]) -> pd.DataFrame:
-        return self._database.query(
-            "SELECT key, biosample FROM attribute_keys_index "
-            f"ORDER BY array_cosine_distance(embedding, ?::FLOAT[{EMBED_DIM}]) LIMIT ?",
-            [vector, TOP_K])
+        return self._indexes.keys_table.search(vector).limit(TOP_K).to_pandas()
 
     def _nearest_values(self, vector: list[float]) -> pd.DataFrame:
-        return self._database.query(
-            "SELECT value, biosample FROM attribute_values_index "
-            f"ORDER BY array_cosine_distance(embedding, ?::FLOAT[{EMBED_DIM}]) LIMIT ?",
-            [vector, TOP_K])
+        return self._indexes.values_table.search(vector).limit(TOP_K).to_pandas()
