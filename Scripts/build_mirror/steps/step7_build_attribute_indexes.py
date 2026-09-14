@@ -140,11 +140,25 @@ ADMIN_KEY_RE = re.compile(
 # resulting table were bare numbers). No space-stripping before the id-value
 # check here (unlike classify_key) -- stripping spaces first would misclassify
 # multi-word free text like "human sperm individual 3" as an opaque ID.
+# "No information recorded" placeholders -- found live 2026-09-14 investigating
+# attribute_values_index's most-skewed rows. Mostly the INSDC/MIxS controlled
+# "missing value" vocabulary (not_applicable/missing/not_collected/not_provided/
+# restricted_access), plus observed variants. These can never be a meaningful
+# match for any real search concept, unlike common-but-real content (Homo
+# sapiens, male, United Kingdom...) which stays regardless of coverage -- exact
+# match only, so free text like "reason not applicable to controls" is untouched.
+NO_INFO_VALUE_TOKENS = (
+    "not applicable", "missing", "not collected", "not provided",
+    "restricted access", "not determined", "not available", "none detected",
+    "none", "na",
+)
+
 VALUE_EXCLUDE_SQL = r"""
     regexp_matches(value, '^-?[0-9]+(\.[0-9]+)?([eE]-?[0-9]+)?$')
     OR regexp_matches(value, '^[0-9]{4}[-/][0-9]{1,2}([-/][0-9]{1,2})?$')
     OR regexp_matches(value, '^[0-9]{1,2}[-/][0-9]{1,2}[-/][0-9]{2,4}$')
     OR (regexp_matches(value, '^[A-Za-z0-9]{16,}$') AND regexp_matches(value, '[0-9]'))
+    OR lower(trim(value)) IN (""" + ", ".join(f"'{token}'" for token in NO_INFO_VALUE_TOKENS) + r""")
 """
 
 
