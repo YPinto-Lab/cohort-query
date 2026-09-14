@@ -11,8 +11,8 @@ import duckdb
 import pandas as pd
 import pytest
 
-from askslm.adapters import (REQUIRED_TABLES, DuckDbConnection, IncompleteMirror,
-                             missing_tables, verify_mirror)
+from askslm.adapters import (REQUIRED_LANCE_TABLES, REQUIRED_TABLES, DuckDbConnection,
+                             IncompleteMirror, missing_tables, verify_mirror)
 
 
 def _mirror(path, tables):
@@ -33,6 +33,23 @@ def test_a_complete_mirror_passes(tmp_path):
     # Reaching through DuckDbConnection._connection would undo the point of routing
     # verification through the port.
     assert missing_tables(duckdb.connect(str(path), read_only=True)) == []
+    connection.close()
+
+
+def test_a_mirror_with_duckdb_tables_but_no_lance_directories_is_rejected(tmp_path):
+    """jattr search lives in LanceDB now -- a mirror could have every DuckDB table
+    (attribute_keys_index/attribute_values_index's own staging tables included) and
+    still be missing the .lance directories nothing actually queries them through
+    anymore. Only checked when db_path is given, same precedent as mirror_config."""
+    path = _mirror(tmp_path / "no_lance.duckdb", REQUIRED_TABLES)
+    connection = DuckDbConnection(path)
+
+    with pytest.raises(IncompleteMirror) as raised:
+        verify_mirror(connection, path)
+
+    message = str(raised.value)
+    for name in REQUIRED_LANCE_TABLES:
+        assert f"{name}.lance" in message
     connection.close()
 
 

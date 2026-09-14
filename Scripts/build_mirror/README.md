@@ -19,7 +19,7 @@ bash build_all.sh \
 | 1 | `steps/step1_sort_taxonomy.py` | `sra_taxonomy_sorted.duckdb` — `tax_fact`, sorted by `acc`, 4 of 9 columns | ~2 h |
 | 2 | `steps/step2_sort_metadata.py` | `sra_metadata_sorted.duckdb` — `metadata_fact`, sorted by `biosample` | ~10 min |
 | 3 | `steps/step3_assemble_mirror.py` | `askslm_mirror.duckdb` — views over 1 and 2, Metalog tables, `stat_coverage` | ~15 min |
-| 4 | `steps/step7_build_attribute_indexes.py` | `attribute_keys_index`, `attribute_values_index` — jattr presence/content, embedding-indexed | ~4-6 h, needs a high-memory node (450GB+) |
+| 4 | `steps/step7_build_attribute_indexes.py` | `attribute_keys_index.lance`, `attribute_values_index.lance` — jattr presence/content, LanceDB IVF_PQ-indexed (staged through DuckDB tables of the same name, kept for the extraction/embedding pipeline) | ~4-6 h; extraction+embedding dominates, indexing itself is cheap on memory |
 | 5 | `steps/step5_catalog_schema.py` | `schema_catalog` — columns and real value vocabularies, for the LLM prompt | ~1 min |
 | 6 | `steps/step6_embed_concepts.py` | `column_value_embeddings` — local SapBERT vectors over native low-cardinality columns | ~10 min |
 
