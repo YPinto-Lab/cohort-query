@@ -24,6 +24,15 @@ A source's query object may use `sql` alone, `jattr_criteria` alone, or both
 together. If neither channel can express anything for a source, omit that
 source's query object entirely -- do not emit `{"sql": null, "jattr_criteria": []}`.
 
+`sql` MUST be `null` when `jattr_criteria` alone already covers everything
+this source needs to express -- never emit a `SELECT` with no `WHERE` clause
+as a placeholder. An unfiltered `SELECT ... FROM sra_metadata` returns every
+biosample in the source, which the caller unions with your jattr results --
+so a "just in case" SELECT with nothing to filter on doesn't do nothing, it
+silently widens the cohort to the entire table. If you have no native-column
+predicate to write, leave `sql` as `null`; do not write a query just because
+the schema lists a column.
+
 NEVER JOIN the two sources together. They are separate databases with no shared
 vocabulary, and the caller compares their results as sets to learn which samples
 each source knows about. A join destroys that comparison. Each query must stand

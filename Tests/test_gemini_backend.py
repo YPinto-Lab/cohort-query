@@ -72,6 +72,44 @@ def test_parses_jattr_criteria_and_combinator():
     assert query.jattr_combinator == "all"
 
 
+def test_an_unfiltered_sql_is_dropped_not_unioned_in():
+    """Real bug, hit live 2026-09-14: a translation for "IBD with calprotectin"
+    emitted sql="SELECT biosample FROM sra_metadata" (no WHERE) alongside
+    correct jattr_criteria. The prompt says sql must be null here -- but when
+    the model writes an unfiltered SELECT instead, it must not reach
+    CriterionResolver, which would union it in as "every biosample in the
+    source" and drown the jattr result. jattr_criteria must survive intact."""
+    payload = json.dumps({
+        "interpretation": "IBD samples with a calprotectin measurement",
+        "queries": [{"source": "SRA_METADATA", "sql": "SELECT biosample FROM sra_metadata",
+                     "jattr_criteria": ["IBD diagnosis", "calprotectin measurement"],
+                     "jattr_combinator": "all"}],
+        "failure": None,
+    })
+
+    translation = GeminiBackend(StubClient(payload), model="test-model").translate(_prompt())
+
+    query = translation.queries[0]
+    assert query.sql is None
+    assert [criterion.concept for criterion in query.jattr_criteria] == [
+        "IBD diagnosis", "calprotectin measurement"]
+
+
+def test_a_filtered_sql_survives_even_with_lowercase_where():
+    """The unfiltered-SELECT check must not be so eager it drops a real predicate."""
+    payload = json.dumps({
+        "interpretation": "x",
+        "queries": [{"source": "SRA_METADATA",
+                     "sql": "select biosample from sra_metadata where organism ilike '%human%'",
+                     "jattr_criteria": [], "jattr_combinator": "any"}],
+        "failure": None,
+    })
+
+    translation = GeminiBackend(StubClient(payload), model="test-model").translate(_prompt())
+
+    assert "where" in translation.queries[0].sql.lower()
+
+
 def test_jattr_criteria_and_combinator_default_when_absent():
     """An sql-only query omits jattr_criteria/jattr_combinator entirely -- must
     not crash parsing, must default to empty/"any"."""
