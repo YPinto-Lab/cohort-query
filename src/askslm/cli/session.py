@@ -27,7 +27,7 @@ from rich.table import Table
 
 import askslm
 from askslm import runtime
-from askslm.bioproject_rollup import BioProjectRollup
+from askslm.bioproject_rollup import BioProjectRollup, ProjectRow
 from askslm.cli import jobs, progress, rundir, watch
 from askslm.cli.render import (bioproject_choice_label, bioproject_columns,
                                bioproject_table_rows, narrow_warning, overlap_rows,
@@ -190,7 +190,27 @@ def _ask(question: str, plan_dir: Path) -> Plan | None:
     if warning:
         console.print(f"[yellow]{warning}[/yellow]")
     _show_overlap(plan)
+    _print_bioproject_table(plan)
     return plan
+
+
+def _print_bioproject_table(plan: Plan) -> None:
+    """Shown as part of the preview, before any menu or picker -- the researcher
+    sees which BioProjects matched and why before deciding whether to Continue."""
+    rows = _bioproject_rows(plan)
+    if not rows:
+        return
+    columns = bioproject_columns(rows)
+    table = Table("project", "biosamples", *columns)
+    for row in bioproject_table_rows(rows, columns):
+        table.add_row(*row)
+    console.print(table)
+
+
+def _bioproject_rows(plan: Plan) -> list[ProjectRow]:
+    if plan.discovered is None:
+        return []
+    return BioProjectRollup(runtime.database()).rows(plan.discovered)
 
 
 def _continue(plan: Plan, plan_dir: Path) -> None:
@@ -209,17 +229,11 @@ def _select_bioprojects(plan: Plan, plan_dir: Path) -> Plan | None:
     several, or none the researcher actually meant -- the researcher decides
     which to keep, not the system (see the explain design). Every BioProject
     starts CHECKED: deselecting what you don't want is the google-style
-    surface-everything default, not opting in to each one."""
-    if plan.discovered is None:
-        return plan
-    rows = BioProjectRollup(runtime.database()).rows(plan.discovered)
+    surface-everything default, not opting in to each one. The table itself was
+    already shown in the preview (_print_bioproject_table) -- this only picks."""
+    rows = _bioproject_rows(plan)
     if not rows:
         return plan
-    columns = bioproject_columns(rows)
-    table = Table("project", "biosamples", *columns)
-    for row in bioproject_table_rows(rows, columns):
-        table.add_row(*row)
-    console.print(table)
     choices = [questionary.Choice(title=bioproject_choice_label(row), value=row.project,
                                   checked=True)
               for row in rows]
@@ -386,6 +400,7 @@ def _load(path: Path) -> None:
             _print_last_report(plan_dir)
     plan = load_plan(path)
     if plan.selected_bioprojects is None:
+        _print_bioproject_table(plan)
         selected = _select_bioprojects(plan, plan_dir)
         if selected is not None:
             plan = selected
