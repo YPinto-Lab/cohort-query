@@ -161,7 +161,12 @@ def _session() -> None:
         choice = questionary.select("What now?", choices=[
             "Continue", "Refine the question", "Ask new question", "Discard", "Quit"]).ask()
         if choice == "Continue":
-            _continue(plan, plan_dir)
+            if _continue(plan, plan_dir):
+                if not _post_run():
+                    return
+                plan = None
+                question = ""
+            # else: cancelled mid-chain -- stay on this same "What now?" menu
         elif choice == "Refine the question":
             plan = None
         elif choice == "Ask new question":
@@ -216,15 +221,33 @@ def _bioproject_rows(plan: Plan) -> list[ProjectRow]:
     return BioProjectRollup(runtime.database()).rows(plan.discovered)
 
 
-def _continue(plan: Plan, plan_dir: Path) -> None:
+def _continue(plan: Plan, plan_dir: Path) -> bool:
     """Chains BioProject narrowing into run config into submission. Ctrl-C/Esc at
     any prompt along the way returns None from questionary, which each step below
     treats as "back to the What now? menu" -- the caller's `plan` is never touched
-    here, so a cancelled chain leaves it exactly as it was."""
+    here, so a cancelled chain leaves it exactly as it was. Returns whether a job
+    was actually submitted, so the caller knows this plan is now spent."""
     narrowed = _select_bioprojects(plan, plan_dir)
     if narrowed is None:
-        return
-    _run(narrowed, plan_dir)
+        return False
+    return _run(narrowed, plan_dir)
+
+
+def _post_run() -> bool:
+    """Shown once a plan has been submitted -- Continue/Refine/Discard no longer
+    apply to a spent plan. Returns whether to start a new question (True) or end
+    the session (False)."""
+    while True:
+        choice = questionary.select("What now?",
+                                    choices=["New question", "Load question", "Quit"]).ask()
+        if choice == "New question":
+            return True
+        if choice == "Load question":
+            path = _pick_plan()
+            if path is not None:
+                _load(path)
+            continue
+        return False
 
 
 def _select_bioprojects(plan: Plan, plan_dir: Path) -> Plan | None:
@@ -249,7 +272,9 @@ def _select_bioprojects(plan: Plan, plan_dir: Path) -> Plan | None:
     return narrowed
 
 
-def _run(plan: Plan, plan_dir: Path) -> None:
+def _run(plan: Plan, plan_dir: Path) -> bool:
+    """Returns whether a job was actually submitted -- False on Ctrl-C/Esc at any
+    prompt here, which the caller treats as "back to the What now? menu"."""
     families = _families(plan)
     if len(families) == 1:
         family_name = families[0]
@@ -257,7 +282,7 @@ def _run(plan: Plan, plan_dir: Path) -> None:
     else:
         family_name = questionary.select("Which feature space?", choices=families).ask()
         if family_name is None:
-            return
+            return False
     sources = _sources_of(ProfilerFamily[family_name])
     if len(sources) == 1:
         chosen = sources
@@ -266,15 +291,16 @@ def _run(plan: Plan, plan_dir: Path) -> None:
         picked = questionary.checkbox("Which sources? (order = precedence)",
                                       choices=[source.name for source in sources]).ask()
         if not picked:
-            return
+            return False
         chosen = [Source[name] for name in picked]
     out = questionary.text("Write to", default=str(plan_dir / "cohort.biom")).ask()
     if not out:
-        return
+        return False
     gpu = questionary.confirm("Use GPU acceleration for this build?", default=False).ask()
     if gpu is None:
-        return
+        return False
     _submit(plan_dir, chosen, Path(out), gpu)
+    return True
 
 
 def _submit(plan_dir: Path, sources: list[Source], out: Path, gpu: bool) -> None:
@@ -291,6 +317,7 @@ def _submit(plan_dir: Path, sources: list[Source], out: Path, gpu: bool) -> None
     job_id = jobs.submit(script)
     jobs.write_job_id(plan_dir, job_id)
     progress.write_submitted(plan_dir)
+    progress.write_out_path(plan_dir, out)
     console.print(f"[green]Submitted SLURM job {job_id}[/green]")
     console.print(f"  squeue:  squeue -j {job_id}")
     console.print(f"  log:     tail -f {plan_dir / 'log.txt'}")
@@ -304,7 +331,7 @@ def _clear_previous_run(plan_dir: Path) -> None:
     """Rerunning a plan reuses its folder, so a prior status.txt/progress.txt
     still on disk would read as this run's -- watch() would see DONE/FAILED
     before the new job even starts and bail out instantly."""
-    stale = ["status.txt", "progress.txt", "report.txt", "submitted.txt", "job.id"]
+    stale = ["status.txt", "progress.txt", "report.txt", "submitted.txt", "job.id", "out.txt"]
     for name in stale:
         (plan_dir / name).unlink(missing_ok=True)
     for pattern in ("slurm-*.out", "slurm-*.err"):

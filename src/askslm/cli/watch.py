@@ -71,6 +71,9 @@ def _finish(console: Console, plan_dir: Path, submitted_at: float | None) -> Non
     report_path = plan_dir / "report.txt"
     if report_path.exists():
         console.print(report_path.read_text())
+    out_path = progress.read_out_path(plan_dir)
+    if out_path is not None:
+        console.print(f"[green]wrote:[/green] {out_path}")
     console.print(f"[dim]total: {_elapsed(submitted_at)}[/dim]")
 
 
