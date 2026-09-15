@@ -401,5 +401,21 @@ def _source_query_of(entry: dict) -> SourceQuery:
         raise ValueError(f"model returned a non-metadata source: {source.name}")
     criteria = tuple(JattrCriterion(concept=concept)
                      for concept in entry.get("jattr_criteria", []))
-    return SourceQuery(source, entry.get("sql"), jattr_criteria=criteria,
+    return SourceQuery(source, _narrowing_sql(entry.get("sql"), source), jattr_criteria=criteria,
                        jattr_combinator=entry.get("jattr_combinator", "any"))
+
+
+def _narrowing_sql(sql: str | None, source: Source) -> str | None:
+    """A SELECT with no WHERE clause returns the whole table, unions into the
+    cohort as "everyone", and silently swallows whatever the jattr criteria
+    found -- confirmed live 2026-09-14 (a real translation for "IBD with
+    calprotectin" emitted `SELECT biosample FROM sra_metadata` alongside
+    correct jattr_criteria, and that one unfiltered SELECT alone returned all
+    32.4M biosamples in the source, drowning the jattr result). The prompt
+    says `sql` must be null here, but a model that ignores that instruction
+    must not be allowed to silently widen the cohort to everything."""
+    if sql is None or "where" in sql.lower():
+        return sql
+    _logger.warning("dropping unfiltered sql for %s (no WHERE clause, would "
+                    "widen the cohort to the entire source): %r", source.name, sql)
+    return None
