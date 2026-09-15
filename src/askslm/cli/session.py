@@ -40,12 +40,12 @@ console = Console()
 logger = logging.getLogger("askslm.session")
 
 _PICKER_STYLE = questionary.Style([
-    # noinherit + explicit bg:default clears whatever fill the terminal theme would
-    # otherwise paint behind a styled token -- checked rows end up plain bold text,
-    # not a solid-color block.
-    ("selected", "noinherit bold fg:default bg:default"),
-    ("pointer", "noinherit bold fg:default bg:default"),
-    ("highlighted", "noinherit bold fg:default bg:default"),
+    # noinherit + explicit fg/bg:default clears whatever fill/weight the terminal
+    # theme would otherwise paint behind a styled token -- the dot indicator is
+    # the only marker of a checked row, no bold, no background block.
+    ("selected", "noinherit fg:default bg:default"),
+    ("pointer", "noinherit fg:default bg:default"),
+    ("highlighted", "noinherit fg:default bg:default"),
 ])
 
 
@@ -254,14 +254,14 @@ def _select_bioprojects(plan: Plan, plan_dir: Path) -> Plan | None:
     """Recall-first discovery means the same project can satisfy one criterion,
     several, or none the researcher actually meant -- the researcher decides
     which to keep, not the system (see the explain design). Every BioProject
-    starts CHECKED: deselecting what you don't want is the google-style
-    surface-everything default, not opting in to each one. The table itself was
-    already shown in the preview (_print_bioproject_table) -- this only picks."""
+    starts UNCHECKED: the researcher opts in to what they actually want, rather
+    than deselecting what they don't. The table itself was already shown in the
+    preview (_print_bioproject_table) -- this only picks."""
     rows = _bioproject_rows(plan)
     if not rows:
         return plan
     choices = [questionary.Choice(title=bioproject_choice_label(row), value=row.project,
-                                  checked=True)
+                                  checked=False)
               for row in rows]
     selected = questionary.checkbox("Which BioProjects to include?", choices=choices,
                                     style=_PICKER_STYLE).ask()
