@@ -37,9 +37,7 @@ def watch(plan_dir: Path, console: Console) -> None:
                 for line in _new_phase_lines(events, printed, done):
                     console.print(f"  {line}")
                 if done:
-                    report_path = plan_dir / "report.txt"
-                    if report_path.exists():
-                        console.print(report_path.read_text())
+                    _finish(console, plan_dir, submitted_at)
                     return
                 try:
                     result = jobs.squeue_state_and_reason(job_id)
@@ -51,9 +49,7 @@ def watch(plan_dir: Path, console: Console) -> None:
                 if result is None:
                     status = jobs.read_status(plan_dir)
                     if status in ("DONE", "FAILED"):
-                        report_path = plan_dir / "report.txt"
-                        if report_path.exists():
-                            console.print(report_path.read_text())
+                        _finish(console, plan_dir, submitted_at)
                         return
                     if status is None:
                         console.print(
@@ -69,6 +65,13 @@ def watch(plan_dir: Path, console: Console) -> None:
                 time.sleep(POLL_SECONDS)
     except KeyboardInterrupt:
         console.print("\n[dim]stopped watching -- job keeps running[/dim]")
+
+
+def _finish(console: Console, plan_dir: Path, submitted_at: float | None) -> None:
+    report_path = plan_dir / "report.txt"
+    if report_path.exists():
+        console.print(report_path.read_text())
+    console.print(f"[dim]total: {_elapsed(submitted_at)}[/dim]")
 
 
 def _show(live: Status, console: Console, interactive: bool, line: str) -> None:
@@ -103,7 +106,7 @@ def _status_line(job_id: str, state: str, reason: str, submitted_at: float | Non
     running = next(((index, start, label) for index, (start, _, label) in enumerate(events)
                    if label not in printed), None)
     if running is None:
-        return f"job {job_id} · {state}"
+        return f"job {job_id} · {state} ({_elapsed(submitted_at)})"
     index, start, label = running
     return f"[{index + 1}/{TOTAL_PHASES}] {label}... running ({_elapsed(start)})"
 
