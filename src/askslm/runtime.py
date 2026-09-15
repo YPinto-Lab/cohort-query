@@ -6,6 +6,7 @@ at config() time is module state.
 """
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,6 +48,7 @@ _settings: Settings | None = None
 _database: Database | None = None
 _backend: LlmBackend | None = None
 _embedder: Embedder | None = None
+_embedder_lock = threading.Lock()
 
 
 def configure(settings: Settings, database: Database | None = None,
@@ -106,16 +108,23 @@ def embedder() -> Embedder:
     reset (see step6_embed_concepts.py's docstring), so query-time embedding
     must match the same local model the build used. Canned mode has no model to
     call, so it keeps using the canned backend's own no-op embed() (retrieval
-    degrades to substring matching), unchanged from before."""
+    degrades to substring matching), unchanged from before.
+
+    Double-checked locking: the session warms this on a background thread at
+    startup (Docs/plan-warm-embedder-on-startup.md) while the main thread may
+    call it too once the user submits -- without the lock, both could see
+    `_embedder is None` and load the model twice."""
     global _embedder
     if _embedder is None:
-        settings = _require_settings()
-        if settings.llm == "gemini":
-            from askslm.adapters import open_local_embedder
+        with _embedder_lock:
+            if _embedder is None:
+                settings = _require_settings()
+                if settings.llm == "gemini":
+                    from askslm.adapters import open_local_embedder
 
-            _embedder = open_local_embedder()
-        else:
-            _embedder = backend()
+                    _embedder = open_local_embedder()
+                else:
+                    _embedder = backend()
     return _embedder
 
 

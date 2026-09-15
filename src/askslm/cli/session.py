@@ -13,6 +13,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import threading
 import time
 from datetime import datetime
 import shlex
@@ -143,6 +144,12 @@ def _ask_key() -> str:
 
 
 def _session() -> None:
+    """Loading the local embedder off disk takes ~18s (SapBERT-from-PubMedBERT-fulltext,
+    see Docs/plan-warm-embedder-on-startup.md) and would otherwise block the first
+    translate() call right after the user hits enter. Starting it on a background
+    thread the instant the loop starts overlaps that load with the time spent typing
+    the first question instead."""
+    threading.Thread(target=runtime.embedder, daemon=True).start()
     question = ""
     plan = None
     plan_dir = None
