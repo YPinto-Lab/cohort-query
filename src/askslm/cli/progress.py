@@ -8,6 +8,7 @@ from pathlib import Path
 
 PROGRESS_FILENAME = "progress.txt"
 SUBMITTED_FILENAME = "submitted.txt"
+OUT_FILENAME = "out.txt"
 
 
 def write_start(plan_dir: Path, label: str) -> None:
@@ -34,3 +35,12 @@ def write_submitted(plan_dir: Path) -> None:
 def read_submitted(plan_dir: Path) -> float | None:
     path = plan_dir / SUBMITTED_FILENAME
     return float(path.read_text()) if path.exists() else None
+
+
+def write_out_path(plan_dir: Path, out: Path) -> None:
+    (plan_dir / OUT_FILENAME).write_text(str(out))
+
+
+def read_out_path(plan_dir: Path) -> Path | None:
+    path = plan_dir / OUT_FILENAME
+    return Path(path.read_text()) if path.exists() else None

@@ -13,6 +13,8 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import threading
+import time
 from datetime import datetime
 import shlex
 import shutil
@@ -26,7 +28,7 @@ from rich.table import Table
 
 import askslm
 from askslm import runtime
-from askslm.bioproject_rollup import BioProjectRollup
+from askslm.bioproject_rollup import BioProjectRollup, ProjectRow
 from askslm.cli import jobs, progress, rundir, watch
 from askslm.cli.render import (bioproject_choice_label, bioproject_columns,
                                bioproject_table_rows, narrow_warning, overlap_rows,
@@ -37,6 +39,15 @@ from askslm.sources import ProfilerFamily, Source, SourceKind
 
 console = Console()
 logger = logging.getLogger("askslm.session")
+
+_PICKER_STYLE = questionary.Style([
+    # noinherit + explicit fg/bg:default clears whatever fill/weight the terminal
+    # theme would otherwise paint behind a styled token -- the dot indicator is
+    # the only marker of a checked row, no bold, no background block.
+    ("selected", "noinherit fg:default bg:default"),
+    ("pointer", "noinherit fg:default bg:default"),
+    ("highlighted", "noinherit fg:default bg:default"),
+])
 
 
 def main() -> None:
@@ -133,6 +144,12 @@ def _ask_key() -> str:
 
 
 def _session() -> None:
+    """Loading the local embedder off disk takes ~18s (SapBERT-from-PubMedBERT-fulltext,
+    see Docs/plan-warm-embedder-on-startup.md) and would otherwise block the first
+    translate() call right after the user hits enter. Starting it on a background
+    thread the instant the loop starts overlaps that load with the time spent typing
+    the first question instead."""
+    threading.Thread(target=runtime.embedder, daemon=True).start()
     question = ""
     plan = None
     plan_dir = None
@@ -149,9 +166,14 @@ def _session() -> None:
             if plan is None:
                 continue
         choice = questionary.select("What now?", choices=[
-            "Run it", "Refine the question", "Ask new question", "Discard", "Quit"]).ask()
-        if choice == "Run it":
-            _run(plan, plan_dir)
+            "Continue", "Refine the question", "Ask new question", "Discard", "Quit"]).ask()
+        if choice == "Continue":
+            if _continue(plan, plan_dir):
+                if not _post_run():
+                    return
+                plan = None
+                question = ""
+            # else: cancelled mid-chain -- stay on this same "What now?" menu
         elif choice == "Refine the question":
             plan = None
         elif choice == "Ask new question":
@@ -167,10 +189,12 @@ def _session() -> None:
 
 def _ask(question: str, plan_dir: Path) -> Plan | None:
     """A question the model cannot translate is a screen, not a stack trace."""
+    start = time.monotonic()
     with Progress(SpinnerColumn(), TextColumn("thinking"), TimeElapsedColumn(),
                   console=console, transient=True) as progress:
         progress.add_task("")
         plan = askslm.ask(question)
+    console.print(f"[dim]took {time.monotonic() - start:.1f}s[/dim]")
     if plan.error is not None:
         console.print(f"[red]Could not translate that into a query.[/red]\n{plan.error}")
         return None
@@ -181,29 +205,73 @@ def _ask(question: str, plan_dir: Path) -> Plan | None:
     if warning:
         console.print(f"[yellow]{warning}[/yellow]")
     _show_overlap(plan)
+    _print_bioproject_table(plan)
     return plan
+
+
+def _print_bioproject_table(plan: Plan) -> None:
+    """Shown as part of the preview, before any menu or picker -- the researcher
+    sees which BioProjects matched and why before deciding whether to Continue."""
+    rows = _bioproject_rows(plan)
+    if not rows:
+        return
+    columns = bioproject_columns(rows)
+    table = Table("project", "biosamples", *columns)
+    for row in bioproject_table_rows(rows, columns):
+        table.add_row(*row)
+    console.print(table)
+
+
+def _bioproject_rows(plan: Plan) -> list[ProjectRow]:
+    if plan.discovered is None:
+        return []
+    return BioProjectRollup(runtime.database()).rows(plan.discovered)
+
+
+def _continue(plan: Plan, plan_dir: Path) -> bool:
+    """Chains BioProject narrowing into run config into submission. Ctrl-C/Esc at
+    any prompt along the way returns None from questionary, which each step below
+    treats as "back to the What now? menu" -- the caller's `plan` is never touched
+    here, so a cancelled chain leaves it exactly as it was. Returns whether a job
+    was actually submitted, so the caller knows this plan is now spent."""
+    narrowed = _select_bioprojects(plan, plan_dir)
+    if narrowed is None:
+        return False
+    return _run(narrowed, plan_dir)
+
+
+def _post_run() -> bool:
+    """Shown once a plan has been submitted -- Continue/Refine/Discard no longer
+    apply to a spent plan. Returns whether to start a new question (True) or end
+    the session (False)."""
+    while True:
+        choice = questionary.select("What now?",
+                                    choices=["New question", "Load question", "Quit"]).ask()
+        if choice == "New question":
+            return True
+        if choice == "Load question":
+            path = _pick_plan()
+            if path is not None:
+                _load(path)
+            continue
+        return False
 
 
 def _select_bioprojects(plan: Plan, plan_dir: Path) -> Plan | None:
     """Recall-first discovery means the same project can satisfy one criterion,
     several, or none the researcher actually meant -- the researcher decides
     which to keep, not the system (see the explain design). Every BioProject
-    starts CHECKED: deselecting what you don't want is the google-style
-    surface-everything default, not opting in to each one."""
-    if plan.discovered is None:
-        return plan
-    rows = BioProjectRollup(runtime.database()).rows(plan.discovered)
+    starts UNCHECKED: the researcher opts in to what they actually want, rather
+    than deselecting what they don't. The table itself was already shown in the
+    preview (_print_bioproject_table) -- this only picks."""
+    rows = _bioproject_rows(plan)
     if not rows:
         return plan
-    columns = bioproject_columns(rows)
-    table = Table("project", "biosamples", *columns)
-    for row in bioproject_table_rows(rows, columns):
-        table.add_row(*row)
-    console.print(table)
     choices = [questionary.Choice(title=bioproject_choice_label(row), value=row.project,
-                                  checked=True)
+                                  checked=False)
               for row in rows]
-    selected = questionary.checkbox("Which BioProjects to include?", choices=choices).ask()
+    selected = questionary.checkbox("Which BioProjects to include?", choices=choices,
+                                    style=_PICKER_STYLE).ask()
     if not selected:
         return None
     narrowed = dataclasses.replace(plan, selected_bioprojects=frozenset(selected))
@@ -211,10 +279,9 @@ def _select_bioprojects(plan: Plan, plan_dir: Path) -> Plan | None:
     return narrowed
 
 
-def _run(plan: Plan, plan_dir: Path) -> None:
-    plan = _select_bioprojects(plan, plan_dir)
-    if plan is None:
-        return
+def _run(plan: Plan, plan_dir: Path) -> bool:
+    """Returns whether a job was actually submitted -- False on Ctrl-C/Esc at any
+    prompt here, which the caller treats as "back to the What now? menu"."""
     families = _families(plan)
     if len(families) == 1:
         family_name = families[0]
@@ -222,7 +289,7 @@ def _run(plan: Plan, plan_dir: Path) -> None:
     else:
         family_name = questionary.select("Which feature space?", choices=families).ask()
         if family_name is None:
-            return
+            return False
     sources = _sources_of(ProfilerFamily[family_name])
     if len(sources) == 1:
         chosen = sources
@@ -231,13 +298,16 @@ def _run(plan: Plan, plan_dir: Path) -> None:
         picked = questionary.checkbox("Which sources? (order = precedence)",
                                       choices=[source.name for source in sources]).ask()
         if not picked:
-            return
+            return False
         chosen = [Source[name] for name in picked]
     out = questionary.text("Write to", default=str(plan_dir / "cohort.biom")).ask()
     if not out:
-        return
+        return False
     gpu = questionary.confirm("Use GPU acceleration for this build?", default=False).ask()
+    if gpu is None:
+        return False
     _submit(plan_dir, chosen, Path(out), gpu)
+    return True
 
 
 def _submit(plan_dir: Path, sources: list[Source], out: Path, gpu: bool) -> None:
@@ -254,6 +324,7 @@ def _submit(plan_dir: Path, sources: list[Source], out: Path, gpu: bool) -> None
     job_id = jobs.submit(script)
     jobs.write_job_id(plan_dir, job_id)
     progress.write_submitted(plan_dir)
+    progress.write_out_path(plan_dir, out)
     console.print(f"[green]Submitted SLURM job {job_id}[/green]")
     console.print(f"  squeue:  squeue -j {job_id}")
     console.print(f"  log:     tail -f {plan_dir / 'log.txt'}")
@@ -267,7 +338,7 @@ def _clear_previous_run(plan_dir: Path) -> None:
     """Rerunning a plan reuses its folder, so a prior status.txt/progress.txt
     still on disk would read as this run's -- watch() would see DONE/FAILED
     before the new job even starts and bail out instantly."""
-    stale = ["status.txt", "progress.txt", "report.txt", "submitted.txt", "job.id"]
+    stale = ["status.txt", "progress.txt", "report.txt", "submitted.txt", "job.id", "out.txt"]
     for name in stale:
         (plan_dir / name).unlink(missing_ok=True)
     for pattern in ("slurm-*.out", "slurm-*.err"):
@@ -365,6 +436,11 @@ def _load(path: Path) -> None:
         else:
             _print_last_report(plan_dir)
     plan = load_plan(path)
+    if plan.selected_bioprojects is None:
+        _print_bioproject_table(plan)
+        selected = _select_bioprojects(plan, plan_dir)
+        if selected is not None:
+            plan = selected
     console.print(preview_line(plan.preview))
     while True:
         choice = questionary.select("What now?", choices=["Run it", "Discard", "Quit"]).ask()
