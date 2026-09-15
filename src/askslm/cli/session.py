@@ -13,6 +13,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import time
 from datetime import datetime
 import shlex
 import shutil
@@ -148,9 +149,12 @@ def _session() -> None:
             rundir.detach_log_handler(handler)
             if plan is None:
                 continue
+            plan = _select_bioprojects(plan, plan_dir)
+            if plan is None:
+                continue
         choice = questionary.select("What now?", choices=[
-            "Run it", "Refine the question", "Ask new question", "Discard", "Quit"]).ask()
-        if choice == "Run it":
+            "Continue", "Refine the question", "Ask new question", "Discard", "Quit"]).ask()
+        if choice == "Continue":
             _run(plan, plan_dir)
         elif choice == "Refine the question":
             plan = None
@@ -167,10 +171,12 @@ def _session() -> None:
 
 def _ask(question: str, plan_dir: Path) -> Plan | None:
     """A question the model cannot translate is a screen, not a stack trace."""
+    start = time.monotonic()
     with Progress(SpinnerColumn(), TextColumn("thinking"), TimeElapsedColumn(),
                   console=console, transient=True) as progress:
         progress.add_task("")
         plan = askslm.ask(question)
+    console.print(f"[dim]took {time.monotonic() - start:.1f}s[/dim]")
     if plan.error is not None:
         console.print(f"[red]Could not translate that into a query.[/red]\n{plan.error}")
         return None
@@ -212,9 +218,6 @@ def _select_bioprojects(plan: Plan, plan_dir: Path) -> Plan | None:
 
 
 def _run(plan: Plan, plan_dir: Path) -> None:
-    plan = _select_bioprojects(plan, plan_dir)
-    if plan is None:
-        return
     families = _families(plan)
     if len(families) == 1:
         family_name = families[0]
@@ -365,6 +368,10 @@ def _load(path: Path) -> None:
         else:
             _print_last_report(plan_dir)
     plan = load_plan(path)
+    if plan.selected_bioprojects is None:
+        selected = _select_bioprojects(plan, plan_dir)
+        if selected is not None:
+            plan = selected
     console.print(preview_line(plan.preview))
     while True:
         choice = questionary.select("What now?", choices=["Run it", "Discard", "Quit"]).ask()
