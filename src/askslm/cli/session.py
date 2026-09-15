@@ -40,9 +40,12 @@ console = Console()
 logger = logging.getLogger("askslm.session")
 
 _PICKER_STYLE = questionary.Style([
-    ("selected", "bold"),      # no background fill -- checked rows are just bold text
-    ("pointer", "bold"),
-    ("highlighted", "bold"),
+    # noinherit + explicit bg:default clears whatever fill the terminal theme would
+    # otherwise paint behind a styled token -- checked rows end up plain bold text,
+    # not a solid-color block.
+    ("selected", "noinherit bold fg:default bg:default"),
+    ("pointer", "noinherit bold fg:default bg:default"),
+    ("highlighted", "noinherit bold fg:default bg:default"),
 ])
 
 
