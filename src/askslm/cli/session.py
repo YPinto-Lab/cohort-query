@@ -39,6 +39,12 @@ from askslm.sources import ProfilerFamily, Source, SourceKind
 console = Console()
 logger = logging.getLogger("askslm.session")
 
+_PICKER_STYLE = questionary.Style([
+    ("selected", "bold"),      # no background fill -- checked rows are just bold text
+    ("pointer", "bold"),
+    ("highlighted", "bold"),
+])
+
 
 def main() -> None:
     """`askslm` starts a session; `askslm load` picks a saved plan from a list;
@@ -149,13 +155,10 @@ def _session() -> None:
             rundir.detach_log_handler(handler)
             if plan is None:
                 continue
-            plan = _select_bioprojects(plan, plan_dir)
-            if plan is None:
-                continue
         choice = questionary.select("What now?", choices=[
             "Continue", "Refine the question", "Ask new question", "Discard", "Quit"]).ask()
         if choice == "Continue":
-            _run(plan, plan_dir)
+            _continue(plan, plan_dir)
         elif choice == "Refine the question":
             plan = None
         elif choice == "Ask new question":
@@ -190,6 +193,17 @@ def _ask(question: str, plan_dir: Path) -> Plan | None:
     return plan
 
 
+def _continue(plan: Plan, plan_dir: Path) -> None:
+    """Chains BioProject narrowing into run config into submission. Ctrl-C/Esc at
+    any prompt along the way returns None from questionary, which each step below
+    treats as "back to the What now? menu" -- the caller's `plan` is never touched
+    here, so a cancelled chain leaves it exactly as it was."""
+    narrowed = _select_bioprojects(plan, plan_dir)
+    if narrowed is None:
+        return
+    _run(narrowed, plan_dir)
+
+
 def _select_bioprojects(plan: Plan, plan_dir: Path) -> Plan | None:
     """Recall-first discovery means the same project can satisfy one criterion,
     several, or none the researcher actually meant -- the researcher decides
@@ -209,7 +223,8 @@ def _select_bioprojects(plan: Plan, plan_dir: Path) -> Plan | None:
     choices = [questionary.Choice(title=bioproject_choice_label(row), value=row.project,
                                   checked=True)
               for row in rows]
-    selected = questionary.checkbox("Which BioProjects to include?", choices=choices).ask()
+    selected = questionary.checkbox("Which BioProjects to include?", choices=choices,
+                                    style=_PICKER_STYLE).ask()
     if not selected:
         return None
     narrowed = dataclasses.replace(plan, selected_bioprojects=frozenset(selected))
@@ -240,6 +255,8 @@ def _run(plan: Plan, plan_dir: Path) -> None:
     if not out:
         return
     gpu = questionary.confirm("Use GPU acceleration for this build?", default=False).ask()
+    if gpu is None:
+        return
     _submit(plan_dir, chosen, Path(out), gpu)
 
 
