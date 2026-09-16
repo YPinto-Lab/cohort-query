@@ -5,7 +5,7 @@ import json
 import numpy as np
 import pandas as pd
 
-from askslm.build import BiomFactory
+from askslm.build import BiomFactory, CohortBuilder
 from askslm.cohort import Accession
 from askslm.metadata import ReconciledMetadata
 from askslm.profiles import ProfileMatrix
@@ -73,6 +73,20 @@ def test_timestamp_values_become_iso_strings_not_json_nan():
 
     assert md["collection_date"] == "2020-03-01T00:00:00"
     assert md["bmi"] is None
+
+
+def test_written_creates_outs_parent_directory(tmp_path):
+    """Job 29510021 discovered its cohort, read the profile matrix, and assembled
+    the biom table -- ~56s of real work -- then crashed on the final write because
+    'out's parent directory didn't exist. Every other writer in this codebase
+    (Plan.save, settings_file, checkpoint) already mkdir's before writing."""
+    metadata = ReconciledMetadata(pd.DataFrame({"x": [1]}, index=["SAMN1"]))
+    table = BiomFactory().build(_matrix(["SAMN1"]), metadata)
+    out = tmp_path / "does-not-exist-yet" / "cohort.biom"
+
+    CohortBuilder.__new__(CohortBuilder)._written(table, out)
+
+    assert out.exists()
 
 
 def test_wide_format_visit_fields_resolve_by_study_week_not_silently_dropped():

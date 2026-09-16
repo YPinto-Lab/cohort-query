@@ -238,7 +238,9 @@ class CohortBuilder:
 
     def _written(self, table: biom.Table, out: Path | None) -> biom.Table:
         if out is not None:
-            Path(out).write_text(table.to_json("askslm"))
+            out = Path(out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(table.to_json("askslm"))
         return table
 
     def _report(self, request: Materialization, cohort: Cohort,

@@ -102,6 +102,30 @@ def test_watch_stops_once_squeue_says_the_job_is_gone_even_if_status_still_says_
     assert "killed outside askslm" in capsys.readouterr().out
 
 
+def test_read_status_with_retry_catches_a_status_that_appears_late(tmp_path, monkeypatch):
+    """squeue can report a job gone before status.txt's write from the compute
+    node has propagated to the watcher -- job 29510021 failed and wrote FAILED,
+    but a single immediate read raced the write and saw nothing."""
+    calls = {"n": 0}
+
+    def _appears_on_third_read(plan_dir):
+        calls["n"] += 1
+        return "FAILED" if calls["n"] >= 3 else None
+
+    monkeypatch.setattr(jobs, "read_status", _appears_on_third_read)
+    monkeypatch.setattr(watch.time, "sleep", lambda seconds: None)
+
+    assert watch._read_status_with_retry(tmp_path) == "FAILED"
+    assert calls["n"] == 3
+
+
+def test_read_status_with_retry_gives_up_after_the_last_attempt(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs, "read_status", lambda plan_dir: None)
+    monkeypatch.setattr(watch.time, "sleep", lambda seconds: None)
+
+    assert watch._read_status_with_retry(tmp_path, attempts=3, delay=0) is None
+
+
 def test_non_terminal_console_still_shows_periodic_progress(tmp_path, monkeypatch, capsys):
     """rich's console.status() is a transient Live display that writes nothing at
     all when the console isn't a real terminal -- a piped or logged session must
