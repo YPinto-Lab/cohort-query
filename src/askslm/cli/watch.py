@@ -47,7 +47,7 @@ def watch(plan_dir: Path, console: Console) -> None:
                     time.sleep(POLL_SECONDS)
                     continue
                 if result is None:
-                    status = jobs.read_status(plan_dir)
+                    status = _read_status_with_retry(plan_dir)
                     if status in ("DONE", "FAILED"):
                         _finish(console, plan_dir, submitted_at)
                         return
@@ -65,6 +65,19 @@ def watch(plan_dir: Path, console: Console) -> None:
                 time.sleep(POLL_SECONDS)
     except KeyboardInterrupt:
         console.print("\n[dim]stopped watching -- job keeps running[/dim]")
+
+
+def _read_status_with_retry(plan_dir: Path, attempts: int = 3, delay: float = 2.0) -> str | None:
+    """squeue can report a job gone before status.txt's write from the compute
+    node has propagated to the watcher -- retry briefly rather than reporting a
+    real FAILED/DONE as a mystery disappearance."""
+    for attempt in range(attempts):
+        status = jobs.read_status(plan_dir)
+        if status is not None:
+            return status
+        if attempt < attempts - 1:
+            time.sleep(delay)
+    return None
 
 
 def _finish(console: Console, plan_dir: Path, submitted_at: float | None) -> None:
