@@ -26,7 +26,7 @@ question (plain English)
    SQL over the SRA × Metalog DuckDB mirror  ──►  cohort preview (counts, overlap)
         │  confirm
         ▼
-   run(profile_sources=...)  ──►  one feature_table.biom
+   run(profile_sources=...)  ──►  one .biom
                                    (counts × samples, + sample & feature metadata)
 ```
 
