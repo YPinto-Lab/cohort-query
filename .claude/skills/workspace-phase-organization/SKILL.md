@@ -90,6 +90,37 @@ Guidance, not rules:
 - Generic names (`feature_table`, `cohort`, `output`, `table`, `final`) are never good enough on
   their own — they describe every biom in the repo.
 
+## Organizing 0_inputs by source
+When `0_inputs/` accumulates enough files that a flat listing stops being scannable (roughly a
+dozen+, mixed file types from different tools), group them into subfolders named for **where each
+file came from** — not by file type, not by which phase reads it:
+
+```
+0_inputs/
+  phanta/      relative_read_abundance.txt, counts_species.txt, total_reads.tsv, manifest.tsv,
+               species_name_to_vir_score.txt      # phanta's own run outputs + its shipped database file
+  propagate/   propagate_summary.tsv, propagate_ratio.biom      # PropagAtE's run outputs
+  sra/         metadata.csv                                    # the raw SRA metadata download
+  study/       canon.xlsx, Viral_Ecological_Clusters_Master_Map-v2.xlsx   # the study's own
+               curated accessory tables (day mapping, cluster map) -- not from any tool run
+  uhgv/        uhgv_votus_metadata.tsv                          # external reference database
+```
+
+- **Judgement call, no formula** — a handful of files stays flat; don't force subfolders on a
+  small `0_inputs/`.
+- **Group by provenance, not by consumer.** `species_name_to_vir_score.txt` ships inside phanta's
+  database and is read by `1_build/build.py`'s lifestyle stats, not phanta's abundance step — it
+  still belongs under `phanta/` because that's where it came from, not `propagate/` or a
+  per-script folder.
+- **A file used by multiple phases still lives in exactly one place.** `sra/metadata.csv` is read
+  by both `1_build/build.py` and a `3_analyze/` script; it isn't duplicated or split.
+- **Every reference has to move with the file** — every `ws.inputs / "..."` in every phase's `.py`
+  (build, transform, analyze) and every mention in a `.md`'s frontmatter or prose. After
+  reorganizing, re-run every affected script and confirm outputs are unchanged before considering
+  it done; a path move that silently breaks a downstream script is worse than the clutter it fixed.
+- See `Workspaces/abx/abx-DAO-read-abu/0_inputs/` (and its EAT/taxonomic-abu siblings) for a
+  worked example of this split.
+
 ## Common mistakes (seen in practice)
 - Dumping the cohort biom straight into `Workspaces/<study>/` with no phase folders at all.
 - Naming a biom for its *role in the pipeline* (`feature_table.biom`, `cohort.biom`) instead of
