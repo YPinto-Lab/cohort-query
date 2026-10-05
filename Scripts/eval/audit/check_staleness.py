@@ -35,6 +35,7 @@ def _latest_run_per_question(csv_path: Path) -> dict[str, dict]:
     with csv_path.open() as fh:
         for row in csv.DictReader(fh):
             existing = latest.get(row["question_id"])
+            # checked_at is ISO8601 (YYYY-MM-DDTHH:MM:SS), lexicographically sortable
             if existing is None or row["checked_at"] > existing["checked_at"]:
                 latest[row["question_id"]] = row
     return latest
