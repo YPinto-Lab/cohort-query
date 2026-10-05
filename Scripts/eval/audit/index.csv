@@ -1,0 +1,1 @@
+question_id,run_id,checked_at,trigger_reason,question,plan_path,generated_sql_path,results_path,result_row_count,gold_sql_path,gold_version,judgment,judgment_reasoning,judgment_reference,missed_what,missed_link,why_missed,needs_researcher_confirmation,confirmation_note,verified_mirror_build,verified_code_commit
