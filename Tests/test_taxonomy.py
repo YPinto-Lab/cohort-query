@@ -1,6 +1,6 @@
 """ranks must carry ancestor names, not raw taxids -- nothing is ever classified AS
 "Bacteria" itself, so a leaf-only name lookup can never resolve it."""
-from askslm.taxonomy import _feature_row
+from cohortquery.taxonomy import _feature_row
 
 
 def test_ranks_holds_ancestor_names_not_taxids():

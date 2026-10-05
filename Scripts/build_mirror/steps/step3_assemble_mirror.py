@@ -1,5 +1,5 @@
 """
-Builds the shared `askslm_mirror.duckdb` from the raw Metalog downloads and the
+Builds the shared `cohortquery_mirror.duckdb` from the raw Metalog downloads and the
 existing SRA DuckDB. Run once (or on refresh), by the lab — never at package
 runtime. See Docs/superpowers/plans/2026-06-18-metalog-duckdb-build.md.
 
@@ -14,7 +14,7 @@ This script is therefore step 3 of 3, and the first two must already have run:
 
     step1_sort_taxonomy.py  tax_raw      -> sra_taxonomy_sorted.duckdb  (~2 h)
     step2_sort_metadata.py  metadata_raw -> sra_metadata_sorted.duckdb  (~7 min)
-    step3_assemble_mirror.py           this file    -> askslm_mirror.duckdb        (~1 h)
+    step3_assemble_mirror.py           this file    -> cohortquery_mirror.duckdb        (~1 h)
 
 `build_all.sh` runs the three in order. The mirror itself stays small (~13 GB) and is
 cheap to rebuild; the expensive sorted artifacts are built once per SRA download.
@@ -24,7 +24,7 @@ Usage:
         --metalog-dir ~/Downloads/Metalog \
         --sorted-taxonomy /path/to/sra_taxonomy_sorted.duckdb \
         --sorted-metadata /path/to/sra_metadata_sorted.duckdb \
-        --out askslm_mirror.duckdb
+        --out cohortquery_mirror.duckdb
 """
 from __future__ import annotations
 
@@ -36,9 +36,9 @@ import duckdb
 
 # The mirror_config key -> ATTACH alias contract. A view definition bakes in the alias
 # it was written against, so the build and the runtime MUST agree; importing the single
-# definition is what guarantees that. See askslm.adapters.
+# definition is what guarantees that. See cohortquery.adapters.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
-from askslm.adapters import SIDECAR_ALIASES          # noqa: E402
+from cohortquery.adapters import SIDECAR_ALIASES          # noqa: E402
 
 TAXONOMY_ALIAS = SIDECAR_ALIASES["sra_db_path"]
 METADATA_ALIAS = SIDECAR_ALIASES["sra_metadata_path"]

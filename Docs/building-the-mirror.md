@@ -4,7 +4,7 @@ Only relevant if you're the one building or refreshing the mirror — most users
 finished `.duckdb` file and never run this. See the main [README](../README.md) for day-to-day
 use.
 
-`askslm` reads one prebuilt DuckDB. Building it is a separate ETL, and it produces **three
+`cohortquery` reads one prebuilt DuckDB. Building it is a separate ETL, and it produces **three
 files**. With nothing but somewhere to put them, this is the whole thing:
 
 ```bash
@@ -13,7 +13,7 @@ sbatch Scripts/build_mirror/build_all.sh --out-dir /path/with/space
 
 One command. It fetches both raw inputs straight from their public sources (see below),
 runs the six build steps in order, and reports the finished mirror's path when it's done —
-point `askslm` at that path, add a Gemini API key, and you're running. The fetch alone is
+point `cohortquery` at that path, add a Gemini API key, and you're running. The fetch alone is
 hours (it's NCBI's full SRA metadata + STAT results); submit it as a Slurm job rather than
 running it interactively.
 
@@ -65,13 +65,13 @@ sbatch Scripts/build_mirror/fetch_sra_raw.sh /path/with/space
 |---|---|---|
 | `sra_taxonomy_sorted.duckdb` | `tax_fact` — taxonomy sorted by `acc`, 4 of 9 columns | ~2 h |
 | `sra_metadata_sorted.duckdb` | `metadata_fact` — metadata sorted by `biosample`, all columns | ~10 min |
-| `askslm_mirror.duckdb` | views over both + Metalog tables + attribute index + catalog + embeddings | ~35 min |
+| `cohortquery_mirror.duckdb` | views over both + Metalog tables + attribute index + catalog + embeddings | ~35 min |
 
 Point the package at the **mirror** only — it records the other two and re-attaches them
 on connect:
 
 ```python
-askslm.config(db="/path/with/space/askslm_mirror.duckdb")
+cohortquery.config(db="/path/with/space/cohortquery_mirror.duckdb")
 ```
 
 All three must stay where you built them. Move one and rebuild the mirror, or edit its

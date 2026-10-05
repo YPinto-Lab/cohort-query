@@ -11,10 +11,10 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from askslm.cohort import Accession, key_column
-from askslm.ports import Database
-from askslm.sources import ProfilerFamily, Source
-from askslm.taxonomy import lineage_table
+from cohortquery.cohort import Accession, key_column
+from cohortquery.ports import Database
+from cohortquery.sources import ProfilerFamily, Source
+from cohortquery.taxonomy import lineage_table
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,5 @@
 """The live progress view: shared by 'Run it' -> Watch progress and by reattaching
-via `askslm load` to a plan folder whose job is still running.
+via `cohortquery load` to a plan folder whose job is still running.
 
 Reads only the worker's own structured progress trail (progress.py) and squeue --
 never log.txt, which carries full SQL/LLM debug logging from the interactive ask()
@@ -12,7 +12,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.status import Status
 
-from askslm.cli import jobs, progress
+from cohortquery.cli import jobs, progress
 
 POLL_SECONDS = 3
 TOTAL_PHASES = 3          # CohortBuilder.build's fixed phase count
@@ -57,7 +57,7 @@ def watch(plan_dir: Path, console: Console) -> None:
                     else:
                         console.print(
                             f"[yellow]job left the queue while status.txt still said "
-                            f"{status!r} -- likely killed outside askslm (scancel, OOM)[/yellow]")
+                            f"{status!r} -- likely killed outside cohortquery (scancel, OOM)[/yellow]")
                     return
                 state, reason = result
                 _show(live, console, interactive,

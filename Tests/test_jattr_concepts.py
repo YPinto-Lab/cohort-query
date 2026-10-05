@@ -3,9 +3,9 @@
 per-criterion "which table" judgment call. See jattr_concepts.py."""
 import pandas as pd
 
-from askslm.accession import Accession
-from askslm.jattr_concepts import JattrConceptIndex, LanceAttributeIndexes
-from askslm.translation import JattrCriterion
+from cohortquery.accession import Accession
+from cohortquery.jattr_concepts import JattrConceptIndex, LanceAttributeIndexes
+from cohortquery.translation import JattrCriterion
 
 
 class _FakeLanceTable:

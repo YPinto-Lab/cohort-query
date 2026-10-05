@@ -1,4 +1,4 @@
-"""Build a tiny DuckDB with the shape of the real askslm mirror.
+"""Build a tiny DuckDB with the shape of the real cohortquery mirror.
 
 The real mirror lives on the lab server and is ~41 GB. Development and the e2e test
 (HLD H.2) need something with the same schema and the same *interesting structure*,
@@ -34,8 +34,8 @@ from pathlib import Path
 import duckdb
 import lancedb
 
-from askslm.concept_search import EMBED_DIM
-from askslm.jattr_concepts import LanceAttributeIndexes
+from cohortquery.concept_search import EMBED_DIM
+from cohortquery.jattr_concepts import LanceAttributeIndexes
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "Scripts" / "build_mirror" / "steps"))
 from step7_build_attribute_indexes import AttributeIndexBuilder
@@ -211,7 +211,7 @@ def _runs_of(biosample: str) -> list[str]:
 # The names here are deliberately STALE, because the real table's are: STAT ships a
 # snapshot of NCBI's taxonomy and NCBI renames taxa between releases. 1239 was
 # "Firmicutes" until the 2021 rename to "Bacillota", and 2 was "superkingdom" before
-# NCBI moved to "domain". askslm must ignore these columns entirely and re-derive every
+# NCBI moved to "domain". cohortquery must ignore these columns entirely and re-derive every
 # label from tax_id via ete3, so the fixture keeps the outdated spellings on purpose --
 # a test that asserts the CURRENT name proves the stale column is not being read.
 STAT_TAXA = [

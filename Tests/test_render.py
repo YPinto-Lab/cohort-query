@@ -1,19 +1,19 @@
 """Rendering is pure so it can be tested without driving a terminal."""
-import askslm
-from askslm.bioproject_rollup import CriterionCount, ProjectRow
-from askslm.cli.render import (bioproject_choice_label, bioproject_columns,
+import cohortquery
+from cohortquery.bioproject_rollup import CriterionCount, ProjectRow
+from cohortquery.cli.render import (bioproject_choice_label, bioproject_columns,
                                bioproject_table_rows, narrow_warning, preview_line,
                                overlap_rows)
-from askslm.plan import CohortPreview
+from cohortquery.plan import CohortPreview
 
 
 def _preview() -> CohortPreview:
     return CohortPreview(
-        by_metadata_source={askslm.Source.SRA_METADATA: 380,
-                            askslm.Source.METALOG_METADATA: 207},
+        by_metadata_source={cohortquery.Source.SRA_METADATA: 380,
+                            cohortquery.Source.METALOG_METADATA: 207},
         shared=175, union=412,
-        by_profile_source={askslm.Source.SRA_TAXONOMY: 380,
-                           askslm.Source.METALOG_METAPHLAN4_ALL: 228})
+        by_profile_source={cohortquery.Source.SRA_TAXONOMY: 380,
+                           cohortquery.Source.METALOG_METAPHLAN4_ALL: 228})
 
 
 def test_the_preview_line_leads_with_the_cohort_size():
@@ -34,7 +34,7 @@ def test_a_narrow_cohort_is_warned_about():
 def test_overlap_rows_name_the_winner_of_the_shared_partition():
     """The trust screen: the user must be able to see WHICH source won the samples
     that appear in both databases."""
-    rows = overlap_rows(_preview(), winner=askslm.Source.METALOG_METADATA)
+    rows = overlap_rows(_preview(), winner=cohortquery.Source.METALOG_METADATA)
 
     labels = [row[0] for row in rows]
     assert "shared" in labels

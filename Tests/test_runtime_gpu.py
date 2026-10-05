@@ -3,9 +3,9 @@ interactive session's own connection must never be gpu mode; only a worker's
 explicit config() call is."""
 import pandas as pd
 
-import askslm
-from askslm import runtime
-from askslm.adapters import REQUIRED_TABLES
+import cohortquery
+from cohortquery import runtime
+from cohortquery.adapters import REQUIRED_TABLES
 
 
 class _RecordingConnection:
@@ -22,22 +22,22 @@ class _RecordingConnection:
 
 
 def test_database_passes_gpu_through_to_the_connection(tmp_path, monkeypatch):
-    monkeypatch.setattr("askslm.runtime.DuckDbConnection", _RecordingConnection)
+    monkeypatch.setattr("cohortquery.runtime.DuckDbConnection", _RecordingConnection)
     db_path = tmp_path / "fixture.duckdb"
     db_path.touch()
 
-    askslm.config(db=db_path, gpu=True)
+    cohortquery.config(db=db_path, gpu=True)
     connection = runtime.database()
 
     assert connection.gpu is True
 
 
 def test_gpu_defaults_to_false(tmp_path, monkeypatch):
-    monkeypatch.setattr("askslm.runtime.DuckDbConnection", _RecordingConnection)
+    monkeypatch.setattr("cohortquery.runtime.DuckDbConnection", _RecordingConnection)
     db_path = tmp_path / "fixture.duckdb"
     db_path.touch()
 
-    askslm.config(db=db_path)
+    cohortquery.config(db=db_path)
     connection = runtime.database()
 
     assert connection.gpu is False

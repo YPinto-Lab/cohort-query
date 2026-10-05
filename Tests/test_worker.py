@@ -2,24 +2,24 @@
 biom and status files out."""
 import pytest
 
-import askslm
-from askslm.adapters import CannedLlmBackend, DuckDbConnection
-from askslm.cli import progress, worker
-from askslm.translation import SourceQuery, Translation
+import cohortquery
+from cohortquery.adapters import CannedLlmBackend, DuckDbConnection
+from cohortquery.cli import progress, worker
+from cohortquery.translation import SourceQuery, Translation
 
 from fixtures.mirror import build_fixture_mirror
 
 TRANSLATION = Translation(
     interpretation="gut metagenomes",
-    queries=(SourceQuery(askslm.Source.METALOG_METADATA,
+    queries=(SourceQuery(cohortquery.Source.METALOG_METADATA,
                          "SELECT * FROM metalog_metadata"),))
 
 
 def test_main_builds_the_biom_and_reports_success(tmp_path):
     db_path = build_fixture_mirror(tmp_path / "fixture.duckdb")
     connection = DuckDbConnection(db_path)
-    askslm.config(db=db_path, database=connection, backend=CannedLlmBackend(TRANSLATION))
-    plan = askslm.ask("gut metagenomes")
+    cohortquery.config(db=db_path, database=connection, backend=CannedLlmBackend(TRANSLATION))
+    plan = cohortquery.ask("gut metagenomes")
     plan_dir = tmp_path / "plans" / "20260820_000000"
     plan_dir.mkdir(parents=True)
     plan.save(plan_dir / "plan.json")
@@ -46,8 +46,8 @@ def test_main_builds_the_biom_and_reports_success(tmp_path):
 def test_main_reports_failed_status_on_error(tmp_path):
     db_path = build_fixture_mirror(tmp_path / "fixture.duckdb")
     connection = DuckDbConnection(db_path)
-    askslm.config(db=db_path, database=connection, backend=CannedLlmBackend(TRANSLATION))
-    plan = askslm.ask("gut metagenomes")
+    cohortquery.config(db=db_path, database=connection, backend=CannedLlmBackend(TRANSLATION))
+    plan = cohortquery.ask("gut metagenomes")
     plan_dir = tmp_path / "plans" / "20260820_000001"
     plan_dir.mkdir(parents=True)
     plan.save(plan_dir / "plan.json")

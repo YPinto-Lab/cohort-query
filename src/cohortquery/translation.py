@@ -14,9 +14,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from askslm.concept_search import ConceptIndex, render_values as render_concept_values
-from askslm.ports import LlmBackend
-from askslm.sources import Source
+from cohortquery.concept_search import ConceptIndex, render_values as render_concept_values
+from cohortquery.ports import LlmBackend
+from cohortquery.sources import Source
 
 
 @dataclass(frozen=True)

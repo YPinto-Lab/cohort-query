@@ -30,7 +30,7 @@ JSON parse on the already-extracted (small) string, not a second pass over the
 array (the rare 0.1% case) takes its first element; not exact, an accepted
 simplification (see the design note).
 
-    python Scripts/build_mirror/steps/step7_build_attribute_indexes.py --db askslm_mirror.duckdb
+    python Scripts/build_mirror/steps/step7_build_attribute_indexes.py --db cohortquery_mirror.duckdb
 """
 from __future__ import annotations
 
@@ -44,8 +44,8 @@ import duckdb
 import lancedb
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-from askslm.adapters import attach_sidecars          # noqa: E402
-from askslm.concept_search import EMBED_DIM, Embedder
+from cohortquery.adapters import attach_sidecars          # noqa: E402
+from cohortquery.concept_search import EMBED_DIM, Embedder
 
 SAMPLE_ROWS_FOR_CLASSIFICATION = 200_000    # matches the removed step4's sampling rate
 MAX_SAMPLES_PER_KEY = 3
@@ -516,7 +516,7 @@ def main() -> None:
     if memory_limit is None and "SLURM_MEM_PER_NODE" in os.environ:
         memory_limit = f"{int(os.environ['SLURM_MEM_PER_NODE']) * 8 // 10}MB"
 
-    from askslm.adapters import open_local_embedder
+    from cohortquery.adapters import open_local_embedder
 
     AttributeIndexBuilder(args.db, open_local_embedder(), args.dim, args.batch_size,
                           args.embed_chunk_size, threads=threads,

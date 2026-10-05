@@ -1,4 +1,4 @@
-"""The interactive session: `$ askslm`.
+"""The interactive session: `$ cohortquery`.
 
 Line-oriented on purpose. A full-screen TUI owns the terminal and needs a layout
 engine; this needs to show a table, arrow between options, confirm, and repeat.
@@ -26,19 +26,19 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-import askslm
-from askslm import runtime
-from askslm.bioproject_rollup import BioProjectRollup, ProjectRow
-from askslm.cli import jobs, progress, rundir, watch
-from askslm.cli.render import (bioproject_choice_label, bioproject_columns,
+import cohortquery
+from cohortquery import runtime
+from cohortquery.bioproject_rollup import BioProjectRollup, ProjectRow
+from cohortquery.cli import jobs, progress, rundir, watch
+from cohortquery.cli.render import (bioproject_choice_label, bioproject_columns,
                                bioproject_table_rows, narrow_warning, overlap_rows,
                                preview_line)
-from askslm.plan import Plan, load_plan
-from askslm.settings_file import CONFIG_PATH, stored_settings, write_settings
-from askslm.sources import ProfilerFamily, Source, SourceKind
+from cohortquery.plan import Plan, load_plan
+from cohortquery.settings_file import CONFIG_PATH, stored_settings, write_settings
+from cohortquery.sources import ProfilerFamily, Source, SourceKind
 
 console = Console()
-logger = logging.getLogger("askslm.session")
+logger = logging.getLogger("cohortquery.session")
 
 _PICKER_STYLE = questionary.Style([
     # noinherit + explicit fg/bg:default clears whatever fill/weight the terminal
@@ -51,8 +51,8 @@ _PICKER_STYLE = questionary.Style([
 
 
 def main() -> None:
-    """`askslm` starts a session; `askslm load` picks a saved plan from a list;
-    `askslm load plans/x[/plan.json]` reattaches to one directly."""
+    """`cohortquery` starts a session; `cohortquery load` picks a saved plan from a list;
+    `cohortquery load plans/x[/plan.json]` reattaches to one directly."""
     if len(sys.argv) > 1 and sys.argv[1] == "load":
         path = _pick_plan() if len(sys.argv) == 2 else _plan_json(Path(sys.argv[2]))
         if path is not None:
@@ -63,7 +63,7 @@ def main() -> None:
 
 
 def _plan_json(path: Path) -> Path:
-    """`askslm load plans/x` and `askslm load plans/x/plan.json` both work."""
+    """`cohortquery load plans/x` and `cohortquery load plans/x/plan.json` both work."""
     return path / "plan.json" if path.is_dir() else path
 
 
@@ -100,7 +100,7 @@ def _configure() -> None:
             settings.update(_ask_for(missing))
             prompted = True
         try:
-            askslm.config(db=settings["db"], llm="gemini", llm_key=settings["llm_key"])
+            cohortquery.config(db=settings["db"], llm="gemini", llm_key=settings["llm_key"])
         except ValueError as error:
             console.print(f"[red]{error}[/red]")
             settings.pop(_culprit(error), None)
@@ -193,7 +193,7 @@ def _ask(question: str, plan_dir: Path) -> Plan | None:
     with Progress(SpinnerColumn(), TextColumn("thinking"), TimeElapsedColumn(),
                   console=console, transient=True) as progress:
         progress.add_task("")
-        plan = askslm.ask(question)
+        plan = cohortquery.ask(question)
     console.print(f"[dim]took {time.monotonic() - start:.1f}s[/dim]")
     if plan.error is not None:
         console.print(f"[red]Could not translate that into a query.[/red]\n{plan.error}")
@@ -313,7 +313,7 @@ def _run(plan: Plan, plan_dir: Path) -> bool:
 def _submit(plan_dir: Path, sources: list[Source], out: Path, gpu: bool) -> None:
     _clear_previous_run(plan_dir)
     settings = stored_settings()
-    args = [sys.executable, "-m", "askslm.cli.worker",
+    args = [sys.executable, "-m", "cohortquery.cli.worker",
            "--plan-dir", str(plan_dir), "--plan", str(plan_dir / "plan.json"),
            "--sources", ",".join(source.name for source in sources),
            "--out", str(out), "--db", str(settings["db"])]
@@ -376,7 +376,7 @@ def _discard(plan_dir: Path) -> None:
 
 
 def _discard_loaded(plan_dir: Path, keep: Path) -> None:
-    """`keep` is the plan.json path the caller passed to `askslm load` -- a
+    """`keep` is the plan.json path the caller passed to `cohortquery load` -- a
     caller-owned input, not something this run created, so it survives; only this
     run's own artifacts (log, job files, biom) are removed."""
     _cancel_if_running(plan_dir)
@@ -427,7 +427,7 @@ def _load(path: Path) -> None:
     live progress view if a job submitted from this same folder is still running,
     or prints its report if it already finished."""
     settings = stored_settings()
-    askslm.config(db=settings["db"], llm="gemini", llm_key=settings.get("llm_key", ""))
+    cohortquery.config(db=settings["db"], llm="gemini", llm_key=settings.get("llm_key", ""))
     plan_dir = path.parent
     job_id = jobs.read_job_id(plan_dir)
     if job_id is not None:

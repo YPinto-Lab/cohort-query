@@ -2,7 +2,7 @@
 without it, any query touching the embedding tables raises a Catalog Error."""
 from pathlib import Path
 
-from askslm.adapters import DuckDbConnection
+from cohortquery.adapters import DuckDbConnection
 from fixtures.mirror import build_fixture_mirror
 
 

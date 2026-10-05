@@ -9,9 +9,9 @@ had 15,729 columns carrying real data from BOTH sources.
 """
 import pandas as pd
 
-from askslm.cohort import Accession, Cohort
-from askslm.metadata import MetadataReconciler
-from askslm.sources import Source
+from cohortquery.cohort import Accession, Cohort
+from cohortquery.metadata import MetadataReconciler
+from cohortquery.sources import Source
 
 
 class _FakeReader:

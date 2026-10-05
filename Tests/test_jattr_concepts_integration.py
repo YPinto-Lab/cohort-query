@@ -1,8 +1,8 @@
 """Proves real vector search against real Lance tables -- the unit tests in
 test_jattr_concepts.py fake the two Lance table handles; this one does not."""
-from askslm.concept_search import EMBED_DIM
-from askslm.jattr_concepts import JattrConceptIndex
-from askslm.translation import JattrCriterion
+from cohortquery.concept_search import EMBED_DIM
+from cohortquery.jattr_concepts import JattrConceptIndex
+from cohortquery.translation import JattrCriterion
 from fixtures.mirror import build_fixture_mirror, open_fixture_attribute_indexes
 
 

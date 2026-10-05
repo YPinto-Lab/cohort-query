@@ -11,7 +11,7 @@ from typing import Protocol
 
 import pandas as pd
 
-from askslm.ports import Database
+from cohortquery.ports import Database
 
 
 class Embedder(Protocol):

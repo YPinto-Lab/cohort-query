@@ -13,9 +13,9 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from askslm.accession import Accession
-from askslm.cohort import Cohort
-from askslm.ports import Database
+from cohortquery.accession import Accession
+from cohortquery.cohort import Cohort
+from cohortquery.ports import Database
 
 UNKNOWN_PROJECT = "(unknown project)"
 

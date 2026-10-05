@@ -10,9 +10,9 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from askslm.prompt import SYSTEM_INSTRUCTION
-from askslm.sources import Source, SourceKind
-from askslm.translation import JattrCriterion, SourceQuery, Translation, TranslationPrompt
+from cohortquery.prompt import SYSTEM_INSTRUCTION
+from cohortquery.sources import Source, SourceKind
+from cohortquery.translation import JattrCriterion, SourceQuery, Translation, TranslationPrompt
 
 
 SIRIUS_EXTENSION_PATH = "/private/pinto-lab/anna/sirius/build/sirius.duckdb_extension"
@@ -299,7 +299,7 @@ class GeminiBackend:
 
 
 def open_gemini(api_key: str, model: str) -> GeminiBackend:
-    """Constructed at the composition root; imported lazily so `import askslm` does not
+    """Constructed at the composition root; imported lazily so `import cohortquery` does not
     require google-genai for anyone using the canned backend."""
     from google import genai
 
@@ -352,7 +352,7 @@ class LocalEmbedder:
 
 
 def open_local_embedder() -> LocalEmbedder:
-    """Imported lazily so `import askslm` does not require transformers/torch for
+    """Imported lazily so `import cohortquery` does not require transformers/torch for
     anyone using Gemini-only. Downloads MODEL_NAME to the HuggingFace cache on first
     use -- unlogged otherwise, this one-time download/load showed up as an
     unexplained multi-minute gap between SQL log lines (2026-09-06 run)."""

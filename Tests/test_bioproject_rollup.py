@@ -3,11 +3,11 @@ criterion's own standalone reach shown per project regardless of how the
 criteria combined into the final cohort -- the explain design settled on."""
 import pandas as pd
 
-from askslm.accession import Accession
-from askslm.bioproject_rollup import UNKNOWN_PROJECT, BioProjectRollup
-from askslm.cohort import Cohort
-from askslm.jattr_concepts import JattrMatch
-from askslm.sources import Source
+from cohortquery.accession import Accession
+from cohortquery.bioproject_rollup import UNKNOWN_PROJECT, BioProjectRollup
+from cohortquery.cohort import Cohort
+from cohortquery.jattr_concepts import JattrMatch
+from cohortquery.sources import Source
 
 
 class _FakeDatabase:

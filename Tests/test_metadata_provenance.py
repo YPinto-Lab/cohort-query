@@ -6,20 +6,20 @@ columns stamped on as null, purely because metalog_metadata had no row for them 
 """
 import pandas as pd
 
-import askslm
-from askslm.adapters import CannedLlmBackend, DuckDbConnection
-from askslm.cohort import Accession
-from askslm.metadata import MetadataReader
-from askslm.sources import Source
-from askslm.translation import SourceQuery, Translation
+import cohortquery
+from cohortquery.adapters import CannedLlmBackend, DuckDbConnection
+from cohortquery.cohort import Accession
+from cohortquery.metadata import MetadataReader
+from cohortquery.sources import Source
+from cohortquery.translation import SourceQuery, Translation
 
 from fixtures.mirror import METALOG_ONLY, SHARED, SRA_ONLY, build_fixture_mirror
 
 IBD_TRANSLATION = Translation(
     interpretation="body_site = stool · disease = IBD",
     queries=(
-        SourceQuery(askslm.Source.SRA_METADATA, "SELECT * FROM sra_metadata"),
-        SourceQuery(askslm.Source.METALOG_METADATA, "SELECT * FROM metalog_metadata"),
+        SourceQuery(cohortquery.Source.SRA_METADATA, "SELECT * FROM sra_metadata"),
+        SourceQuery(cohortquery.Source.METALOG_METADATA, "SELECT * FROM metalog_metadata"),
     ),
 )
 
@@ -27,12 +27,12 @@ IBD_TRANSLATION = Translation(
 def test_sra_only_biosamples_dont_get_metalog_schema_stamped_as_null(tmp_path):
     path = build_fixture_mirror(tmp_path / "fixture.duckdb")
     connection = DuckDbConnection(path)
-    askslm.config(db=path, database=connection, backend=CannedLlmBackend(IBD_TRANSLATION))
-    plan = askslm.ask("fecal metagenomes from adults with IBD, Western countries")
+    cohortquery.config(db=path, database=connection, backend=CannedLlmBackend(IBD_TRANSLATION))
+    plan = cohortquery.ask("fecal metagenomes from adults with IBD, Western countries")
 
     # SRA_TAXONOMY columns resolve through sra_metadata, so both SHARED and SRA_ONLY
     # biosamples get columns here -- METALOG_ONLY and orphans never do (HLD B.3).
-    table, _ = plan.run(profile_sources=askslm.Source.SRA_TAXONOMY)
+    table, _ = plan.run(profile_sources=cohortquery.Source.SRA_TAXONOMY)
 
     sra_only_columns = [sid for sid in table.ids("sample")
                         if table.metadata(sid, axis="sample")["biosample"] in SRA_ONLY]
@@ -59,10 +59,10 @@ def test_metalog_only_biosamples_still_get_no_sra_columns_since_none_exist_for_t
     the interesting asymmetry is entirely on the SRA_TAXONOMY side, tested above."""
     path = build_fixture_mirror(tmp_path / "fixture.duckdb")
     connection = DuckDbConnection(path)
-    askslm.config(db=path, database=connection, backend=CannedLlmBackend(IBD_TRANSLATION))
-    plan = askslm.ask("fecal metagenomes from adults with IBD, Western countries")
+    cohortquery.config(db=path, database=connection, backend=CannedLlmBackend(IBD_TRANSLATION))
+    plan = cohortquery.ask("fecal metagenomes from adults with IBD, Western countries")
 
-    table, _ = plan.run(profile_sources=askslm.Source.SRA_TAXONOMY)
+    table, _ = plan.run(profile_sources=cohortquery.Source.SRA_TAXONOMY)
 
     biosamples_present = {table.metadata(sid, axis="sample")["biosample"]
                           for sid in table.ids("sample")}

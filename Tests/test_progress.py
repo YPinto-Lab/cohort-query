@@ -3,7 +3,7 @@ from log.txt's full SQL/LLM debug logging, so watch() can render clean progress
 without replaying that backlog."""
 import time
 
-from askslm.cli import progress
+from cohortquery.cli import progress
 
 
 def test_write_start_appends_a_timestamped_event(tmp_path):

@@ -10,7 +10,7 @@ import logging
 import duckdb
 import pytest
 
-from askslm.adapters import DuckDbConnection, _gpu_wrapped
+from cohortquery.adapters import DuckDbConnection, _gpu_wrapped
 
 
 @pytest.fixture
@@ -112,7 +112,7 @@ def test_query_logs_the_sql_and_row_count(caplog, tmp_path):
     raw.execute("CREATE TABLE t (x INTEGER)")
     raw.execute("INSERT INTO t VALUES (1), (2)")
     raw.close()
-    caplog.set_level(logging.INFO, logger="askslm.adapters")
+    caplog.set_level(logging.INFO, logger="cohortquery.adapters")
 
     connection = DuckDbConnection(db_path)
     connection.query("SELECT * FROM t")

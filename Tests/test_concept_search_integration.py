@@ -1,7 +1,7 @@
 """Proves the real SQL against a real DuckDB file -- the unit tests in
 test_concept_search.py fake the Database port; this one does not."""
-from askslm.adapters import DuckDbConnection
-from askslm.concept_search import EMBED_DIM, ConceptIndex
+from cohortquery.adapters import DuckDbConnection
+from cohortquery.concept_search import EMBED_DIM, ConceptIndex
 from fixtures.mirror import build_fixture_mirror
 
 

@@ -11,9 +11,9 @@ from functools import reduce
 
 import pandas as pd
 
-from askslm.cohort import Accession, Cohort, key_column
-from askslm.ports import Database
-from askslm.sources import Source
+from cohortquery.cohort import Accession, Cohort, key_column
+from cohortquery.ports import Database
+from cohortquery.sources import Source
 
 
 @dataclass(frozen=True)
