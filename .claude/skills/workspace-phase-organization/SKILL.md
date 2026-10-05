@@ -60,9 +60,9 @@ Workspaces/<study>/
   exact shape.
 - **Promotion rule:** write a step inline in the first script; lift to that phase's `shared.py`
   only when a second script in the same phase needs it.
-- **Two libraries:** general operations (lineage, biom/skbio wrappers) belong in the `askslm`
+- **Two libraries:** general operations (lineage, biom/skbio wrappers) belong in the `cohortquery`
   package; study-specific glue belongs in the phase's `shared.py`.
-- Serialize biom via `table.to_json("askslm-<study>-build")`, never `to_hdf5` — HDF5 can't
+- Serialize biom via `table.to_json("cohortquery-<study>-build")`, never `to_hdf5` — HDF5 can't
   round-trip nested lineage feature metadata (a real `AttributeError` you'll otherwise hit).
 
 ## Naming a biom
