@@ -1,6 +1,6 @@
 """READ-ONLY report on a DuckDB. Writes nothing, changes nothing.
 
-Describes whatever tables are actually present -- it does not assume the askslm
+Describes whatever tables are actually present -- it does not assume the cohortquery
 mirror has been built -- and answers the design questions only real data can settle.
 
     python Scripts/build_mirror/inspect_mirror.py --db /path/to/sra.duckdb
@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-from askslm.adapters import attach_sidecars          # noqa: E402
+from cohortquery.adapters import attach_sidecars          # noqa: E402
 
 
 MAX_DISTINCT = 200
@@ -148,7 +148,7 @@ class MirrorReport:
     def scoping_filters(self, table: str | None) -> None:
         """How much of SRA is actually metagenomic?
 
-        The askslm mirror is a DERIVED working set -- the full SRA database stays on
+        The cohortquery mirror is a DERIVED working set -- the full SRA database stays on
         the server untouched -- so narrowing it discards nothing and can be widened by
         a rebuild. The gain is not only speed: restricting collapses `organism` from
         ~247k mostly-irrelevant values to a vocabulary the LLM can actually match a

@@ -11,7 +11,7 @@ import duckdb
 import pandas as pd
 import pytest
 
-from askslm.adapters import (REQUIRED_LANCE_TABLES, REQUIRED_TABLES, DuckDbConnection,
+from cohortquery.adapters import (REQUIRED_LANCE_TABLES, REQUIRED_TABLES, DuckDbConnection,
                              IncompleteMirror, missing_tables, verify_mirror)
 
 
@@ -100,8 +100,8 @@ def test_a_rejected_mirror_is_not_cached_behind_the_global(tmp_path, monkeypatch
     guard and returns the very connection the first call rejected -- unvalidated, with
     its DuckDB handle still open. So verification happens on a local, and only a mirror
     that passes is ever published."""
-    import askslm
-    from askslm import runtime
+    import cohortquery
+    from cohortquery import runtime
 
     closed = []
 
@@ -119,10 +119,10 @@ def test_a_rejected_mirror_is_not_cached_behind_the_global(tmp_path, monkeypatch
         def close(self):
             closed.append(self)
 
-    monkeypatch.setattr("askslm.runtime.DuckDbConnection", _Partial)
+    monkeypatch.setattr("cohortquery.runtime.DuckDbConnection", _Partial)
     db_path = tmp_path / "partial.duckdb"
     db_path.touch()
-    askslm.config(db=db_path)
+    cohortquery.config(db=db_path)
 
     for _ in range(2):
         with pytest.raises(IncompleteMirror):

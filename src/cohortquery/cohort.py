@@ -12,11 +12,11 @@ from dataclasses import dataclass, field
 import duckdb
 import pandas as pd
 
-from askslm.accession import Accession
-from askslm.jattr_concepts import JattrConceptIndex, JattrMatch
-from askslm.ports import Database
-from askslm.sources import Source
-from askslm.translation import SourceQuery
+from cohortquery.accession import Accession
+from cohortquery.jattr_concepts import JattrConceptIndex, JattrMatch
+from cohortquery.ports import Database
+from cohortquery.sources import Source
+from cohortquery.translation import SourceQuery
 
 
 class InvalidCohortQuery(RuntimeError):

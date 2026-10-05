@@ -4,8 +4,8 @@ with no model degrades to no candidates, never an exception that would take down
 GeminiBackend has no embed() of its own -- query-time embedding always goes through
 LocalEmbedder (see runtime.embedder()), so there is nothing to test here beyond the
 canned, no-model case."""
-from askslm.adapters import CannedLlmBackend
-from askslm.translation import Translation
+from cohortquery.adapters import CannedLlmBackend
+from cohortquery.translation import Translation
 
 
 def test_canned_backend_embed_returns_nothing():

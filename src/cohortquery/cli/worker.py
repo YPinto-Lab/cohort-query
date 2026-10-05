@@ -1,6 +1,6 @@
 """The SLURM entrypoint: builds one cohort with no LLM hop, invoked as
 
-    python -m askslm.cli.worker --plan-dir <dir> --plan <plan.json> \\
+    python -m cohortquery.cli.worker --plan-dir <dir> --plan <plan.json> \\
         --sources SOURCE_A,SOURCE_B --out <biom path> --db <mirror path> [--gpu]
 
 Plan.run needs no backend -- CohortBuilder only ever touches runtime.database(),
@@ -14,12 +14,12 @@ import logging
 from pathlib import Path
 from typing import Callable
 
-import askslm
-from askslm.cli import jobs, progress, rundir
-from askslm.plan import load_plan
-from askslm.sources import Source
+import cohortquery
+from cohortquery.cli import jobs, progress, rundir
+from cohortquery.plan import load_plan
+from cohortquery.sources import Source
 
-_logger = logging.getLogger("askslm.worker")
+_logger = logging.getLogger("cohortquery.worker")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> None:
     try:
         jobs.write_status(args.plan_dir, "RUNNING")
         plan = load_plan(args.plan)
-        askslm.config(db=args.db, gpu=args.gpu)
+        cohortquery.config(db=args.db, gpu=args.gpu)
         _, report = plan.run(
             profile_sources=[Source[name.strip()] for name in args.sources.split(",")],
             out=args.out,

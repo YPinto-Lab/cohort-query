@@ -13,13 +13,13 @@ from typing import Callable, Sequence
 
 import biom
 
-from askslm import runtime
-from askslm.bioproject_rollup import BioProjectRollup
-from askslm.build import BuildReport, Materialization
-from askslm.cohort import Accession, Cohort
-from askslm.jattr_concepts import JattrMatch
-from askslm.sources import Source
-from askslm.translation import JattrCriterion, ResearchQuestion, SourceQuery, Translation
+from cohortquery import runtime
+from cohortquery.bioproject_rollup import BioProjectRollup
+from cohortquery.build import BuildReport, Materialization
+from cohortquery.cohort import Accession, Cohort
+from cohortquery.jattr_concepts import JattrMatch
+from cohortquery.sources import Source
+from cohortquery.translation import JattrCriterion, ResearchQuestion, SourceQuery, Translation
 
 
 class TranslationError(RuntimeError):

@@ -5,9 +5,9 @@ import logging
 
 import pytest
 
-from askslm.adapters import GeminiBackend
-from askslm.sources import Source
-from askslm.translation import ResearchQuestion, TranslationPrompt
+from cohortquery.adapters import GeminiBackend
+from cohortquery.sources import Source
+from cohortquery.translation import ResearchQuestion, TranslationPrompt
 
 
 class StubClient:
@@ -210,7 +210,7 @@ def test_a_real_but_non_metadata_source_is_also_a_loud_error():
 
 def test_translate_logs_the_prompt_and_the_response(caplog):
     payload = json.dumps({"interpretation": "x", "queries": [], "failure": None})
-    caplog.set_level(logging.INFO, logger="askslm.adapters")
+    caplog.set_level(logging.INFO, logger="cohortquery.adapters")
 
     GeminiBackend(StubClient(payload), model="test-model").translate(_prompt())
 

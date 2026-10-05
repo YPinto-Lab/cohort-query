@@ -16,9 +16,9 @@ from typing import Any
 
 import pandas as pd
 
-from askslm.accession import Accession
-from askslm.concept_search import Embedder
-from askslm.translation import JattrCriterion
+from cohortquery.accession import Accession
+from cohortquery.concept_search import Embedder
+from cohortquery.translation import JattrCriterion
 
 # Plain top-N per table, no distance cutoff -- same placeholder-not-yet-tuned
 # situation as concept_search.py's TOP_K_VALUES. Calibrating this against a real

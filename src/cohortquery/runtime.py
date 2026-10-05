@@ -12,16 +12,16 @@ from pathlib import Path
 
 import lancedb
 
-from askslm.adapters import DuckDbConnection, verify_mirror
-from askslm.build import BiomFactory, CohortBuilder
-from askslm.catalog import SchemaCatalog
-from askslm.cohort import CriterionResolver
-from askslm.concept_search import ConceptIndex, Embedder
-from askslm.jattr_concepts import JattrConceptIndex, LanceAttributeIndexes
-from askslm.metadata import MetadataReader, MetadataReconciler
-from askslm.ports import Database, LlmBackend
-from askslm.profiles import ProfileReader, ProfileReconciler
-from askslm.translation import Translator
+from cohortquery.adapters import DuckDbConnection, verify_mirror
+from cohortquery.build import BiomFactory, CohortBuilder
+from cohortquery.catalog import SchemaCatalog
+from cohortquery.cohort import CriterionResolver
+from cohortquery.concept_search import ConceptIndex, Embedder
+from cohortquery.jattr_concepts import JattrConceptIndex, LanceAttributeIndexes
+from cohortquery.metadata import MetadataReader, MetadataReconciler
+from cohortquery.ports import Database, LlmBackend
+from cohortquery.profiles import ProfileReader, ProfileReconciler
+from cohortquery.translation import Translator
 
 
 @dataclass(frozen=True)
@@ -94,7 +94,7 @@ def backend() -> LlmBackend:
 
 def _named_backend(settings: Settings) -> LlmBackend:
     if settings.llm == "gemini":
-        from askslm.adapters import open_gemini
+        from cohortquery.adapters import open_gemini
 
         return open_gemini(settings.llm_key, settings.llm_model)
     raise RuntimeError(
@@ -120,7 +120,7 @@ def embedder() -> Embedder:
             if _embedder is None:
                 settings = _require_settings()
                 if settings.llm == "gemini":
-                    from askslm.adapters import open_local_embedder
+                    from cohortquery.adapters import open_local_embedder
 
                     _embedder = open_local_embedder()
                 else:
@@ -173,5 +173,5 @@ def cohort_builder() -> CohortBuilder:
 
 def _require_settings() -> Settings:
     if _settings is None:
-        raise RuntimeError("askslm.config(...) has not been called")
+        raise RuntimeError("cohortquery.config(...) has not been called")
     return _settings

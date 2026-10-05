@@ -5,10 +5,10 @@ import json
 import numpy as np
 import pandas as pd
 
-from askslm.build import BiomFactory, CohortBuilder
-from askslm.cohort import Accession
-from askslm.metadata import ReconciledMetadata
-from askslm.profiles import ProfileMatrix
+from cohortquery.build import BiomFactory, CohortBuilder
+from cohortquery.cohort import Accession
+from cohortquery.metadata import ReconciledMetadata
+from cohortquery.profiles import ProfileMatrix
 
 
 def _matrix(columns: list[str]) -> ProfileMatrix:

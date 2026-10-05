@@ -2,9 +2,9 @@
 parts worth testing do not require driving a terminal."""
 from __future__ import annotations
 
-from askslm.bioproject_rollup import CriterionCount, ProjectRow
-from askslm.plan import CohortPreview
-from askslm.sources import Source
+from cohortquery.bioproject_rollup import CriterionCount, ProjectRow
+from cohortquery.plan import CohortPreview
+from cohortquery.sources import Source
 
 NARROW = 50            # a plain threshold, not a model judgement (HLD C.0.2)
 

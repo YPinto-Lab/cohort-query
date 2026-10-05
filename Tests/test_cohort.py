@@ -6,11 +6,11 @@ import duckdb
 import pandas as pd
 import pytest
 
-from askslm.accession import Accession
-from askslm.cohort import CriterionResolver, InvalidCohortQuery
-from askslm.jattr_concepts import JattrMatch
-from askslm.sources import Source
-from askslm.translation import JattrCriterion, SourceQuery
+from cohortquery.accession import Accession
+from cohortquery.cohort import CriterionResolver, InvalidCohortQuery
+from cohortquery.jattr_concepts import JattrMatch
+from cohortquery.sources import Source
+from cohortquery.translation import JattrCriterion, SourceQuery
 
 
 class _FakeDatabase:

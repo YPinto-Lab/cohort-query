@@ -2,11 +2,11 @@
 itself is a live terminal loop (polling squeue, sleeping, catching Ctrl-C),
 verified by running it, the same convention session.py already uses. One
 exception: the "job left the queue" exit condition is a real correctness
-property (a job killed outside askslm never gets to write status.txt, so status
+property (a job killed outside cohortquery never gets to write status.txt, so status
 alone would hang the loop forever) worth locking down end to end."""
 import time
 
-from askslm.cli import jobs, watch
+from cohortquery.cli import jobs, watch
 
 
 def test_no_phases_yet_prints_nothing():
@@ -82,7 +82,7 @@ def test_elapsed_formats_minutes_and_seconds():
 
 def test_watch_stops_once_squeue_says_the_job_is_gone_even_if_status_still_says_running(
         tmp_path, monkeypatch, capsys):
-    """A job killed by `scancel` from outside askslm, or OOM-killed, dies before its
+    """A job killed by `scancel` from outside cohortquery, or OOM-killed, dies before its
     finally block can write DONE/FAILED -- status.txt is stuck at RUNNING forever.
     squeue leaving the queue is the only signal guaranteed to update, so it alone
     must end the loop."""
@@ -99,7 +99,7 @@ def test_watch_stops_once_squeue_says_the_job_is_gone_even_if_status_still_says_
 
     watch.watch(tmp_path, watch.Console(width=200))
 
-    assert "killed outside askslm" in capsys.readouterr().out
+    assert "killed outside cohortquery" in capsys.readouterr().out
 
 
 def test_read_status_with_retry_catches_a_status_that_appears_late(tmp_path, monkeypatch):

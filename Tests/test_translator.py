@@ -1,7 +1,7 @@
 """The Translator is the only thing that knows a prompt needs schemas in it."""
-from askslm.translation import (ResearchQuestion, SourceQuery, Translation,
+from cohortquery.translation import (ResearchQuestion, SourceQuery, Translation,
                                 TranslationPrompt, Translator)
-from askslm.sources import Source
+from cohortquery.sources import Source
 
 
 class SpyBackend:
@@ -79,10 +79,10 @@ def test_an_unknown_llm_name_fails_at_config_not_at_ask(tmp_path):
     """Fail fast: a typo in llm= must not survive until the first question."""
     import pytest
 
-    import askslm
+    import cohortquery
     from fixtures.mirror import build_fixture_mirror
 
     path = build_fixture_mirror(tmp_path / "fixture.duckdb")
 
     with pytest.raises(ValueError, match="unknown llm"):
-        askslm.config(db=path, llm="gemni", llm_key="x")
+        cohortquery.config(db=path, llm="gemni", llm_key="x")

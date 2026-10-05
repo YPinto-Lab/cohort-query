@@ -1,13 +1,13 @@
 # AGENTS.md
 
 ## What this repo is
-Ask-SLM is a read-only Python package that turns a plain-language research question into a
+CohortQuery is a read-only Python package that turns a plain-language research question into a
 cross-study metagenomic feature table (`.biom`). An LLM translates the question into SQL per
 metadata source; the package previews the cohort cheaply and, on confirmation, materializes one
 biom over a prebuilt SRA × Metalog DuckDB mirror. Scope ends at the file — analysis is out.
 
 ## Status
-**Pre-implementation.** The pre-pivot workspace/agent/web code has been deleted. `src/askslm/`
+**Pre-implementation.** The pre-pivot workspace/agent/web code has been deleted. `src/cohortquery/`
 currently holds only what the new design reuses: `sra_schema.py` and `taxonomy.lineage_table`.
 The seven-package layout below is specified but not written.
 
@@ -16,7 +16,7 @@ Layered / hexagonal. The domain core knows nothing about DuckDB, Gemini, or the 
 those are adapters behind two ports (`LlmBackend`, `Database`). The composition root
 (`runtime.py`) wires concretes. Dependencies point inward; the core points at nothing.
 
-- `askslm/` (root) — facade (`config`, `ask`, `load_plan`) + `runtime` + `settings`
+- `cohortquery/` (root) — facade (`config`, `ask`, `load_plan`) + `runtime` + `settings`
 - `sources/` — the flat source model: one DuckDB table ↔ one `Source`
 - `translation/` — question + schemas → one SQL per **metadata** source, behind the LLM port
 - `plan/` — the reviewable, persistable artifact and its cohort preview
@@ -35,7 +35,7 @@ those are adapters behind two ports (`LlmBackend`, `Database`). The composition 
 - **Trust input, fail fast:** no defensive validation past `config()`.
 - **Serialization:** biom **JSON** — HDF5 cannot round-trip nested lineage metadata.
 
-Full model: `Docs/superpowers/specs/2026-06-17-askslm-architecture-hld-lld.html`.
+Full model: `Docs/superpowers/specs/2026-06-17-cohortquery-architecture-hld-lld.html`.
 
 ## Validation workflow
 - Install: `pip install -r Docs/requirements.txt && pip install -e .`

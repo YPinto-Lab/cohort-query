@@ -1,9 +1,9 @@
 #!/bin/bash
-# Build every askslm artifact from a fresh SRA download.
+# Build every cohortquery artifact from a fresh SRA download.
 #
 #   1. sra_taxonomy_sorted.duckdb   tax_raw sorted by acc, narrowed to 4 columns   (~2 h)
 #   2. sra_metadata_sorted.duckdb   metadata_raw sorted by biosample, all columns  (~10 min)
-#   3. askslm_mirror.duckdb         views over 1 and 2 + Metalog tables + indexes  (~15 min)
+#   3. cohortquery_mirror.duckdb         views over 1 and 2 + Metalog tables + indexes  (~15 min)
 #   4. + attribute_keys_index/      jattr presence + content, embedded and written  (~4-6 h,
 #      attribute_values_index       into LanceDB with an IVF_PQ index for search --
 #                                    extraction+embedding dominates the time, not
@@ -17,7 +17,7 @@
 # the LLM has no column vocabulary, no attribute lookup and no concept search, so
 # discovery fails on questions that name a phenotype. They used to be run by hand.
 #
-# Only #3 is passed to askslm.config(db=...). It records the paths of #1 and #2 and
+# Only #3 is passed to cohortquery.config(db=...). It records the paths of #1 and #2 and
 # re-attaches them on connect, so all three must stay where you built them.
 #
 # Usage:
@@ -42,7 +42,7 @@
 # Re-running is safe: each step builds into a "<target>.building" file and renames it
 # over the target only after its checks pass, so an existing artifact survives a failure.
 #
-#SBATCH --job-name=askslm-build-all
+#SBATCH --job-name=cohortquery-build-all
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=450G
 #SBATCH --time=48:00:00
@@ -88,7 +88,7 @@ OUT_DIR=$(cd -- "$OUT_DIR" && pwd)
 RAW_DIR=$OUT_DIR/raw
 TAXONOMY=$OUT_DIR/sra_taxonomy_sorted.duckdb
 METADATA=$OUT_DIR/sra_metadata_sorted.duckdb
-MIRROR=$OUT_DIR/askslm_mirror.duckdb
+MIRROR=$OUT_DIR/cohortquery_mirror.duckdb
 TMP=$OUT_DIR/duckdb_tmp_build_all
 mkdir -p "$TMP"; trap 'rm -rf "$TMP"' EXIT
 
@@ -139,7 +139,7 @@ esac
 [ "$free_gb" -ge "$need" ] || die "only ${free_gb}G free at $OUT_DIR; stage '$STAGE' needs ~${need}G (use a different --out-dir)"
 echo "  space: ${free_gb}G free, ~${need}G needed"
 
-echo "=== askslm build_all on $(hostname) at $(date -Is) ==="
+echo "=== cohortquery build_all on $(hostname) at $(date -Is) ==="
 echo "  stage=$STAGE threads=$THREADS memory_limit=$MEMORY_LIMIT"
 echo "  out-dir=$OUT_DIR (${free_gb}G free)"
 
@@ -181,7 +181,7 @@ echo "--- verifying the mirror is complete"
 import sys, duckdb
 from pathlib import Path
 sys.path.insert(0, f"{sys.argv[2]}/../../src")
-from askslm.adapters import missing_tables, missing_lance_tables, REQUIRED_TABLES, REQUIRED_LANCE_TABLES
+from cohortquery.adapters import missing_tables, missing_lance_tables, REQUIRED_TABLES, REQUIRED_LANCE_TABLES
 con = duckdb.connect(sys.argv[1], read_only=True)
 absent = missing_tables(con) + [f"{name}.lance" for name in missing_lance_tables(Path(sys.argv[1]).parent)]
 if absent:
@@ -192,4 +192,4 @@ PYEOF
 echo "=== done at $(date -Is) ==="
 ls -lh "$OUT_DIR"/*.duckdb
 echo
-echo "Point askslm at the mirror:  askslm.config(db='$MIRROR')"
+echo "Point cohortquery at the mirror:  cohortquery.config(db='$MIRROR')"

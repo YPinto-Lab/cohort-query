@@ -15,7 +15,7 @@ METADATA tables only: the LLM writes one query per METADATA source and never tou
 the profile tables (HLD E.2). That is also what keeps this cheap -- the profile
 tables are the big ones.
 
-    python Scripts/build_mirror/steps/step5_catalog_schema.py --db askslm_mirror.duckdb
+    python Scripts/build_mirror/steps/step5_catalog_schema.py --db cohortquery_mirror.duckdb
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
-from askslm.adapters import attach_sidecars          # noqa: E402
+from cohortquery.adapters import attach_sidecars          # noqa: E402
 
 
 METADATA_TABLES = ("sra_metadata", "metalog_metadata")

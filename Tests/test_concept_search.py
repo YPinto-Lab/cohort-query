@@ -3,7 +3,7 @@ shares no characters with the question's: "IBD" finding "Crohn's disease" and
 "ulcerative colitis" as subject_disease_status values, with no shared substring."""
 import pandas as pd
 
-from askslm.concept_search import ConceptIndex, render_values
+from cohortquery.concept_search import ConceptIndex, render_values
 
 
 class _FakeEmbedder:

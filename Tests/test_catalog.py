@@ -3,8 +3,8 @@ import re
 
 import pytest
 
-from askslm.adapters import DuckDbConnection
-from askslm.catalog import SchemaCatalog
+from cohortquery.adapters import DuckDbConnection
+from cohortquery.catalog import SchemaCatalog
 
 from fixtures.mirror import build_fixture_mirror
 
@@ -81,7 +81,7 @@ def _line_for(rendered: str, column: str) -> str:
 def test_system_instruction_states_the_key_and_the_two_sources():
     """The generated SQL is useless unless it returns the join key, and the model must
     know it is writing TWO independent queries, not one join."""
-    from askslm.prompt import SYSTEM_INSTRUCTION
+    from cohortquery.prompt import SYSTEM_INSTRUCTION
 
     assert "biosample" in SYSTEM_INSTRUCTION
     assert "sample_alias" in SYSTEM_INSTRUCTION
@@ -95,7 +95,7 @@ def test_truncated_values_are_carved_out_of_the_only_shown_values_rule():
     `organism IN (<the 200 shown values>)` against a 247,000-value column, which
     silently drops every row outside the sample. The truncated case needs an
     explicit carve-out: the shown values are spelling examples, not the full set."""
-    from askslm.prompt import SYSTEM_INSTRUCTION
+    from cohortquery.prompt import SYSTEM_INSTRUCTION
 
     assert "truncated" in SYSTEM_INSTRUCTION
     assert "not the permitted set" in SYSTEM_INSTRUCTION or "not the full" in SYSTEM_INSTRUCTION
@@ -107,7 +107,7 @@ def test_a_source_that_cannot_express_the_question_is_omitted_not_guessed():
     e.g. Metalog has no field for "human tumour RNA-seq", and a Metalog query that
     returns anything at all corrupts an SRA-only cohort. The prompt must tell the
     model to omit that source's query entirely rather than approximate one."""
-    from askslm.prompt import SYSTEM_INSTRUCTION
+    from cohortquery.prompt import SYSTEM_INSTRUCTION
 
     assert "omit" in SYSTEM_INSTRUCTION.lower()
     assert "union" in SYSTEM_INSTRUCTION.lower()

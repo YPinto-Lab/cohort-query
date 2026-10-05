@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Callable
 
 CPU_TEMPLATE = """#!/bin/bash
-#SBATCH --job-name=askslm-cohort
+#SBATCH --job-name=cohortquery-cohort
 #SBATCH --partition=cpu192G-48h
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=160G
@@ -34,7 +34,7 @@ CPU_TEMPLATE = """#!/bin/bash
 """
 
 GPU_TEMPLATE = """#!/bin/bash
-#SBATCH --job-name=askslm-cohort-gpu
+#SBATCH --job-name=cohortquery-cohort-gpu
 #SBATCH --partition=H200-12h
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G

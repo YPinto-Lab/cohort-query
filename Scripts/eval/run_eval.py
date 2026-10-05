@@ -79,11 +79,11 @@ def main() -> None:
                              "check against the daily quota instead of the full set")
     args = parser.parse_args()
 
-    import askslm
-    from askslm.adapters import DuckDbConnection
+    import cohortquery
+    from cohortquery.adapters import DuckDbConnection
 
     connection = DuckDbConnection(args.db)
-    askslm.config(db=args.db, llm="gemini", llm_key=args.key, llm_model=args.model,
+    cohortquery.config(db=args.db, llm="gemini", llm_key=args.key, llm_model=args.model,
                   database=connection)
 
     cases = [json.loads(line) for line in QUESTIONS.read_text().splitlines()
@@ -109,9 +109,9 @@ def main() -> None:
 
 
 def _run_one(connection, case: dict) -> Score:
-    import askslm
+    import cohortquery
 
-    plan = askslm.ask(case["question"])
+    plan = cohortquery.ask(case["question"])
     generated = {query.source.name: _keys(connection, query.sql)
                  for query in plan.translation.queries}
     gold = {source: _keys(connection, sql) for source, sql in case["gold"].items()}
@@ -125,7 +125,7 @@ def _run_one(connection, case: dict) -> Score:
 
 
 def _keys(connection, sql: str) -> set:
-    from askslm.cohort import accessions_of
+    from cohortquery.cohort import accessions_of
 
     return set(accessions_of(connection.query(sql)))
 

@@ -10,7 +10,7 @@ import os
 import tomllib
 from pathlib import Path
 
-CONFIG_PATH = Path.home() / ".askslm" / "config.toml"
+CONFIG_PATH = Path.home() / ".cohortquery" / "config.toml"
 
 
 def stored_settings(path: Path = CONFIG_PATH) -> dict:
@@ -22,8 +22,8 @@ def stored_settings(path: Path = CONFIG_PATH) -> dict:
 
 
 def _from_environment() -> dict:
-    found = {"db": os.environ.get("ASKSLM_DB"),
-             "llm_key": os.environ.get("ASKSLM_LLM_KEY")}
+    found = {"db": os.environ.get("COHORTQUERY_DB"),
+             "llm_key": os.environ.get("COHORTQUERY_LLM_KEY")}
     return {key: value for key, value in found.items() if value}
 
 

@@ -1,9 +1,9 @@
-"""askslm — turn a research question into a cross-study metagenomic feature table.
+"""cohortquery — turn a research question into a cross-study metagenomic feature table.
 
-    askslm.config(db="mirror.duckdb")
-    plan = askslm.ask("fecal metagenomes from adults with IBD, Western countries")
+    cohortquery.config(db="mirror.duckdb")
+    plan = cohortquery.ask("fecal metagenomes from adults with IBD, Western countries")
     print(plan)
-    table, report = plan.run(profile_sources=askslm.Source.METALOG_MOTUS3, out="cohort.biom")
+    table, report = plan.run(profile_sources=cohortquery.Source.METALOG_MOTUS3, out="cohort.biom")
 
 Two verbs. ask() understands the question and previews the cohort cheaply -- one LLM
 hop, no source choices, no biom presupposed. run() materializes and is the only place
@@ -11,27 +11,27 @@ sources are named.
 
 STATUS: the question -> .biom path is real end to end, with a real LLM. Configure it
 with config(db=..., llm="gemini", llm_key=...); llm="canned" plus an injected backend
-is what the tests use. The terminal app (`$ askslm`, src/askslm/cli/session.py) and
+is what the tests use. The terminal app (`$ cohortquery`, src/cohortquery/cli/session.py) and
 plan persistence (Plan.save / load_plan) now exist too, hand-verified by scripting
 questionary end to end against the fixture mirror. Still rough: session.py is glue,
 not unit-tested -- it is verified by running it, not by a test suite; Translation
 accuracy against the eval set in Scripts/eval/ has not yet been measured.
 
-Design: Docs/superpowers/specs/2026-06-17-askslm-architecture-hld-lld.html
+Design: Docs/superpowers/specs/2026-06-17-cohortquery-architecture-hld-lld.html
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 
-from askslm import runtime
-from askslm.build import BuildReport, Materialization
-from askslm.cohort import Accession, Cohort, InvalidCohortQuery
-from askslm.plan import CohortPreview, Plan, TranslationError, load_plan
-from askslm.ports import Database, LlmBackend
-from askslm.profiles import ProfileReader
-from askslm.sources import ProfilerFamily, Source, SourceKind, Unit
-from askslm.translation import ResearchQuestion, SourceQuery, Translation, TranslationPrompt
+from cohortquery import runtime
+from cohortquery.build import BuildReport, Materialization
+from cohortquery.cohort import Accession, Cohort, InvalidCohortQuery
+from cohortquery.plan import CohortPreview, Plan, TranslationError, load_plan
+from cohortquery.ports import Database, LlmBackend
+from cohortquery.profiles import ProfileReader
+from cohortquery.sources import ProfilerFamily, Source, SourceKind, Unit
+from cohortquery.translation import ResearchQuestion, SourceQuery, Translation, TranslationPrompt
 
 __all__ = [
     "config", "ask",

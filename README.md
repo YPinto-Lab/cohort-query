@@ -1,4 +1,4 @@
-# Ask-SLM
+# CohortQuery
 
 A read-only Python package that turns a research question into a cross-study metagenomic feature
 table. Ask in plain language; an LLM translates it into SQL over a prebuilt SRA × Metalog DuckDB
@@ -9,10 +9,10 @@ mirror; review the cohort; materialize one `.biom`.
 
 ## Quick start
 
-Orange is what you type; everything else is `askslm` talking back — the question, its
+Orange is what you type; everything else is `cohortquery` talking back — the question, its
 translation, the cohort preview, and a menu to run it, refine it, or save the plan for later.
 
-![`askslm` interactive session: asking a cohort question and previewing the result](Docs/img/askslm-session.png)
+![`cohortquery` interactive session: asking a cohort question and previewing the result](Docs/img/cohortquery-session.png)
 
 "Run it" walks you through picking a feature space and sources, then submits the build. Scope
 ends at the `.biom` — open it in whatever you already use.
@@ -44,16 +44,16 @@ Python 3.12+. The ete3 NCBI taxonomy database (`~/.etetoolkit/taxa.sqlite`) must
 locally — `ete3` does this itself on first use. Contributing? `pip install -r
 Docs/requirements.txt` adds the extras needed to run the test suite and the mirror-build plots.
 
-You need two things before the first `askslm` run:
+You need two things before the first `cohortquery` run:
 
-- **The mirror** — one prebuilt DuckDB that `askslm` opens read-only. On a lab install it's
+- **The mirror** — one prebuilt DuckDB that `cohortquery` opens read-only. On a lab install it's
   already built and handed to you as a single `.duckdb` file — ask your lab for the current
   path. Building it yourself is a separate, one-time ETL that fetches its own raw inputs; see
   [Building the mirror](#building-the-mirror) below if that's your job.
 - **A Gemini API key** — for the LLM translation step.
 
-Run `askslm`. The first time, it asks for the database path and the key once and remembers them
-in `~/.askslm/config.toml` (or set `ASKSLM_DB` / `ASKSLM_LLM_KEY` — the environment always wins,
+Run `cohortquery`. The first time, it asks for the database path and the key once and remembers them
+in `~/.cohortquery/config.toml` (or set `COHORTQUERY_DB` / `COHORTQUERY_LLM_KEY` — the environment always wins,
 so the lab server and CI never see a prompt). Every run after that just opens the prompt shown
 above.
 

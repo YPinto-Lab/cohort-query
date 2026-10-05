@@ -9,11 +9,11 @@ from typing import Callable
 import biom
 import pandas as pd
 
-from askslm import checkpoint
-from askslm.cohort import Accession, Cohort, CriterionResolver
-from askslm.metadata import MetadataReconciler, ReconciledMetadata
-from askslm.profiles import ProfileMatrix, ProfileReconciler, one_family
-from askslm.sources import ProfilerFamily, Source, SourceKind
+from cohortquery import checkpoint
+from cohortquery.cohort import Accession, Cohort, CriterionResolver
+from cohortquery.metadata import MetadataReconciler, ReconciledMetadata
+from cohortquery.profiles import ProfileMatrix, ProfileReconciler, one_family
+from cohortquery.sources import ProfilerFamily, Source, SourceKind
 
 
 @dataclass(frozen=True)
@@ -240,7 +240,7 @@ class CohortBuilder:
         if out is not None:
             out = Path(out)
             out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(table.to_json("askslm"))
+            out.write_text(table.to_json("cohortquery"))
         return table
 
     def _report(self, request: Materialization, cohort: Cohort,

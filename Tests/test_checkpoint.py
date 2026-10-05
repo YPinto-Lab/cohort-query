@@ -5,13 +5,13 @@ after either one doesn't force a full replay.
 """
 import pandas as pd
 
-from askslm import checkpoint
-from askslm.build import BiomFactory, CohortBuilder, Materialization
-from askslm.cohort import Accession, Cohort
-from askslm.metadata import ReconciledMetadata
-from askslm.profiles import ProfileMatrix
-from askslm.sources import Source
-from askslm.translation import SourceQuery
+from cohortquery import checkpoint
+from cohortquery.build import BiomFactory, CohortBuilder, Materialization
+from cohortquery.cohort import Accession, Cohort
+from cohortquery.metadata import ReconciledMetadata
+from cohortquery.profiles import ProfileMatrix
+from cohortquery.sources import Source
+from cohortquery.translation import SourceQuery
 
 
 def _cohort() -> Cohort:

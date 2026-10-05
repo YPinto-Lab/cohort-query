@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ask-slm"
+name = "cohort-query"
 version = "0.1.0"
-description = "Ask-SLM: build a cross-study metagenomic feature table from a research question."
+description = "CohortQuery: build a cross-study metagenomic feature table from a research question."
 requires-python = ">=3.12"
 dependencies = [
     "duckdb>=1.5",
@@ -20,9 +20,9 @@ dependencies = [
 ]
 
 [project.scripts]
-askslm = "askslm.cli.session:main"
+cohortquery = "cohortquery.cli.session:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["askslm*"]
+include = ["cohortquery*"]
 namespaces = true

@@ -2,7 +2,7 @@
 // "adults with IBD" means these cells of subject_disease_status and this age cutoff.
 // Draft against the live schema, correct by hand; the corrected version is truth.
 // Target 15-20 questions drawn from REAL research questions, not invented ones.
-// At least one MUST be a non-metagenome question (askslm is a search tool, not a
+// At least one MUST be a non-metagenome question (cohortquery is a search tool, not a
 // metagenomics-only tool) so the no-scoping decision is enforced by a test.
 //
 // WARNING -- the three rows below are UNVERIFIED FORMAT EXAMPLES, not a validated

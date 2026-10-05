@@ -11,7 +11,7 @@ from a hosted embeddings API after its free-tier per-minute AND per-day quotas
 both proved too restrictive to finish the build, hitting sustained 429s even
 right after a fresh daily reset; a local model finishes the same build in minutes.
 
-    python Scripts/build_mirror/steps/step6_embed_concepts.py --db askslm_mirror.duckdb
+    python Scripts/build_mirror/steps/step6_embed_concepts.py --db cohortquery_mirror.duckdb
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from pathlib import Path
 import duckdb
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-from askslm.concept_search import EMBED_DIM, Embedder
+from cohortquery.concept_search import EMBED_DIM, Embedder
 
 
 class ConceptEmbeddingBuilder:
@@ -81,7 +81,7 @@ def main() -> None:
     parser.add_argument("--dim", type=int, default=EMBED_DIM)
     args = parser.parse_args()
 
-    from askslm.adapters import open_local_embedder
+    from cohortquery.adapters import open_local_embedder
 
     ConceptEmbeddingBuilder(args.db, open_local_embedder(), args.dim).build()
 

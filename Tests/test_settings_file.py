@@ -1,14 +1,14 @@
 """Where config comes from, and in what order. The lab server must never be asked
 a question -- that is what the environment override is for."""
-from askslm.settings_file import stored_settings, write_settings
+from cohortquery.settings_file import stored_settings, write_settings
 
 
 def test_the_environment_wins_over_the_file(tmp_path, monkeypatch):
     """CI and the lab server set env vars and must never hit a prompt or a file."""
     config = tmp_path / "config.toml"
     write_settings(config, db="/from/file.duckdb", llm_key="file-key")
-    monkeypatch.setenv("ASKSLM_DB", "/from/env.duckdb")
-    monkeypatch.setenv("ASKSLM_LLM_KEY", "env-key")
+    monkeypatch.setenv("COHORTQUERY_DB", "/from/env.duckdb")
+    monkeypatch.setenv("COHORTQUERY_LLM_KEY", "env-key")
 
     settings = stored_settings(config)
 
@@ -18,8 +18,8 @@ def test_the_environment_wins_over_the_file(tmp_path, monkeypatch):
 def test_the_file_is_used_when_the_environment_is_empty(tmp_path, monkeypatch):
     config = tmp_path / "config.toml"
     write_settings(config, db="/from/file.duckdb", llm_key="file-key")
-    monkeypatch.delenv("ASKSLM_DB", raising=False)
-    monkeypatch.delenv("ASKSLM_LLM_KEY", raising=False)
+    monkeypatch.delenv("COHORTQUERY_DB", raising=False)
+    monkeypatch.delenv("COHORTQUERY_LLM_KEY", raising=False)
 
     settings = stored_settings(config)
 
@@ -27,8 +27,8 @@ def test_the_file_is_used_when_the_environment_is_empty(tmp_path, monkeypatch):
 
 
 def test_nothing_stored_anywhere_returns_empty_so_the_app_can_prompt(tmp_path, monkeypatch):
-    monkeypatch.delenv("ASKSLM_DB", raising=False)
-    monkeypatch.delenv("ASKSLM_LLM_KEY", raising=False)
+    monkeypatch.delenv("COHORTQUERY_DB", raising=False)
+    monkeypatch.delenv("COHORTQUERY_LLM_KEY", raising=False)
 
     assert stored_settings(tmp_path / "absent.toml") == {}
 

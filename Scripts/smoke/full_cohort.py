@@ -12,8 +12,8 @@ Invoke it deliberately, on a compute node:
     python Scripts/smoke/full_cohort.py --out-dir /some/scratch
     python Scripts/smoke/full_cohort.py --out-dir /scratch --question "..." --expect-samples 3573
 
-Settings come from askslm's own resolution -- ASKSLM_DB / ASKSLM_LLM_KEY, else
-~/.askslm/config.toml -- so this stays correct if that ever changes.
+Settings come from cohortquery's own resolution -- COHORTQUERY_DB / COHORTQUERY_LLM_KEY, else
+~/.cohortquery/config.toml -- so this stays correct if that ever changes.
 
 Salvaged from tools/just-ask/tmp_bugfix_test/run_full_cohort.py (2026-08-23), which
 carried a `sys.path.insert` onto a private copy of the package: it imported August code
@@ -26,9 +26,9 @@ import sys
 import time
 from pathlib import Path
 
-import askslm
-from askslm import Source
-from askslm.settings_file import stored_settings
+import cohortquery
+from cohortquery import Source
+from cohortquery.settings_file import stored_settings
 
 DEFAULT_QUESTION = "IBD fecal metagenomic with calprotectin"
 
@@ -45,16 +45,16 @@ def main() -> int:
 
     settings = stored_settings()
     if not settings.get("db"):
-        print("No mirror configured. Set ASKSLM_DB or run the terminal app once.",
+        print("No mirror configured. Set COHORTQUERY_DB or run the terminal app once.",
               file=sys.stderr)
         return 2
-    askslm.config(db=settings["db"], llm="gemini", llm_key=settings.get("llm_key", ""))
+    cohortquery.config(db=settings["db"], llm="gemini", llm_key=settings.get("llm_key", ""))
     args.out_dir.mkdir(parents=True, exist_ok=True)
     print(f"mirror   : {settings['db']}")
     print(f"question : {args.question}", flush=True)
 
     asked = time.monotonic()
-    plan = askslm.ask(args.question, save=args.out_dir / "plan.json")
+    plan = cohortquery.ask(args.question, save=args.out_dir / "plan.json")
     print(f"ask()    : {time.monotonic() - asked:.1f}s", flush=True)
     print(plan, flush=True)
     if plan.error:

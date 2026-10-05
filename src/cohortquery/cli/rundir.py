@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 PLANS_ROOT = Path("plans")
-LOGGER_NAME = "askslm"
+LOGGER_NAME = "cohortquery"
 
 
 def new_plan_dir(question: str = "", root: Path = PLANS_ROOT) -> Path:

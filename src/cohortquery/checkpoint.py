@@ -21,10 +21,10 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from askslm.cohort import Accession, Cohort
-from askslm.profiles import ProfileMatrix
-from askslm.sources import Source
-from askslm.translation import SourceQuery
+from cohortquery.cohort import Accession, Cohort
+from cohortquery.profiles import ProfileMatrix
+from cohortquery.sources import Source
+from cohortquery.translation import SourceQuery
 
 _DIR_NAME = "checkpoint"
 
