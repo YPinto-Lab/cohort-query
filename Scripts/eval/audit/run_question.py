@@ -24,7 +24,10 @@ def write_sidecars(connection, queries, run_dir: Path) -> dict[str, int]:
         writer = csv.writer(fh)
         writer.writerow(["source", "biosample"])
         for query in queries:
-            sql_blocks.append(f"-- {query.source.name}\n{query.sql};")
+            if query.sql:
+                sql_blocks.append(f"-- {query.source.name}\n{query.sql};")
+            else:
+                sql_blocks.append(f"-- {query.source.name}: jattr-only, no native SQL")
             keys = sorted(accessions_of(connection.query(query.sql))) if query.sql else []
             row_counts[query.source.name] = len(keys)
             for key in keys:
