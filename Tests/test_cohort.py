@@ -136,6 +136,55 @@ def test_bucket_2_sql_and_jattr_always_union_regardless_of_combinator():
     assert cohort.by_source[Source.SRA_METADATA] == {Accession("SAMN001"), Accession("SAMN002")}
 
 
+def test_intersect_combinator_requires_both_sql_and_jattr_to_match():
+    """The IBD/calprotectin case: a broad native-column match ("fecal
+    metagenomic", 996K+ samples in production) must not swallow a narrow
+    jattr match when the two represent distinct, simultaneous requirements --
+    confirmed live 2026-10-05 against the real mirror (996,410 rows returned
+    under the old union-only mechanism vs. 134 independently-verified
+    correct). sql_jattr_combinator="intersect" is the fix: only samples
+    matching BOTH channels count."""
+    matches = {"IBD": [_match("IBD", "ibd_sam", "SAMN001", "SAMN002", "SAMN999")]}
+    resolver = CriterionResolver(_FakeDatabase(sql_result=["SAMN001", "SAMN002", "SAMN777"]),
+                                 _FakeJattrIndex(matches))
+    query = SourceQuery(Source.SRA_METADATA, "SELECT biosample ...",
+                        jattr_criteria=(JattrCriterion(concept="IBD"),),
+                        sql_jattr_combinator="intersect")
+
+    cohort = resolver.discover((query,))
+
+    assert cohort.by_source[Source.SRA_METADATA] == {Accession("SAMN001"), Accession("SAMN002")}
+
+
+def test_intersect_combinator_can_genuinely_return_empty():
+    """Same philosophy as jattr_combinator="all": a true empty intersection is
+    the correct answer to a co-occurrence the data does not support, not
+    something to silently soften back to a union."""
+    matches = {"IBD": [_match("IBD", "ibd_sam", "SAMN999")]}
+    resolver = CriterionResolver(_FakeDatabase(sql_result=["SAMN001"]), _FakeJattrIndex(matches))
+    query = SourceQuery(Source.SRA_METADATA, "SELECT biosample ...",
+                        jattr_criteria=(JattrCriterion(concept="IBD"),),
+                        sql_jattr_combinator="intersect")
+
+    cohort = resolver.discover((query,))
+
+    assert cohort.by_source[Source.SRA_METADATA] == frozenset()
+
+
+def test_intersect_is_ignored_when_jattr_criteria_is_absent():
+    """sql_jattr_combinator only matters when both channels are populated --
+    an sql-only query must not be zeroed out just because "intersect" was
+    left set from a prior edit or a default that doesn't apply here."""
+    resolver = CriterionResolver(_FakeDatabase(sql_result=["SAMN001", "SAMN002"]),
+                                 _FakeJattrIndex({}))
+    query = SourceQuery(Source.SRA_METADATA, "SELECT biosample ...",
+                        sql_jattr_combinator="intersect")
+
+    cohort = resolver.discover((query,))
+
+    assert cohort.by_source[Source.SRA_METADATA] == {Accession("SAMN001"), Accession("SAMN002")}
+
+
 def test_bad_sql_raises_invalid_cohort_query():
     resolver = CriterionResolver(_FakeDatabase(raises=duckdb.BinderException("boom")),
                                  _FakeJattrIndex({}))

@@ -35,6 +35,13 @@ class SourceQuery:
     sql: str | None                                     # bucket 1/2's native-column SQL
     jattr_criteria: tuple[JattrCriterion, ...] = ()     # bucket 2/3's jattr-touching criteria
     jattr_combinator: Literal["all", "any"] = "any"     # how jattr_criteria combine with EACH OTHER
+    # how sql's result combines with jattr_criteria's combined result:
+    # "union" -- bucket 2, the same fact recorded twice (e.g. collection_date_sam
+    #   sometimes only in jattr) -- a sample either channel recognizes counts.
+    # "intersect" -- sql and jattr_criteria are genuinely distinct, simultaneous
+    #   requirements (e.g. native "fecal metagenomic" AND jattr "IBD diagnosis")
+    #   that must all hold on the same sample.
+    sql_jattr_combinator: Literal["union", "intersect"] = "union"
 
 
 @dataclass(frozen=True)

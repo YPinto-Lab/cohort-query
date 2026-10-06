@@ -72,6 +72,25 @@ def test_parses_jattr_criteria_and_combinator():
     assert query.jattr_combinator == "all"
 
 
+def test_parses_sql_jattr_combinator_intersect():
+    """The IBD/calprotectin fix, 2026-10-06: when sql and jattr_criteria express
+    distinct, simultaneous requirements, the model sets sql_jattr_combinator
+    to "intersect" so a broad native-column match can't swallow the jattr
+    narrowing (see cohort.py's CriterionResolver)."""
+    payload = json.dumps({
+        "interpretation": "fecal metagenomic samples with IBD and a calprotectin measurement",
+        "queries": [{"source": "SRA_METADATA",
+                     "sql": "SELECT biosample FROM sra_metadata WHERE organism ILIKE '%gut%'",
+                     "jattr_criteria": ["IBD diagnosis", "calprotectin measurement"],
+                     "jattr_combinator": "all", "sql_jattr_combinator": "intersect"}],
+        "failure": None,
+    })
+
+    translation = GeminiBackend(StubClient(payload), model="test-model").translate(_prompt())
+
+    assert translation.queries[0].sql_jattr_combinator == "intersect"
+
+
 def test_an_unfiltered_sql_is_dropped_not_unioned_in():
     """Real bug, hit live 2026-09-14: a translation for "IBD with calprotectin"
     emitted sql="SELECT biosample FROM sra_metadata" (no WHERE) alongside
@@ -124,6 +143,7 @@ def test_jattr_criteria_and_combinator_default_when_absent():
     query = translation.queries[0]
     assert query.jattr_criteria == ()
     assert query.jattr_combinator == "any"
+    assert query.sql_jattr_combinator == "union"
 
 
 def test_a_refusal_becomes_a_failure_sentence_with_no_queries():

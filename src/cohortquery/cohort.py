@@ -62,10 +62,16 @@ class CriterionResolver:
 
     A SourceQuery mixes up to two independent things: SQL against native columns
     (buckets 1/2) and JattrCriterion concepts resolved via nearest-neighbor lookup
-    against attribute_keys_index/attribute_values_index (buckets 2/3). Two
+    against attribute_keys_index/attribute_values_index (buckets 2/3). Three
     separate combination rules, not in conflict:
-      - sql's result UNIONS with jattr_criteria's combined result -- bucket 2's
-        same-fact-recorded-twice case (e.g. collection_date_sam).
+      - sql's result combines with jattr_criteria's combined result per
+        query.sql_jattr_combinator: "union" for bucket 2's same-fact-recorded-
+        twice case (e.g. collection_date_sam, sometimes only in jattr -- either
+        channel recognizing a sample counts), "intersect" when sql and
+        jattr_criteria are genuinely distinct, simultaneous requirements (e.g.
+        native "fecal metagenomic" AND jattr "IBD diagnosis") that must both
+        hold on the same sample -- union would silently widen the cohort to
+        whichever channel's bucket is broader.
       - jattr_criteria combine with EACH OTHER per query.jattr_combinator:
         "all" intersects (can genuinely be empty -- that is the true answer to
         an AND the data does not support, not something to silently soften),
@@ -90,8 +96,15 @@ class CriterionResolver:
 
     def _resolve(self, query: SourceQuery, matches: dict[str, list[JattrMatch]]
                 ) -> frozenset[Accession]:
-        sql_result = self._run_sql(query) if query.sql else frozenset()
-        return sql_result | self._combined(query.jattr_combinator, matches)
+        if not query.sql:
+            return self._combined(query.jattr_combinator, matches)
+        sql_result = self._run_sql(query)
+        if not matches:
+            return sql_result
+        jattr_result = self._combined(query.jattr_combinator, matches)
+        if query.sql_jattr_combinator == "intersect":
+            return sql_result & jattr_result
+        return sql_result | jattr_result
 
     def _run_sql(self, query: SourceQuery) -> frozenset[Accession]:
         try:
