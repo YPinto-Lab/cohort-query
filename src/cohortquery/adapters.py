@@ -402,7 +402,8 @@ def _source_query_of(entry: dict) -> SourceQuery:
     criteria = tuple(JattrCriterion(concept=concept)
                      for concept in entry.get("jattr_criteria", []))
     return SourceQuery(source, _narrowing_sql(entry.get("sql"), source), jattr_criteria=criteria,
-                       jattr_combinator=entry.get("jattr_combinator", "any"))
+                       jattr_combinator=entry.get("jattr_combinator", "any"),
+                       sql_jattr_combinator=entry.get("sql_jattr_combinator", "union"))
 
 
 def _narrowing_sql(sql: str | None, source: Source) -> str | None:

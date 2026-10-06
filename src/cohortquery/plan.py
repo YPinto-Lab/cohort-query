@@ -99,7 +99,8 @@ def _as_json(plan: Plan) -> dict:
         "interpretation": plan.translation.interpretation,
         "queries": [{"source": query.source.name, "sql": query.sql,
                     "jattr_criteria": [criterion.concept for criterion in query.jattr_criteria],
-                    "jattr_combinator": query.jattr_combinator}
+                    "jattr_combinator": query.jattr_combinator,
+                    "sql_jattr_combinator": query.sql_jattr_combinator}
                     for query in plan.translation.queries],
         "failure": plan.translation.failure,
         "preview": {
@@ -143,7 +144,8 @@ def _source_query_of(entry: dict) -> SourceQuery:
     criteria = tuple(JattrCriterion(concept=concept)
                      for concept in entry.get("jattr_criteria", []))
     return SourceQuery(Source[entry["source"]], entry["sql"], jattr_criteria=criteria,
-                       jattr_combinator=entry.get("jattr_combinator", "any"))
+                       jattr_combinator=entry.get("jattr_combinator", "any"),
+                       sql_jattr_combinator=entry.get("sql_jattr_combinator", "union"))
 
 
 def _cohort_of(payload: dict) -> Cohort:

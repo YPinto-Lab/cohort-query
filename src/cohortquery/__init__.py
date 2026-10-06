@@ -106,10 +106,12 @@ def _with_sql(translation: Translation, source: Source, sql: str) -> Translation
 
 
 def _replace_sql(query: SourceQuery, sql: str) -> SourceQuery:
-    """Repair only ever rewrites `sql` -- the jattr_criteria/jattr_combinator
-    half of the query was never rejected by DuckDB and must survive unchanged."""
+    """Repair only ever rewrites `sql` -- the jattr_criteria/jattr_combinator/
+    sql_jattr_combinator half of the query was never rejected by DuckDB and
+    must survive unchanged."""
     return SourceQuery(query.source, sql, jattr_criteria=query.jattr_criteria,
-                       jattr_combinator=query.jattr_combinator)
+                       jattr_combinator=query.jattr_combinator,
+                       sql_jattr_combinator=query.sql_jattr_combinator)
 
 
 def _columns_of(source: Source) -> str:

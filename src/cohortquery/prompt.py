@@ -103,9 +103,20 @@ WRITING PREDICATES (the `sql` channel)
 - If a fact is recorded in BOTH a native column and (for SRA) as a jattr
   concept -- e.g. a collection date that is sometimes only in jattr -- write
   the native predicate in `sql` AND add the matching phrase to
-  `jattr_criteria`. The two results union: a sample either source recognizes
-  counts. This is the one case where `sql` and `jattr_criteria` on the same
-  source are not independent alternatives but two views of the same fact.
+  `jattr_criteria`, and leave `sql_jattr_combinator` at its default, "union".
+  The two results union: a sample either source recognizes counts. This is
+  the one case where `sql` and `jattr_criteria` on the same source are two
+  views of the same fact, not independent requirements.
+- If instead `sql` and `jattr_criteria` express DIFFERENT, simultaneous
+  requirements -- e.g. native columns narrow to "fecal metagenomic" while
+  jattr_criteria carries "IBD diagnosis" and "calprotectin measurement", and a
+  sample must satisfy ALL of them together -- set `sql_jattr_combinator` to
+  "intersect". Union is wrong here: it would let a broad native-column match
+  (e.g. every feces/gut-metagenome sample in the source) swallow the jattr
+  narrowing entirely, silently widening the cohort by orders of magnitude
+  while still looking like a correctly-scoped query. Default to "union" only
+  when `sql` and `jattr_criteria` are redundant views of the same fact;
+  default to "intersect" whenever they are separate facts that must co-occur.
 
 WHEN A SOURCE CANNOT EXPRESS PART OF THE QUESTION
 The caller unions every source's results, so a query against a source that does not
@@ -123,9 +134,13 @@ For example, "human tumour RNA-seq" is expressible in SRA_METADATA; Metalog has 
 comparable field, so omit METALOG_METADATA's query entirely. Likewise "IBD fecal
 metagenomic samples with a calprotectin measurement": SRA can express IBD and
 calprotectin as jattr_criteria phrases and "fecal metagenomic" via native
-columns, so write its query. Metalog can express IBD and fecal via native
-columns, but has no calprotectin field or equivalent -- omit METALOG_METADATA's
-query rather than filtering it on the other criteria only.
+columns, so write its query -- but IBD/calprotectin and "fecal metagenomic" are
+different, simultaneous requirements, not two views of one fact, so set
+`sql_jattr_combinator` to "intersect" (see WRITING PREDICATES); left at the
+"union" default, the broad native-column match would swallow the jattr
+narrowing and silently return nearly the entire source. Metalog can express IBD
+and fecal via native columns, but has no calprotectin field or equivalent --
+omit METALOG_METADATA's query rather than filtering it on the other criteria only.
 
 When you omit a source this way, say so in `interpretation` (e.g. "Metalog omitted:
 no calprotectin field, so it cannot verify this question's criteria"), so the
@@ -180,11 +195,15 @@ OUTPUT
 Return JSON only, matching exactly:
 {"interpretation": "...",
  "queries": [{"source": "...", "sql": "..." or null,
-              "jattr_criteria": ["concept phrase", ...], "jattr_combinator": "any"}],
+              "jattr_criteria": ["concept phrase", ...], "jattr_combinator": "any",
+              "sql_jattr_combinator": "union"}],
  "failure": null}
 `interpretation` is one line of plain English restating the cohort you selected;
 it is shown to the researcher as show-your-work. `source` must be one of the
 source names given in the schema block. `sql` is null when a source's query is
 jattr-criteria-only. `jattr_criteria` and `jattr_combinator` are omitted or
-empty/"any" when a source's query is sql-only. On failure, `queries` is [].
+empty/"any" when a source's query is sql-only. `sql_jattr_combinator` is
+omitted or "union" unless `sql` and `jattr_criteria` express different,
+simultaneous requirements (see WRITING PREDICATES), in which case it is
+"intersect". On failure, `queries` is [].
 """

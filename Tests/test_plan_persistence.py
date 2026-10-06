@@ -169,3 +169,18 @@ def test_an_old_plan_json_with_no_discovered_key_still_loads(tmp_path):
     loaded = load_plan(path)
 
     assert loaded.discovered is None
+
+
+def test_an_old_plan_json_with_no_sql_jattr_combinator_key_defaults_to_union(tmp_path):
+    """An old plan.json, saved before sql_jattr_combinator existed, has no such
+    key on its queries -- it must still load, defaulting to "union" (the
+    behavior every pre-existing plan already assumed)."""
+    path = tmp_path / "old.json"
+    _plan().save(path)
+    payload = json.loads(path.read_text())
+    del payload["queries"][0]["sql_jattr_combinator"]
+    path.write_text(json.dumps(payload))
+
+    loaded = load_plan(path)
+
+    assert loaded.translation.queries[0].sql_jattr_combinator == "union"
