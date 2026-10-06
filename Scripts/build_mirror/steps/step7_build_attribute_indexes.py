@@ -42,6 +42,7 @@ from pathlib import Path
 
 import duckdb
 import lancedb
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from cohortquery.adapters import attach_sidecars          # noqa: E402
@@ -176,6 +177,31 @@ def classify_key(key: str, samples: list[str]) -> str:
     return "useful_text"
 
 
+# attribute_keys_index answers "does this biosample have this measurement at all,
+# regardless of value" -- a question that doesn't care whether the recorded value
+# is a bare number. attribute_values_index answers "does some value mean X", which
+# a bare number can never do (its biological meaning depends on the key it's filed
+# under -- "172.5" alone is not semantically close to "calprotectin measurement").
+# A "numeric"-classified key (e.g. fecalcalprotectin_run, whose values are all
+# plain numbers) therefore still belongs in the PRESENCE index -- excluding it
+# from presence search too, as earlier versions of this classifier did, silently
+# drops every purely-numeric measurement from jattr concept search entirely.
+# Found live 2026-10-06: a translation-accuracy benchmark question
+# ("IBD fecal metagenomic with calprotectin") could not find fecalcalprotectin_run
+# via jattr_criteria at all, for exactly this reason.
+PRESENCE_WORTHY_CLASSES = frozenset({"useful_text", "numeric"})
+VALUE_WORTHY_CLASSES = frozenset({"useful_text"})
+
+
+def select_keys(census: pd.DataFrame) -> tuple[list[str], list[str]]:
+    """census has columns k/occurrences/klass (see classify_key) -- returns
+    (presence_keys, value_keys), both sorted by occurrence descending."""
+    by_occurrence = census.sort_values("occurrences", ascending=False)
+    presence = by_occurrence[by_occurrence["klass"].isin(PRESENCE_WORTHY_CLASSES)]
+    values = by_occurrence[by_occurrence["klass"].isin(VALUE_WORTHY_CLASSES)]
+    return presence["k"].tolist(), values["k"].tolist()
+
+
 class AttributeIndexBuilder:
     def __init__(self, db_path: Path, embedder: Embedder, dim: int = EMBED_DIM,
                  batch_size: int = EXTRACTION_BATCH_SIZE,
@@ -195,9 +221,9 @@ class AttributeIndexBuilder:
         con = duckdb.connect(str(self.db_path))
         self._configure(con)
         attach_sidecars(con)
-        useful_keys = self._useful_text_keys(con)
-        self._build_keys_index(con, useful_keys)
-        self._build_values_index(con, useful_keys)
+        presence_keys, value_keys = self._classified_keys(con)
+        self._build_keys_index(con, presence_keys)
+        self._build_values_index(con, value_keys)
         self._write_lance_table(con, "attribute_keys_index", "key", self._lance_keys_dir)
         self._write_lance_table(con, "attribute_values_index", "value", self._lance_values_dir)
         self._report(con)
@@ -224,7 +250,7 @@ class AttributeIndexBuilder:
             Path(self.temp_dir).mkdir(parents=True, exist_ok=True)
             con.execute(f"SET temp_directory = '{self.temp_dir}'")
 
-    def _useful_text_keys(self, con: duckdb.DuckDBPyConnection) -> list[str]:
+    def _classified_keys(self, con: duckdb.DuckDBPyConnection) -> tuple[list[str], list[str]]:
         """Census + classify, replacing the removed attribute_keys table's job."""
         start = time.monotonic()
         _log("census: counting every jattr key over the full table...")
@@ -251,15 +277,14 @@ class AttributeIndexBuilder:
         # normalize to plain lists here rather than at every call site.
         samples_by_key = {k: list(v) for k, v in zip(samples["k"], samples["vs"])}
 
-        classes = [classify_key(k, samples_by_key.get(k, [])) for k in census["k"]]
-        census["klass"] = classes
-        useful = census[census["klass"] == "useful_text"].sort_values(
-            "occurrences", ascending=False)
-        _log(f"  {len(useful)} keys classified useful_text of {len(census)} total")
-        return useful["k"].tolist()
+        census["klass"] = [classify_key(k, samples_by_key.get(k, [])) for k in census["k"]]
+        presence_keys, value_keys = select_keys(census)
+        _log(f"  {len(presence_keys)} keys worth presence-searching, "
+            f"{len(value_keys)} worth content-searching, of {len(census)} total")
+        return presence_keys, value_keys
 
     def _build_keys_index(self, con: duckdb.DuckDBPyConnection,
-                          useful_keys: list[str]) -> None:
+                          presence_keys: list[str]) -> None:
         """PRESENCE table: which biosamples have this key at all, regardless of
         value. Cheap -- reuses the key-only unnest, no value extraction.
 
@@ -284,7 +309,7 @@ class AttributeIndexBuilder:
             FROM (SELECT biosample, unnest(json_keys(jattr)) AS k FROM sra_metadata)
             WHERE k = ANY(?)
             GROUP BY k
-        """, [useful_keys])
+        """, [presence_keys])
         rows = con.execute("SELECT k, biosamples FROM key_presence").fetchall()
         keys = [row[0] for row in rows]
         vectors = self.embedder.embed(keys)
@@ -298,7 +323,7 @@ class AttributeIndexBuilder:
         _log(f"  {len(keys)} keys indexed ({time.monotonic() - start:.1f}s)")
 
     def _build_values_index(self, con: duckdb.DuckDBPyConnection,
-                            useful_keys: list[str]) -> None:
+                            value_keys: list[str]) -> None:
         """CONTENT table: distinct values, DEDUPED ACROSS ALL KEYS -- key is
         discarded by design (a value means the same thing regardless which field
         it came from). Batched: one json_extract_string(jattr, [paths...]) call
@@ -316,7 +341,7 @@ class AttributeIndexBuilder:
         start = time.monotonic()
         _log("building attribute_values_index (content)...")
         if not self._values_extracted(con):
-            self._extract_and_persist_values(con, useful_keys, start)
+            self._extract_and_persist_values(con, value_keys, start)
         else:
             _log("  values already extracted and persisted (resuming) -- "
                 f"skipping extraction+dedup")
@@ -334,7 +359,7 @@ class AttributeIndexBuilder:
             f"SELECT count(*) FROM {table}").fetchone()[0] > 0
 
     def _extract_and_persist_values(self, con: duckdb.DuckDBPyConnection,
-                                    useful_keys: list[str], start: float) -> None:
+                                    value_keys: list[str], start: float) -> None:
         con.execute("DROP TABLE IF EXISTS attribute_values_index")
         con.execute(f"""
             CREATE TABLE attribute_values_index (
@@ -345,10 +370,10 @@ class AttributeIndexBuilder:
                 value VARCHAR, biosample VARCHAR)
         """)
 
-        for batch_start in range(0, len(useful_keys), self.batch_size):
-            batch = useful_keys[batch_start:batch_start + self.batch_size]
+        for batch_start in range(0, len(value_keys), self.batch_size):
+            batch = value_keys[batch_start:batch_start + self.batch_size]
             batch_no = batch_start // self.batch_size + 1
-            total_batches = (len(useful_keys) + self.batch_size - 1) // self.batch_size
+            total_batches = (len(value_keys) + self.batch_size - 1) // self.batch_size
             _log(f"  batch {batch_no}/{total_batches} ({len(batch)} keys)...")
             paths = [f"$.{k}" for k in batch]
             con.execute(f"""
