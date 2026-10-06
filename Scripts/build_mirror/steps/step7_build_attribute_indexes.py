@@ -13,14 +13,26 @@ neighbor hit already carries its answer, no second query needed. See the
                                                            (key is discarded by
                                                            design -- see the note).
 
-Scope: two layers. (1) a key-level classifier (classify_key) picks which KEYS are
-worth extracting from at all, using each key's own sampled values -- this drops
-~78% of the raw key corpus before any embedding work happens, mainly for speed.
-(2) VALUE_EXCLUDE_SQL then filters every individual VALUE pulled from a surviving
-key -- a key can mix free text with numbers/dates/IDs (e.g. "5", "10", "unknown"
-under the same key), and the key-level sample vote lets those through. This step
-no longer reads the old attribute_keys table (deleted); it recomputes the key
-census itself.
+Scope: one key-level filter, by NAME only -- ID_NAME_RE/ADMIN_KEY_RE drop keys
+that are pure bookkeeping (accessions, checksums, submission metadata) and carry
+no biological signal regardless of what their values look like. The SAME
+filtered key list feeds both indexes; neither index excludes a key based on its
+*values* -- attribute_keys_index only ever embeds the key NAME, so a key's value
+shape is irrelevant to it, and attribute_values_index relies entirely on
+VALUE_EXCLUDE_SQL (a per-VALUE filter, not per-key) to strip individual
+numbers/dates/IDs/no-info placeholders regardless of which key they came from.
+
+An earlier version of this file also classified each key by sampling a handful
+of its values (numeric/id-like/useful-text) and used that to decide which index
+a key belonged to. Removed 2026-10-06: sampling ~200K rows out of ~39M made the
+classification of any LOW-OCCURRENCE key a coin flip -- a key with ~134 real
+occurrences had roughly even odds of being completely absent from the sample,
+misclassified "empty", and silently dropped from search entirely. Confirmed
+live via the translation-accuracy benchmark: fecalcalprotectin_run (134 rows,
+all numeric) was excluded this way, twice, before the root cause was isolated.
+The per-key value classification was only ever a compute-saving shortcut --
+VALUE_EXCLUDE_SQL already guarantees correctness for individual values on its
+own -- so it's gone, not replaced with a "more careful" sample.
 
 Correctness note: jattr wraps most values in a single-element JSON array
 (`["IBD"]`, not `"IBD"`) -- confirmed on the live mirror 2026-09-08, ~52% of
@@ -47,9 +59,6 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from cohortquery.adapters import attach_sidecars          # noqa: E402
 from cohortquery.concept_search import EMBED_DIM, Embedder
-
-SAMPLE_ROWS_FOR_CLASSIFICATION = 200_000    # matches the removed step4's sampling rate
-MAX_SAMPLES_PER_KEY = 3
 
 # Sized from live-mirror timing 2026-09-08: a 400-key batch over the full table
 # (39.1M rows) with SQL-side dedup completed cleanly, sane memory. Kept well under
@@ -101,11 +110,9 @@ def _ivf_num_partitions(row_count: int) -> int:
     return min(heuristic, max_supported)
 
 
-NUMERIC_RE = re.compile(r"^-?\d+(\.\d+)?([eE]-?\d+)?$")
 ID_NAME_RE = re.compile(
     r"(id|accession|barcode|uuid|guid|checksum|md5|url|_path$|filename|_name$|doi|isbn|"
     r"^ena_|^sra_|ncbi|_gid$|run_|index|number|code$)", re.IGNORECASE)
-ID_VALUE_RE = re.compile(r"^[A-Za-z0-9]{16,}$")
 
 # Submission/lab-process bookkeeping, not sample biology -- found live 2026-09-14
 # investigating attribute_keys_index's most-skewed rows (primary_search alone
@@ -126,12 +133,14 @@ ADMIN_KEY_RE = re.compile(
     r"^lane_run$|avgreadlength|^coverage_run$|nominal_length", re.IGNORECASE)
 
 # Per-VALUE filter applied at extraction time, in SQL, on every individual value
-# regardless of which key it came from -- classify_key's per-KEY sample vote lets
-# numeric/date/id values through whenever they're mixed into an otherwise-textual
-# key (confirmed on the live mirror 2026-09-09: 54% of a 200K sample of the
-# resulting table were bare numbers). No space-stripping before the id-value
-# check here (unlike classify_key) -- stripping spaces first would misclassify
-# multi-word free text like "human sperm individual 3" as an opaque ID.
+# regardless of which key it came from -- a key can mix free text with
+# numbers/dates/IDs (e.g. "5", "10", "unknown" under the same key), so this is
+# the ONLY place values get excluded; there is no per-key pre-filter upstream of
+# it (confirmed live 2026-09-09: 54% of a 200K sample of the pre-filter era's
+# resulting table were bare numbers that slipped through anyway). No
+# space-stripping before the id-value check here -- stripping spaces first
+# would misclassify multi-word free text like "human sperm individual 3" as an
+# opaque ID.
 # "No information recorded" placeholders -- found live 2026-09-14 investigating
 # attribute_values_index's most-skewed rows. Mostly the INSDC/MIxS controlled
 # "missing value" vocabulary (not_applicable/missing/not_collected/not_provided/
@@ -154,52 +163,22 @@ VALUE_EXCLUDE_SQL = r"""
 """
 
 
-def classify_key(key: str, samples: list[str]) -> str:
-    """Coarse, fast pre-filter over which KEYS are worth extracting from at all
-    (an "any sample looks like a date -> drop the whole key" rule used to live
-    here too, but that drops legitimate free text sharing a key with one
-    date-shaped sample -- date-ness, like numeric-ness and id-ness, is now a
-    per-VALUE decision, see VALUE_EXCLUDE_SQL). key-name pattern first (catches
-    an ID column with no ID-shaped SAMPLE, e.g. only nulls sampled), then
-    majority vote over the sampled values."""
-    if not samples:
-        return "empty"
-    if all(NUMERIC_RE.match(s) for s in samples):
-        return "numeric"
-    if ID_NAME_RE.search(key):
-        return "id_like_name"
-    if ADMIN_KEY_RE.search(key):
-        return "administrative_metadata"
-    if all(ID_VALUE_RE.match(s.replace(" ", "")) for s in samples) and any(
-        any(c.isdigit() for c in s) for s in samples
-    ):
-        return "id_like_value"
-    return "useful_text"
+def is_bookkeeping_key(key: str) -> bool:
+    """The only key-level exclusion: pure bookkeeping (an ID/accession/checksum
+    by NAME, or lab-process metadata like collector_name) carries no biological
+    signal regardless of coverage or value shape. Deliberately NAME-only --
+    nothing here looks at a key's values, so there is no sampling and no chance
+    of a rare key being misjudged (see the module docstring's 2026-10-06 note).
+    The same result feeds both indexes: a key's values are never a reason to
+    treat it differently for presence-search vs. content-search eligibility."""
+    return bool(ID_NAME_RE.search(key) or ADMIN_KEY_RE.search(key))
 
 
-# attribute_keys_index answers "does this biosample have this measurement at all,
-# regardless of value" -- a question that doesn't care whether the recorded value
-# is a bare number. attribute_values_index answers "does some value mean X", which
-# a bare number can never do (its biological meaning depends on the key it's filed
-# under -- "172.5" alone is not semantically close to "calprotectin measurement").
-# A "numeric"-classified key (e.g. fecalcalprotectin_run, whose values are all
-# plain numbers) therefore still belongs in the PRESENCE index -- excluding it
-# from presence search too, as earlier versions of this classifier did, silently
-# drops every purely-numeric measurement from jattr concept search entirely.
-# Found live 2026-10-06: a translation-accuracy benchmark question
-# ("IBD fecal metagenomic with calprotectin") could not find fecalcalprotectin_run
-# via jattr_criteria at all, for exactly this reason.
-PRESENCE_WORTHY_CLASSES = frozenset({"useful_text", "numeric"})
-VALUE_WORTHY_CLASSES = frozenset({"useful_text"})
-
-
-def select_keys(census: pd.DataFrame) -> tuple[list[str], list[str]]:
-    """census has columns k/occurrences/klass (see classify_key) -- returns
-    (presence_keys, value_keys), both sorted by occurrence descending."""
-    by_occurrence = census.sort_values("occurrences", ascending=False)
-    presence = by_occurrence[by_occurrence["klass"].isin(PRESENCE_WORTHY_CLASSES)]
-    values = by_occurrence[by_occurrence["klass"].isin(VALUE_WORTHY_CLASSES)]
-    return presence["k"].tolist(), values["k"].tolist()
+def select_keys(census: pd.DataFrame) -> list[str]:
+    """census has columns k/occurrences (see _search_eligible_keys) -- returns
+    every non-bookkeeping key, sorted by occurrence descending."""
+    eligible = census[~census["k"].apply(is_bookkeeping_key)]
+    return eligible.sort_values("occurrences", ascending=False)["k"].tolist()
 
 
 class AttributeIndexBuilder:
@@ -221,9 +200,9 @@ class AttributeIndexBuilder:
         con = duckdb.connect(str(self.db_path))
         self._configure(con)
         attach_sidecars(con)
-        presence_keys, value_keys = self._classified_keys(con)
-        self._build_keys_index(con, presence_keys)
-        self._build_values_index(con, value_keys)
+        search_keys = self._search_eligible_keys(con)
+        self._build_keys_index(con, search_keys)
+        self._build_values_index(con, search_keys)
         self._write_lance_table(con, "attribute_keys_index", "key", self._lance_keys_dir)
         self._write_lance_table(con, "attribute_values_index", "value", self._lance_values_dir)
         self._report(con)
@@ -250,8 +229,11 @@ class AttributeIndexBuilder:
             Path(self.temp_dir).mkdir(parents=True, exist_ok=True)
             con.execute(f"SET temp_directory = '{self.temp_dir}'")
 
-    def _classified_keys(self, con: duckdb.DuckDBPyConnection) -> tuple[list[str], list[str]]:
-        """Census + classify, replacing the removed attribute_keys table's job."""
+    def _search_eligible_keys(self, con: duckdb.DuckDBPyConnection) -> list[str]:
+        """Census (full scan, no sampling) + name-only filter, replacing the
+        removed attribute_keys table's job. The same list feeds both indexes --
+        see select_keys/is_bookkeeping_key and the module docstring for why
+        there's no per-key value-based classification anymore."""
         start = time.monotonic()
         _log("census: counting every jattr key over the full table...")
         census = con.execute("""
@@ -261,27 +243,10 @@ class AttributeIndexBuilder:
         """).fetchdf()
         _log(f"  {len(census)} distinct keys ({time.monotonic() - start:.1f}s)")
 
-        _log(f"sampling {SAMPLE_ROWS_FOR_CLASSIFICATION} rows for classification...")
-        samples = con.execute(f"""
-            SELECT k, list(DISTINCT v)[1:{MAX_SAMPLES_PER_KEY}] AS vs
-            FROM (
-                SELECT k, json_extract_string(jattr, '$.' || k) AS v
-                FROM (SELECT jattr, unnest(json_keys(jattr)) AS k
-                      FROM sra_metadata USING SAMPLE {SAMPLE_ROWS_FOR_CLASSIFICATION} ROWS)
-                WHERE json_extract_string(jattr, '$.' || k) IS NOT NULL
-            )
-            GROUP BY k
-        """).fetchdf()
-        # DuckDB LIST columns arrive from fetchdf() as numpy arrays, not plain
-        # lists -- `if not numpy_array:` raises ValueError for length > 1, so
-        # normalize to plain lists here rather than at every call site.
-        samples_by_key = {k: list(v) for k, v in zip(samples["k"], samples["vs"])}
-
-        census["klass"] = [classify_key(k, samples_by_key.get(k, [])) for k in census["k"]]
-        presence_keys, value_keys = select_keys(census)
-        _log(f"  {len(presence_keys)} keys worth presence-searching, "
-            f"{len(value_keys)} worth content-searching, of {len(census)} total")
-        return presence_keys, value_keys
+        search_keys = select_keys(census)
+        _log(f"  {len(search_keys)} keys eligible for search (name-filtered) "
+            f"of {len(census)} total")
+        return search_keys
 
     def _build_keys_index(self, con: duckdb.DuckDBPyConnection,
                           presence_keys: list[str]) -> None:
