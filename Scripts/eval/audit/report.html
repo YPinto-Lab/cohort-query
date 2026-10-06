@@ -1,0 +1,32 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>CohortQuery translation accuracy audit</title>
+<style>
+  body{font:14px/1.5 -apple-system,sans-serif;max-width:1000px;margin:24px auto;padding:0 16px}
+  table{border-collapse:collapse;width:100%;margin:8px 0 28px}
+  th,td{border-bottom:1px solid #ddd;padding:6px 10px;text-align:left;vertical-align:top}
+  .match{background:#d1fae5}.partial{background:#fef3c7}.mismatch{background:#fee2e2}
+</style></head><body>
+<h1>Translation accuracy audit</h1>
+<h2>q01-ibd-calprotectin</h2><p>IBD fecal metagenomic with calprotectin</p>
+<table>
+<tr><th>checked_at</th><th>trigger</th><th>judgment</th><th>gold_version</th><th>plan</th><th>sidecars</th></tr>
+<tr class="partial">
+<td>2026-10-05T18:49:18</td>
+<td>initial</td>
+<td>PARTIAL</td>
+<td>1</td>
+<td><a href="/private/pinto-lab/plans/20261005_184918_ibd-fecal-metagenomic-with-calprotectin/plan.json">plan</a></td>
+<td><a href="Scripts/eval/audit/q01-ibd-calprotectin/runs/2026-10-05_initial/generated.sql">sql</a> &middot;
+    <a href="Scripts/eval/audit/q01-ibd-calprotectin/runs/2026-10-05_initial/results.csv">results</a></td>
+</tr>
+<tr class="mismatch">
+<td>2026-10-06T11:31:17</td>
+<td>code_change</td>
+<td>MISMATCH</td>
+<td>1</td>
+<td><a href="/private/pinto-lab/plans/20261006_113117_ibd-fecal-metagenomic-with-calprotectin/plan.json">plan</a></td>
+<td><a href="Scripts/eval/audit/q01-ibd-calprotectin/runs/2026-10-06_after-intersect-fix/generated.sql">sql</a> &middot;
+    <a href="Scripts/eval/audit/q01-ibd-calprotectin/runs/2026-10-06_after-intersect-fix/results.csv">results</a></td>
+</tr>
+</table>
+</body></html>
