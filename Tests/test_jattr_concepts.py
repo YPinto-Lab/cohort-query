@@ -40,8 +40,9 @@ class _FakeSearch:
     def to_pandas(self):
         scored = sorted(self._rows, key=_distance_to(self._query_vector))
         top = scored[:self._limit]
-        return pd.DataFrame([(name, biosamples) for name, biosamples, _ in top],
-                            columns=[self._column, "biosample"])
+        return pd.DataFrame(
+            [(name, biosamples, _distance(vector, self._query_vector)) for name, biosamples, vector in top],
+            columns=[self._column, "biosample", "_distance"])
 
 
 def _distance(a, b):
@@ -150,3 +151,54 @@ def test_no_criteria_skips_the_embed_call_entirely():
     index = JattrConceptIndex(_fake_indexes(), embedder=_EmbedderThatMustNotBeCalled())
 
     assert index.matching(()) == {}
+
+
+def test_a_real_but_distant_synonym_is_not_dropped_by_a_small_fixed_top_n():
+    """The actual bug: fecalcalprotectin_run ranked #27 nearest to "calprotectin
+    measurement" among 85,143 real keys (distance 0.817) -- a genuine synonym,
+    just crowded out by ~18 near-duplicate calprotectin_*_sam naming variants
+    ranked closer. A small fixed top-N (the old TOP_K=5) drops it entirely; a
+    distance threshold keeps it as long as it's still within the real
+    relevant-neighborhood distance, regardless of how many closer rows exist."""
+    near_duplicates = [(f"calprotectin_variant_{i}_sam", [f"SAMN{i:03d}"], [1.0, 0.01 * i])
+                       for i in range(30)]
+    real_but_distant = ("fecalcalprotectin_run", ["SAMN999"], [0.6, 0.6])
+    index = JattrConceptIndex(
+        _fake_indexes(key_rows=[*near_duplicates, real_but_distant]),
+        embedder=_FakeEmbedder({"calprotectin measurement": [1.0, 0.0]}))
+
+    found = index.matching((JattrCriterion(concept="calprotectin measurement"),))
+
+    matched_on = {match.matched_on for match in found["calprotectin measurement"]}
+    assert "fecalcalprotectin_run" in matched_on
+
+
+def test_a_candidate_far_outside_the_relevant_neighborhood_is_dropped():
+    """Distance threshold's other half: a row that's simply unrelated (the
+    embedding equivalent of noise) must not ride in just because fewer than
+    MAX_CANDIDATES real matches exist."""
+    index = JattrConceptIndex(
+        _fake_indexes(key_rows=[("calprotectin_sam", ["SAMN001"], [1.0, 0.0]),
+                                ("totally_unrelated_key", ["SAMN099"], [-1.0, -1.0])]),
+        embedder=_FakeEmbedder({"calprotectin measurement": [1.0, 0.0]}))
+
+    found = index.matching((JattrCriterion(concept="calprotectin measurement"),))
+
+    matched_on = {match.matched_on for match in found["calprotectin measurement"]}
+    assert matched_on == {"calprotectin_sam"}
+
+
+def test_candidates_are_capped_even_when_all_are_within_threshold():
+    """A dense, generic concept (e.g. "sample collection date" in production --
+    hundreds of on-topic keys) must not match unboundedly just because they're
+    all genuinely close -- MAX_CANDIDATES is the cost/precision safety net a
+    pure threshold doesn't provide on its own."""
+    many_close_matches = [(f"collection_date_variant_{i}_sam", [f"SAMN{i:03d}"], [1.0, 0.0])
+                          for i in range(200)]
+    index = JattrConceptIndex(
+        _fake_indexes(key_rows=many_close_matches),
+        embedder=_FakeEmbedder({"sample collection date": [1.0, 0.0]}))
+
+    found = index.matching((JattrCriterion(concept="sample collection date"),))
+
+    assert len(found["sample collection date"]) <= 50
