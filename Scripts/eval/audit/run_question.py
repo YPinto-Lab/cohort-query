@@ -11,12 +11,16 @@ from pathlib import Path
 import cohortquery
 from cohortquery import settings_file
 from cohortquery.cli import rundir
-from cohortquery.cohort import accessions_of
 
 PLANS_ROOT = Path("/private/pinto-lab/plans")
 
 
-def write_sidecars(connection, queries, run_dir: Path) -> dict[str, int]:
+def write_sidecars(cohort, queries, run_dir: Path) -> dict[str, int]:
+    """Sidecars record the RESOLVED cohort (jattr_criteria already combined with
+    sql per sql_jattr_combinator), not a re-execution of query.sql alone --
+    re-running just the native SQL silently reports the wrong answer whenever
+    jattr_criteria narrows or widens it (this happened: 6.5M raw-SQL rows
+    recorded for a question whose real, jattr-intersected cohort was 0)."""
     run_dir.mkdir(parents=True, exist_ok=True)
     sql_blocks = []
     row_counts: dict[str, int] = {}
@@ -28,7 +32,7 @@ def write_sidecars(connection, queries, run_dir: Path) -> dict[str, int]:
                 sql_blocks.append(f"-- {query.source.name}\n{query.sql};")
             else:
                 sql_blocks.append(f"-- {query.source.name}: jattr-only, no native SQL")
-            keys = sorted(accessions_of(connection.query(query.sql))) if query.sql else []
+            keys = sorted(cohort.by_source.get(query.source, frozenset()))
             row_counts[query.source.name] = len(keys)
             for key in keys:
                 writer.writerow([query.source.name, key])
@@ -47,7 +51,7 @@ def run(question: str, question_dir: Path, run_label: str) -> dict:
     plan = cohortquery.ask(question, save=plan_dir / "plan.json")
 
     run_dir = question_dir / "runs" / run_label
-    row_counts = write_sidecars(cohortquery.runtime.database(), plan.translation.queries, run_dir)
+    row_counts = write_sidecars(plan.discovered, plan.translation.queries, run_dir)
     return {
         "plan_path": str(plan_dir / "plan.json"),
         "generated_sql_path": str(run_dir / "generated.sql"),
