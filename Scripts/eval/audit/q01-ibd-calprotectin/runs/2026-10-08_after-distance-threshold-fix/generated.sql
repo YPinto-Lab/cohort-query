@@ -1,0 +1,2 @@
+-- SRA_METADATA
+SELECT biosample FROM sra_metadata WHERE librarysource = 'METAGENOMIC' OR organism ILIKE '%gut metagenome%' OR organism ILIKE '%feces metagenome%' OR organism ILIKE '%metagenome%' OR array_to_string(biosamplemodel_sam, ' ') ILIKE '%human-gut%' OR array_to_string(biosamplemodel_sam, ' ') ILIKE '%metagenome%';
