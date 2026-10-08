@@ -20,11 +20,21 @@ from cohortquery.accession import Accession
 from cohortquery.concept_search import Embedder
 from cohortquery.translation import JattrCriterion
 
-# Plain top-N per table, no distance cutoff -- same placeholder-not-yet-tuned
-# situation as concept_search.py's TOP_K_VALUES. Calibrating this against a real
-# distance threshold is explicitly deferred in the design note until the tables
-# exist and can be tested against, which they now do -- revisit with real data.
-TOP_K = 5
+# Calibrated 2026-10-08 against the real attribute_keys_index/attribute_values_index
+# (85,143 keys / 14,098,043 values) by probing 5 concepts' real distance curves out
+# to rank 300: true synonyms form a dense, CONCEPT-DEPENDENT cluster with no
+# universal elbow -- some concepts (antibiotic exposure, host age, sample collection
+# date) stay legitimately on-topic past rank 300, others (calprotectin measurement)
+# drift into clear noise by ~0.86. A small fixed top-N (the prior TOP_K=5) can't
+# tell "still relevant, just crowded by near-duplicate naming" from "genuinely
+# exhausted" -- this is exactly how fecalcalprotectin_run (rank 27, distance 0.817)
+# was silently dropped despite being a real match. DISTANCE_THRESHOLD lets a
+# concept's true neighborhood be as wide or narrow as the data actually supports;
+# MAX_CANDIDATES is the safety cap a pure threshold doesn't provide on its own,
+# bounding cost/precision for dense generic concepts (dates, host age) that would
+# otherwise match hundreds of keys.
+DISTANCE_THRESHOLD = 0.82
+MAX_CANDIDATES = 50
 
 
 @dataclass(frozen=True)
@@ -70,7 +80,11 @@ class JattrConceptIndex:
                           biosamples=frozenset(Accession(sample) for sample in biosamples))
 
     def _nearest_keys(self, vector: list[float]) -> pd.DataFrame:
-        return self._indexes.keys_table.search(vector).limit(TOP_K).to_pandas()
+        return self._within_threshold(self._indexes.keys_table.search(vector))
 
     def _nearest_values(self, vector: list[float]) -> pd.DataFrame:
-        return self._indexes.values_table.search(vector).limit(TOP_K).to_pandas()
+        return self._within_threshold(self._indexes.values_table.search(vector))
+
+    def _within_threshold(self, search) -> pd.DataFrame:
+        candidates = search.limit(MAX_CANDIDATES).to_pandas()
+        return candidates[candidates["_distance"] <= DISTANCE_THRESHOLD]
