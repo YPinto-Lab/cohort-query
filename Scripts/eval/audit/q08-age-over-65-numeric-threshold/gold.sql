@@ -1,0 +1,15 @@
+-- version: 1
+-- date: 2026-10-19
+-- reason: capability-boundary question, NOT a set-overlap gold. "Over 65 years old" is a
+--   numeric predicate on a value (age_sam / host_age_sam, both real, well-populated keys),
+--   but JattrConceptIndex only does embedding-distance concept matching over key NAMES and
+--   value CONTENT -- there is no mechanism anywhere in the translation/resolution pipeline
+--   to express or evaluate a numeric threshold against a matched value. Expected outcome:
+--   the translator either (a) ignores the numeric threshold and matches generically on an
+--   age-presence concept (recall-favoring but imprecise -- includes all ages, not just >65),
+--   or (b) attempts some native-SQL numeric cast against age_sam that may or may not work
+--   given age_sam's real-world value messiness (free text, units, ranges all mixed in the
+--   same key). This question is scored by documenting WHICH of these happened, not by a
+--   set-overlap gold -- there is no reachable "gold" for "evaluate a numeric threshold" given
+--   the current architecture has no such capability.
+-- No SELECT below -- see notes.md for what was actually observed.
