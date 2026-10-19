@@ -1,228 +1,316 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>CohortQuery translation accuracy audit</title>
 <style>
-  body{font:14px/1.5 -apple-system,sans-serif;max-width:1000px;margin:24px auto;padding:0 16px}
-  table{border-collapse:collapse;width:100%;margin:8px 0 28px}
-  th,td{border-bottom:1px solid #ddd;padding:6px 10px;text-align:left;vertical-align:top}
-  .match{background:#d1fae5}.partial{background:#fef3c7}.mismatch{background:#fee2e2}
+
+  :root{color-scheme:light dark}
+  body{font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+       max-width:960px;margin:32px auto;padding:0 20px}
+  h1{margin-bottom:4px}
+  .subtitle{opacity:.65;margin-top:0;margin-bottom:28px}
+  .stats{display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap}
+  .stat{flex:1;min-width:110px;border-radius:10px;padding:14px 16px;text-align:center}
+  .stat .num{font-size:26px;font-weight:700;display:block}
+  .stat .label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.7}
+  .stat.match{background:#d1fae5;color:#065f46}
+  .stat.partial{background:#fef3c7;color:#92400e}
+  .stat.mismatch{background:#fee2e2;color:#991b1b}
+  .stat.flagged{background:#ede9fe;color:#5b21b6}
+  .toc{border:1px solid rgba(127,127,127,.3);border-radius:10px;padding:14px 18px;margin-bottom:28px}
+  .toc h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;opacity:.65;margin:0 0 10px}
+  .toc ul{list-style:none;margin:0;padding:0;display:grid;
+          grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px 18px}
+  .toc a{text-decoration:none;color:inherit;font-size:13px}
+  .badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;
+         text-transform:uppercase;letter-spacing:.03em;margin-right:6px;vertical-align:middle}
+  .badge.match{background:#10b981;color:#fff}
+  .badge.partial{background:#f59e0b;color:#fff}
+  .badge.mismatch{background:#ef4444;color:#fff}
+  .question{border:1px solid rgba(127,127,127,.3);border-radius:10px;padding:18px 22px;margin-bottom:18px}
+  .question h2{margin:0 0 2px;font-size:17px}
+  .qtext{opacity:.75;margin:0 0 14px}
+  .run{border-top:1px solid rgba(127,127,127,.2);padding-top:12px;margin-top:12px}
+  .run:first-of-type{border-top:none;padding-top:0;margin-top:0}
+  .meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;opacity:.75;margin-bottom:6px}
+  .reasoning{margin:6px 0;font-size:14px}
+  .flag{background:#ede9fe;border-left:3px solid #8b5cf6;padding:8px 12px;border-radius:6px;
+        font-size:13px;margin:8px 0}
+  .links a{margin-right:4px;font-size:13px}
+
 </style></head><body>
 <h1>Translation accuracy audit</h1>
-<h2>q01-ibd-calprotectin</h2><p>IBD fecal metagenomic with calprotectin</p>
-<table>
-<tr><th>checked_at</th><th>trigger</th><th>judgment</th><th>gold_version</th><th>plan</th><th>sidecars</th></tr>
-<tr class="partial">
-<td>2026-10-05T18:49:18</td>
-<td>initial</td>
-<td>PARTIAL</td>
-<td>1</td>
-<td><a href="/private/pinto-lab/plans/20261005_184918_ibd-fecal-metagenomic-with-calprotectin/plan.json">plan</a></td>
-<td><a href="q01-ibd-calprotectin/runs/2026-10-05_initial/generated.sql">sql</a> &middot;
-    <a href="q01-ibd-calprotectin/runs/2026-10-05_initial/results.csv">results</a></td>
-</tr>
-<tr class="mismatch">
-<td>2026-10-06T11:31:17</td>
-<td>code_change</td>
-<td>MISMATCH</td>
-<td>1</td>
-<td><a href="/private/pinto-lab/plans/20261006_113117_ibd-fecal-metagenomic-with-calprotectin/plan.json">plan</a></td>
-<td><a href="q01-ibd-calprotectin/runs/2026-10-06_after-intersect-fix/generated.sql">sql</a> &middot;
-    <a href="q01-ibd-calprotectin/runs/2026-10-06_after-intersect-fix/results.csv">results</a></td>
-</tr>
-<tr class="mismatch">
-<td>2026-10-08T09:47:40</td>
-<td>mirror_rebuild</td>
-<td>MISMATCH</td>
-<td>1</td>
-<td><a href="/private/pinto-lab/plans/20261008_094740_ibd-fecal-metagenomic-with-calprotectin/plan.json">plan</a></td>
-<td><a href="q01-ibd-calprotectin/runs/2026-10-08_after-index-rebuild/generated.sql">sql</a> &middot;
-    <a href="q01-ibd-calprotectin/runs/2026-10-08_after-index-rebuild/results.csv">results</a></td>
-</tr>
-<tr class="partial">
-<td>2026-10-08T12:34:37</td>
-<td>code_change</td>
-<td>PARTIAL</td>
-<td>2</td>
-<td><a href="/private/pinto-lab/plans/20261008_123437_ibd-fecal-metagenomic-with-calprotectin/plan.json">plan</a></td>
-<td><a href="q01-ibd-calprotectin/runs/2026-10-08_after-distance-threshold-fix/generated.sql">sql</a> &middot;
-    <a href="q01-ibd-calprotectin/runs/2026-10-08_after-distance-threshold-fix/results.csv">results</a></td>
-</tr>
-<tr class="match">
-<td>2026-10-19T00:00:00</td>
-<td>code_change</td>
-<td>MATCH</td>
-<td>2</td>
-<td><a href="/private/pinto-lab/plans/20261008_123437_ibd-fecal-metagenomic-with-calprotectin/plan.json">plan</a></td>
-<td><a href="q01-ibd-calprotectin/runs/2026-10-08_after-distance-threshold-fix/generated.sql">sql</a> &middot;
-    <a href="q01-ibd-calprotectin/runs/2026-10-08_after-distance-threshold-fix/results.csv">results</a></td>
-</tr>
-</table>
-<h2>q02-prjna400072-bioproject-lookup</h2><p>samples from bioproject PRJNA400072</p>
-<table>
-<tr><th>checked_at</th><th>trigger</th><th>judgment</th><th>gold_version</th><th>plan</th><th>sidecars</th></tr>
-<tr class="match">
-<td>2026-10-19T11:52:47</td>
-<td>initial</td>
-<td>MATCH</td>
-<td>1</td>
-<td><a href="/private/pinto-lab/plans/20261019_115247_samples-from-bioproject-prjna400072/plan.json">plan</a></td>
-<td><a href="q02-prjna400072-bioproject-lookup/runs/2026-10-19_initial/generated.sql">sql</a> &middot;
-    <a href="q02-prjna400072-bioproject-lookup/runs/2026-10-19_initial/results.csv">results</a></td>
-</tr>
-</table>
-<h2>q03-human-tumor-transcriptomic</h2><p>human tumor samples from transcriptomic sequencing</p>
-<table>
-<tr><th>checked_at</th><th>trigger</th><th>judgment</th><th>gold_version</th><th>plan</th><th>sidecars</th></tr>
-<tr class="partial">
-<td>2026-10-19T12:30:49</td>
-<td>initial</td>
-<td>PARTIAL</td>
-<td>1</td>
-<td><a href="/private/pinto-lab/plans/20261019_123049_human-tumor-samples-from-transcriptomic/plan.json">plan</a></td>
-<td><a href="q03-human-tumor-transcriptomic/runs/2026-10-19_initial/generated.sql">sql</a> &middot;
-    <a href="q03-human-tumor-transcriptomic/runs/2026-10-19_initial/results.csv">results</a></td>
-</tr>
-</table>
-<h2>q04-recorded-bmi-jattr-only</h2><p>samples with recorded body mass index</p>
-<table>
-<tr><th>checked_at</th><th>trigger</th><th>judgment</th><th>gold_version</th><th>plan</th><th>sidecars</th></tr>
-<tr class="partial">
-<td>2026-10-19T12:32:27</td>
-<td>initial</td>
-<td>PARTIAL</td>
-<td>1</td>
-<td><a href="/private/pinto-lab/plans/20261019_123227_samples-with-recorded-body-mass-index/plan.json">plan</a></td>
-<td><a href="q04-recorded-bmi-jattr-only/runs/2026-10-19_initial/generated.sql">sql</a> &middot;
-    <a href="q04-recorded-bmi-jattr-only/runs/2026-10-19_initial/results.csv">results</a></td>
-</tr>
-</table>
-<h2>q05-healthy-adult-gut-ambiguous</h2><p>healthy adult gut microbiome samples</p>
-<table>
-<tr><th>checked_at</th><th>trigger</th><th>judgment</th><th>gold_version</th><th>plan</th><th>sidecars</th></tr>
-<tr class="partial">
-<td>2026-10-19T12:33:24</td>
-<td>initial</td>
-<td>PARTIAL</td>
-<td>1</td>
-<td><a href="/private/pinto-lab/plans/20261019_123324_healthy-adult-gut-microbiome-samples/plan.json">plan</a></td>
-<td><a href="q05-healthy-adult-gut-ambiguous/runs/2026-10-19_initial/generated.sql">sql</a> &middot;
-    <a href="q05-healthy-adult-gut-ambiguous/runs/2026-10-19_initial/results.csv">results</a></td>
-</tr>
-</table>
-<h2>q06-antibiotic-exposure-jattr-only</h2><p>samples with antibiotic exposure</p>
-<table>
-<tr><th>checked_at</th><th>trigger</th><th>judgment</th><th>gold_version</th><th>plan</th><th>sidecars</th></tr>
-<tr class="partial">
-<td>2026-10-19T13:02:17</td>
-<td>initial</td>
-<td>PARTIAL</td>
-<td>1</td>
-<td><a href="/private/pinto-lab/plans/20261019_130217_samples-with-antibiotic-exposure/plan.json">plan</a></td>
-<td><a href="q06-antibiotic-exposure-jattr-only/runs/2026-10-19_initial/generated.sql">sql</a> &middot;
-    <a href="q06-antibiotic-exposure-jattr-only/runs/2026-10-19_initial/results.csv">results</a></td>
-</tr>
-</table>
-<h2>q07-mouse-gut-metagenome</h2><p>mouse gut metagenome samples</p>
-<table>
-<tr><th>checked_at</th><th>trigger</th><th>judgment</th><th>gold_version</th><th>plan</th><th>sidecars</th></tr>
-<tr class="match">
-<td>2026-10-19T13:03:30</td>
-<td>initial</td>
-<td>MATCH</td>
-<td>2</td>
-<td><a href="/private/pinto-lab/plans/20261019_130330_mouse-gut-metagenome-samples/plan.json">plan</a></td>
-<td><a href="q07-mouse-gut-metagenome/runs/2026-10-19_initial/generated.sql">sql</a> &middot;
-    <a href="q07-mouse-gut-metagenome/runs/2026-10-19_initial/results.csv">results</a></td>
-</tr>
-</table>
-<h2>q08-age-over-65-numeric-threshold</h2><p>samples from patients over 65 years old</p>
-<table>
-<tr><th>checked_at</th><th>trigger</th><th>judgment</th><th>gold_version</th><th>plan</th><th>sidecars</th></tr>
-<tr class="partial">
-<td>2026-10-19T13:05:21</td>
-<td>initial</td>
-<td>PARTIAL</td>
-<td>1</td>
-<td><a href="/private/pinto-lab/plans/20261019_130521_samples-from-patients-over-65-years-old/plan.json">plan</a></td>
-<td><a href="q08-age-over-65-numeric-threshold/runs/2026-10-19_initial/generated.sql">sql</a> &middot;
-    <a href="q08-age-over-65-numeric-threshold/runs/2026-10-19_initial/results.csv">results</a></td>
-</tr>
-</table>
-<h2>q10-united-states-geography</h2><p>samples collected in the United States</p>
-<table>
-<tr><th>checked_at</th><th>trigger</th><th>judgment</th><th>gold_version</th><th>plan</th><th>sidecars</th></tr>
-<tr class="match">
-<td>2026-10-19T13:08:33</td>
-<td>initial</td>
-<td>MATCH</td>
-<td>1</td>
-<td><a href="/private/pinto-lab/plans/20261019_130833_samples-collected-in-the-united-states/plan.json">plan</a></td>
-<td><a href="q10-united-states-geography/runs/2026-10-19_initial/generated.sql">sql</a> &middot;
-    <a href="q10-united-states-geography/runs/2026-10-19_initial/results.csv">results</a></td>
-</tr>
-</table>
-<h2>q11-illumina-novaseq-platform</h2><p>samples sequenced on Illumina NovaSeq</p>
-<table>
-<tr><th>checked_at</th><th>trigger</th><th>judgment</th><th>gold_version</th><th>plan</th><th>sidecars</th></tr>
-<tr class="match">
-<td>2026-10-19T14:02:26</td>
-<td>initial</td>
-<td>MATCH</td>
-<td>1</td>
-<td><a href="/private/pinto-lab/plans/20261019_140226_samples-sequenced-on-illumina-novaseq/plan.json">plan</a></td>
-<td><a href="q11-illumina-novaseq-platform/runs/2026-10-19_initial/generated.sql">sql</a> &middot;
-    <a href="q11-illumina-novaseq-platform/runs/2026-10-19_initial/results.csv">results</a></td>
-</tr>
-</table>
-<h2>q12-type2-diabetes-jattr</h2><p>samples from patients with type 2 diabetes</p>
-<table>
-<tr><th>checked_at</th><th>trigger</th><th>judgment</th><th>gold_version</th><th>plan</th><th>sidecars</th></tr>
-<tr class="partial">
-<td>2026-10-19T14:06:34</td>
-<td>initial</td>
-<td>PARTIAL</td>
-<td>2</td>
-<td><a href="/private/pinto-lab/plans/20261019_140634_samples-from-patients-with-type-2-diabet/plan.json">plan</a></td>
-<td><a href="q12-type2-diabetes-jattr/runs/2026-10-19_initial/generated.sql">sql</a> &middot;
-    <a href="q12-type2-diabetes-jattr/runs/2026-10-19_initial/results.csv">results</a></td>
-</tr>
-</table>
-<h2>q13-vegetarian-diet-jattr-only</h2><p>vegetarian diet samples</p>
-<table>
-<tr><th>checked_at</th><th>trigger</th><th>judgment</th><th>gold_version</th><th>plan</th><th>sidecars</th></tr>
-<tr class="partial">
-<td>2026-10-19T14:07:46</td>
-<td>initial</td>
-<td>PARTIAL</td>
-<td>1</td>
-<td><a href="/private/pinto-lab/plans/20261019_140746_vegetarian-diet-samples/plan.json">plan</a></td>
-<td><a href="q13-vegetarian-diet-jattr-only/runs/2026-10-19_initial/generated.sql">sql</a> &middot;
-    <a href="q13-vegetarian-diet-jattr-only/runs/2026-10-19_initial/results.csv">results</a></td>
-</tr>
-</table>
-<h2>q14-infant-samples-young-age</h2><p>samples from infants</p>
-<table>
-<tr><th>checked_at</th><th>trigger</th><th>judgment</th><th>gold_version</th><th>plan</th><th>sidecars</th></tr>
-<tr class="partial">
-<td>2026-10-19T14:08:32</td>
-<td>initial</td>
-<td>PARTIAL</td>
-<td>1</td>
-<td><a href="/private/pinto-lab/plans/20261019_140832_samples-from-infants/plan.json">plan</a></td>
-<td><a href="q14-infant-samples-young-age/runs/2026-10-19_initial/generated.sql">sql</a> &middot;
-    <a href="q14-infant-samples-young-age/runs/2026-10-19_initial/results.csv">results</a></td>
-</tr>
-</table>
-<h2>q15-pregnant-women-samples</h2><p>pregnant women samples</p>
-<table>
-<tr><th>checked_at</th><th>trigger</th><th>judgment</th><th>gold_version</th><th>plan</th><th>sidecars</th></tr>
-<tr class="partial">
-<td>2026-10-19T14:09:13</td>
-<td>initial</td>
-<td>PARTIAL</td>
-<td>1</td>
-<td><a href="/private/pinto-lab/plans/20261019_140913_pregnant-women-samples/plan.json">plan</a></td>
-<td><a href="q15-pregnant-women-samples/runs/2026-10-19_initial/generated.sql">sql</a> &middot;
-    <a href="q15-pregnant-women-samples/runs/2026-10-19_initial/results.csv">results</a></td>
-</tr>
-</table>
+<p class="subtitle">14 questions &middot; 18 verification runs</p>
+<div class="stats"><div class="stat match">
+<span class="num">5</span><span class="label">match</span></div><div class="stat partial">
+<span class="num">9</span><span class="label">partial</span></div><div class="stat mismatch">
+<span class="num">0</span><span class="label">mismatch</span></div><div class="stat flagged"><span class="num">4</span>
+<span class="label">needs input</span></div></div>
+<nav class="toc"><h2>Questions</h2><ul><li><a href="#q01-ibd-calprotectin">
+<span class="badge match">MATCH</span>
+q01-ibd-calprotectin</a></li><li><a href="#q02-prjna400072-bioproject-lookup">
+<span class="badge match">MATCH</span>
+q02-prjna400072-bioproject-lookup</a></li><li><a href="#q03-human-tumor-transcriptomic">
+<span class="badge partial">PARTIAL</span>
+q03-human-tumor-transcriptomic</a></li><li><a href="#q04-recorded-bmi-jattr-only">
+<span class="badge partial">PARTIAL</span>
+q04-recorded-bmi-jattr-only</a></li><li><a href="#q05-healthy-adult-gut-ambiguous">
+<span class="badge partial">PARTIAL</span>
+q05-healthy-adult-gut-ambiguous</a></li><li><a href="#q06-antibiotic-exposure-jattr-only">
+<span class="badge partial">PARTIAL</span>
+q06-antibiotic-exposure-jattr-only</a></li><li><a href="#q07-mouse-gut-metagenome">
+<span class="badge match">MATCH</span>
+q07-mouse-gut-metagenome</a></li><li><a href="#q08-age-over-65-numeric-threshold">
+<span class="badge partial">PARTIAL</span>
+q08-age-over-65-numeric-threshold</a></li><li><a href="#q10-united-states-geography">
+<span class="badge match">MATCH</span>
+q10-united-states-geography</a></li><li><a href="#q11-illumina-novaseq-platform">
+<span class="badge match">MATCH</span>
+q11-illumina-novaseq-platform</a></li><li><a href="#q12-type2-diabetes-jattr">
+<span class="badge partial">PARTIAL</span>
+q12-type2-diabetes-jattr</a></li><li><a href="#q13-vegetarian-diet-jattr-only">
+<span class="badge partial">PARTIAL</span>
+q13-vegetarian-diet-jattr-only</a></li><li><a href="#q14-infant-samples-young-age">
+<span class="badge partial">PARTIAL</span>
+q14-infant-samples-young-age</a></li><li><a href="#q15-pregnant-women-samples">
+<span class="badge partial">PARTIAL</span>
+q15-pregnant-women-samples</a></li></ul></nav>
+<section class="question" id="q01-ibd-calprotectin">
+<h2>q01-ibd-calprotectin</h2><p class="qtext">IBD fecal metagenomic with calprotectin</p>
+<div class="run">
+<div class="meta">
+<span class="badge match">MATCH</span>
+<span>2026-10-19T00:00:00</span>
+<span>&middot; code_change</span>
+<span>&middot; gold v2</span>
+</div>
+<p class="reasoning">Supersedes the PARTIAL judgment from the same run_id: a value-aware check found 81.8% (979/1197) have an affirmative value on both matched concepts; the remaining 18.2% have a negative/missing value (e.g. ibd_sam=False, calprotectin=NA/not collected) on at least one side. Researcher confirmed presence/content matching is deliberately value-agnostic by design -- a recorded False/NA value still means the field exists, which is what concept search is meant to surface. The low raw precision against gold v2 (55.6%) was gold v2 incompleteness (missed real calprotectin key variants; could not practically hand-enumerate all ~27 generically-named keys holding IBD-type values), not a system defect. See notes.md addendum.</p>
+
+<div class="links"><a href="/private/pinto-lab/plans/20261008_123437_ibd-fecal-metagenomic-with-calprotectin/plan.json">plan</a> &middot; <a href="q01-ibd-calprotectin/gold.sql">gold</a> &middot; <a href="q01-ibd-calprotectin/runs/2026-10-08_after-distance-threshold-fix/generated.sql">sql</a> &middot; <a href="q01-ibd-calprotectin/runs/2026-10-08_after-distance-threshold-fix/results.csv">results</a> &middot; <a href="q01-ibd-calprotectin/runs/2026-10-08_after-distance-threshold-fix/notes.md">notes</a></div>
+</div>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-08T12:34:37</span>
+<span>&middot; code_change</span>
+<span>&middot; gold v2</span>
+</div>
+<p class="reasoning">PR #62 (distance threshold) confirmed working: fecalcalprotectin_run now matched for &quot;calprotectin measurement&quot; (was silently dropped before). Gold v1 was wrong, not the pipeline -- its calprotectin-implies-IBD assumption was explicitly rejected by the researcher 2026-10-08. Re-derived gold v2 requires explicit IBD-key + calprotectin-key co-occurrence on the same sample: 665 biosamples, all in PRJEB18471 (different bioproject than v1 guessed). Overlap with gold v2: 665/665 (100% recall), precision 665/1197=55.6%. See notes.md.</p>
+<div class="flag">❓ <strong>Needs input:</strong> Is 55.6% precision (665/1197) acceptable for this kind of broad jattr-criteria question, or should gold v2&#x27;s narrow co-occurrence definition be the precision bar going forward?</div>
+<div class="links"><a href="/private/pinto-lab/plans/20261008_123437_ibd-fecal-metagenomic-with-calprotectin/plan.json">plan</a> &middot; <a href="q01-ibd-calprotectin/gold.sql">gold</a> &middot; <a href="q01-ibd-calprotectin/runs/2026-10-08_after-distance-threshold-fix/generated.sql">sql</a> &middot; <a href="q01-ibd-calprotectin/runs/2026-10-08_after-distance-threshold-fix/results.csv">results</a> &middot; <a href="q01-ibd-calprotectin/runs/2026-10-08_after-distance-threshold-fix/notes.md">notes</a></div>
+</div>
+<div class="run">
+<div class="meta">
+<span class="badge mismatch">MISMATCH</span>
+<span>2026-10-08T09:47:40</span>
+<span>&middot; mirror_rebuild</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Translator correct this time (intersect fix holds, no union-swamping). attribute_keys_index rebuild (PR #61) also confirmed correct: fecalcalprotectin_run now present with all 134 biosamples. But jattr concept search still misses it in production: ranks #27/85143 nearest keys for &quot;calprotectin measurement&quot; (distance 0.817), crowded out of TOP_K=5 by ~18 near-duplicate calprotectin_*_sam naming variants. Overlap=0, gold-only(missed)=134, generated-only(extra)=665. See notes.md.</p>
+<div class="flag">❓ <strong>Needs input:</strong> What TOP_K (or a dedup/rerank step) reliably surfaces true matches in naming-duplicate-heavy neighborhoods without blowing up matching cost mirror-wide?</div>
+<div class="links"><a href="/private/pinto-lab/plans/20261008_094740_ibd-fecal-metagenomic-with-calprotectin/plan.json">plan</a> &middot; <a href="q01-ibd-calprotectin/gold.sql">gold</a> &middot; <a href="q01-ibd-calprotectin/runs/2026-10-08_after-index-rebuild/generated.sql">sql</a> &middot; <a href="q01-ibd-calprotectin/runs/2026-10-08_after-index-rebuild/results.csv">results</a> &middot; <a href="q01-ibd-calprotectin/runs/2026-10-08_after-index-rebuild/notes.md">notes</a></div>
+</div>
+<div class="run">
+<div class="meta">
+<span class="badge mismatch">MISMATCH</span>
+<span>2026-10-06T11:31:17</span>
+<span>&middot; code_change</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">sql_jattr_combinator=intersect fix verified working as designed (996410 -&gt; 436 rows). But ZERO overlap with the 134-row gold: the jattr concept search for calprotectin measurement matched 10 jattr keys (2625 biosamples) but NOT fecalcalprotectin_run, the exact key all 134 gold samples use -- an embedding/concept-search gap, pre-existing, unmasked by this fix. See notes.md.</p>
+<div class="flag">❓ <strong>Needs input:</strong> (1) worth fixing the embedding gap for fecalcalprotectin_run? (2) is jattr_combinator=all right for IBD+calprotectin given IBD context may be study-level/implicit rather than per-sample?</div>
+<div class="links"><a href="/private/pinto-lab/plans/20261006_113117_ibd-fecal-metagenomic-with-calprotectin/plan.json">plan</a> &middot; <a href="q01-ibd-calprotectin/gold.sql">gold</a> &middot; <a href="q01-ibd-calprotectin/runs/2026-10-06_after-intersect-fix/generated.sql">sql</a> &middot; <a href="q01-ibd-calprotectin/runs/2026-10-06_after-intersect-fix/results.csv">results</a> &middot; <a href="q01-ibd-calprotectin/runs/2026-10-06_after-intersect-fix/notes.md">notes</a></div>
+</div>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-05T18:49:18</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Recall 100% (gold subset of generated, 134/134 found), precision ~0.0134% (134/996410) -- native-SQL bucket unioned with correct jattr criteria, swamping them. See notes.md.</p>
+<div class="flag">❓ <strong>Needs input:</strong> Is the narrow 134-row fecalcalprotectin_run set the complete gold answer, or should broader jattr keys from Workspaces/IBD_calprotectin/0_inputs/plan.json (1261 rows, unverified on current mirror) also count?</div>
+<div class="links"><a href="/private/pinto-lab/plans/20261005_184918_ibd-fecal-metagenomic-with-calprotectin/plan.json">plan</a> &middot; <a href="q01-ibd-calprotectin/gold.sql">gold</a> &middot; <a href="q01-ibd-calprotectin/runs/2026-10-05_initial/generated.sql">sql</a> &middot; <a href="q01-ibd-calprotectin/runs/2026-10-05_initial/results.csv">results</a> &middot; <a href="q01-ibd-calprotectin/notes.md">notes</a></div>
+</div>
+</section>
+<section class="question" id="q02-prjna400072-bioproject-lookup">
+<h2>q02-prjna400072-bioproject-lookup</h2><p class="qtext">samples from bioproject PRJNA400072</p>
+<div class="run">
+<div class="meta">
+<span class="badge match">MATCH</span>
+<span>2026-10-19T11:52:47</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Exact match: generated 220 biosamples, gold 220, overlap 220, missed 0, extra 0. Mined from a historical pre-pivot ask() run as a deliberate control case opposite q01 -- pure native-column bioproject lookup, zero jattr ambiguity. Confirms the simple exact-match path works correctly end to end.</p>
+
+<div class="links"><a href="/private/pinto-lab/plans/20261019_115247_samples-from-bioproject-prjna400072/plan.json">plan</a> &middot; <a href="q02-prjna400072-bioproject-lookup/gold.sql">gold</a> &middot; <a href="q02-prjna400072-bioproject-lookup/runs/2026-10-19_initial/generated.sql">sql</a> &middot; <a href="q02-prjna400072-bioproject-lookup/runs/2026-10-19_initial/results.csv">results</a> &middot; <a href="q02-prjna400072-bioproject-lookup/notes.md">notes</a></div>
+</div>
+</section>
+<section class="question" id="q03-human-tumor-transcriptomic">
+<h2>q03-human-tumor-transcriptomic</h2><p class="qtext">human tumor samples from transcriptomic sequencing</p>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T12:30:49</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Correctly recognized as non-metagenomic (no metagenome bias). Overlap with narrow is_tumor_sam-based gold: 5212/33405 (15.6%). is_tumor_sam itself was never matched by any of the 3 jattr concepts used -- system instead matched ~211 other real tumor/cancer keys and values. Same class of finding as q01 (narrow single-key gold under-enumerates a content-matched population), not independently spot-checked further (time-boxed). See notes.md.</p>
+<div class="flag">❓ <strong>Needs input:</strong> Is 15.6% overlap against this narrow gold acceptable given the q01 precedent, or does this concept area warrant value-aware re-scoring?</div>
+<div class="links"><a href="/private/pinto-lab/plans/20261019_123049_human-tumor-samples-from-transcriptomic/plan.json">plan</a> &middot; <a href="q03-human-tumor-transcriptomic/gold.sql">gold</a> &middot; <a href="q03-human-tumor-transcriptomic/runs/2026-10-19_initial/generated.sql">sql</a> &middot; <a href="q03-human-tumor-transcriptomic/runs/2026-10-19_initial/results.csv">results</a> &middot; <a href="q03-human-tumor-transcriptomic/notes.md">notes</a></div>
+</div>
+</section>
+<section class="question" id="q04-recorded-bmi-jattr-only">
+<h2>q04-recorded-bmi-jattr-only</h2><p class="qtext">samples with recorded body mass index</p>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T12:32:27</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Correctly recognized sql=None for SRA_METADATA (no native BMI column) and correctly used Metalog native bmi column. Overlap 88458/221094 (40%). CONFIRMED BUG: host_body_mass_index_sam_s_dpl230 is entirely absent from attribute_keys_index -- excluded at build time by ID_NAME_RE bare substring match on &quot;index&quot; (matches body_mass_index same as it matches sample_index). Root-caused, not yet fixed. See notes.md.</p>
+
+<div class="links"><a href="/private/pinto-lab/plans/20261019_123227_samples-with-recorded-body-mass-index/plan.json">plan</a> &middot; <a href="q04-recorded-bmi-jattr-only/gold.sql">gold</a> &middot; <a href="q04-recorded-bmi-jattr-only/runs/2026-10-19_initial/generated.sql">sql</a> &middot; <a href="q04-recorded-bmi-jattr-only/runs/2026-10-19_initial/results.csv">results</a> &middot; <a href="q04-recorded-bmi-jattr-only/notes.md">notes</a></div>
+</div>
+</section>
+<section class="question" id="q05-healthy-adult-gut-ambiguous">
+<h2>q05-healthy-adult-gut-ambiguous</h2><p class="qtext">healthy adult gut microbiome samples</p>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T12:33:24</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">No single gold -- scored by interpretation defensibility (see gold.sql for the 3 ambiguity axes). Metalog resolution (native environmental_package/age_category/subject_disease_status=CTR) is clean and fully defensible. SRA resolution folded three independent required facts (adult age, healthy status, no disease) into one flat jattr_criteria list with combinator=any, meaning a sample matching only ONE of the three counts -- looser than the question implies. Surfaces a real schema expressiveness gap (no way to require independent AND/OR sub-groups within one SourceQuery), not a resolver bug. See notes.md.</p>
+<div class="flag">❓ <strong>Needs input:</strong> Is the flat jattr_combinator expressiveness gap worth a future design pass, or an intentional simplicity tradeoff?</div>
+<div class="links"><a href="/private/pinto-lab/plans/20261019_123324_healthy-adult-gut-microbiome-samples/plan.json">plan</a> &middot; <a href="q05-healthy-adult-gut-ambiguous/gold.sql">gold</a> &middot; <a href="q05-healthy-adult-gut-ambiguous/runs/2026-10-19_initial/generated.sql">sql</a> &middot; <a href="q05-healthy-adult-gut-ambiguous/runs/2026-10-19_initial/results.csv">results</a> &middot; <a href="q05-healthy-adult-gut-ambiguous/notes.md">notes</a></div>
+</div>
+</section>
+<section class="question" id="q06-antibiotic-exposure-jattr-only">
+<h2>q06-antibiotic-exposure-jattr-only</h2><p class="qtext">samples with antibiotic exposure</p>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T13:02:17</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Correctly sql=None (no native column). Full recall against narrow 2-key gold (2874/2874), generated is a strict superset (75172 total). Same already-settled pattern as q01/q03: narrow gold undercounts a content-matched population. See notes.md.</p>
+
+<div class="links"><a href="/private/pinto-lab/plans/20261019_130217_samples-with-antibiotic-exposure/plan.json">plan</a> &middot; <a href="q06-antibiotic-exposure-jattr-only/gold.sql">gold</a> &middot; <a href="q06-antibiotic-exposure-jattr-only/runs/2026-10-19_initial/generated.sql">sql</a> &middot; <a href="q06-antibiotic-exposure-jattr-only/runs/2026-10-19_initial/results.csv">results</a> &middot; <a href="q06-antibiotic-exposure-jattr-only/notes.md">notes</a></div>
+</div>
+</section>
+<section class="question" id="q07-mouse-gut-metagenome">
+<h2>q07-mouse-gut-metagenome</h2><p class="qtext">mouse gut metagenome samples</p>
+<div class="run">
+<div class="meta">
+<span class="badge match">MATCH</span>
+<span>2026-10-19T13:03:30</span>
+<span>&middot; initial</span>
+<span>&middot; gold v2</span>
+</div>
+<p class="reasoning">Exact match 249477/249477. Gold corrected from v1 (naive Mus musculus species filter) to v2 (precise mouse gut metagenome organism-label, matching the systems own more-correct translation). Confirms non-metagenome-bias extends correctly to non-human hosts.</p>
+
+<div class="links"><a href="/private/pinto-lab/plans/20261019_130330_mouse-gut-metagenome-samples/plan.json">plan</a> &middot; <a href="q07-mouse-gut-metagenome/gold.sql">gold</a> &middot; <a href="q07-mouse-gut-metagenome/runs/2026-10-19_initial/generated.sql">sql</a> &middot; <a href="q07-mouse-gut-metagenome/runs/2026-10-19_initial/results.csv">results</a> &middot; <a href="q07-mouse-gut-metagenome/notes.md">notes</a></div>
+</div>
+</section>
+<section class="question" id="q08-age-over-65-numeric-threshold">
+<h2>q08-age-over-65-numeric-threshold</h2><p class="qtext">samples from patients over 65 years old</p>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T13:05:21</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Capability-boundary test, not set-overlap scored. Metalog correctly used native age_years&gt;65.0 (exact numeric threshold). SRA fell back to jattr concept search on age over 65 years old -- confirmed via matched values a MIX of correct (&gt;65, 65 years old) and wrong (age_above_45_sam, 60-65 years old, Age 64, over 60) matches: pure text/embedding proximity to 65, not real numeric evaluation. See notes.md.</p>
+<div class="flag">❓ <strong>Needs input:</strong> Worth a numeric-predicate criterion type if threshold questions are expected to be common, or acceptable given Metalog already covers the clean cases?</div>
+<div class="links"><a href="/private/pinto-lab/plans/20261019_130521_samples-from-patients-over-65-years-old/plan.json">plan</a> &middot; <a href="q08-age-over-65-numeric-threshold/gold.sql">gold</a> &middot; <a href="q08-age-over-65-numeric-threshold/runs/2026-10-19_initial/generated.sql">sql</a> &middot; <a href="q08-age-over-65-numeric-threshold/runs/2026-10-19_initial/results.csv">results</a> &middot; <a href="q08-age-over-65-numeric-threshold/notes.md">notes</a></div>
+</div>
+</section>
+<section class="question" id="q10-united-states-geography">
+<h2>q10-united-states-geography</h2><p class="qtext">samples collected in the United States</p>
+<div class="run">
+<div class="meta">
+<span class="badge match">MATCH</span>
+<span>2026-10-19T13:08:33</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Exact match 7776499/7776499. Translator used a real native SQL column (geo_loc_name_country_calc), simpler than expected -- no jattr involved at all. Large count expected: US dominates SRA submission volume mirror-wide, not metagenome-specific.</p>
+
+<div class="links"><a href="/private/pinto-lab/plans/20261019_130833_samples-collected-in-the-united-states/plan.json">plan</a> &middot; <a href="q10-united-states-geography/gold.sql">gold</a> &middot; <a href="q10-united-states-geography/runs/2026-10-19_initial/generated.sql">sql</a> &middot; <a href="q10-united-states-geography/runs/2026-10-19_initial/results.csv">results</a> &middot; <a href="q10-united-states-geography/notes.md">notes</a></div>
+</div>
+</section>
+<section class="question" id="q11-illumina-novaseq-platform">
+<h2>q11-illumina-novaseq-platform</h2><p class="qtext">samples sequenced on Illumina NovaSeq</p>
+<div class="run">
+<div class="meta">
+<span class="badge match">MATCH</span>
+<span>2026-10-19T14:02:26</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Exact match 9538316/9538316 via native instrument column.</p>
+
+<div class="links"><a href="/private/pinto-lab/plans/20261019_140226_samples-sequenced-on-illumina-novaseq/plan.json">plan</a> &middot; <a href="q11-illumina-novaseq-platform/gold.sql">gold</a> &middot; <a href="q11-illumina-novaseq-platform/runs/2026-10-19_initial/generated.sql">sql</a> &middot; <a href="q11-illumina-novaseq-platform/runs/2026-10-19_initial/results.csv">results</a> &middot; <a href="q11-illumina-novaseq-platform/notes.md">notes</a></div>
+</div>
+</section>
+<section class="question" id="q12-type2-diabetes-jattr">
+<h2>q12-type2-diabetes-jattr</h2><p class="qtext">samples from patients with type 2 diabetes</p>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T14:06:34</span>
+<span>&middot; initial</span>
+<span>&middot; gold v2</span>
+</div>
+<p class="reasoning">Gold corrected v1-&gt;v2 (added organism=Homo sapiens, same pattern as q07): diabetes_sam is overwhelmingly a mouse disease-model field (45736 total vs 9221 Homo sapiens). Full recall against corrected gold: 9257/9257. Extra 21395 is the already-settled gold-incompleteness pattern (q01/q06 precedent).</p>
+
+<div class="links"><a href="/private/pinto-lab/plans/20261019_140634_samples-from-patients-with-type-2-diabet/plan.json">plan</a> &middot; <a href="q12-type2-diabetes-jattr/gold.sql">gold</a> &middot; <a href="q12-type2-diabetes-jattr/runs/2026-10-19_initial/generated.sql">sql</a> &middot; <a href="q12-type2-diabetes-jattr/runs/2026-10-19_initial/results.csv">results</a> &middot; <a href="q12-type2-diabetes-jattr/notes.md">notes</a></div>
+</div>
+</section>
+<section class="question" id="q13-vegetarian-diet-jattr-only">
+<h2>q13-vegetarian-diet-jattr-only</h2><p class="qtext">vegetarian diet samples</p>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T14:07:46</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Correctly sql=None. Full recall against narrow 1-key gold (599/599), generated is a strict superset. Same already-settled pattern as q01/q06/q12.</p>
+
+<div class="links"><a href="/private/pinto-lab/plans/20261019_140746_vegetarian-diet-samples/plan.json">plan</a> &middot; <a href="q13-vegetarian-diet-jattr-only/gold.sql">gold</a> &middot; <a href="q13-vegetarian-diet-jattr-only/runs/2026-10-19_initial/generated.sql">sql</a> &middot; <a href="q13-vegetarian-diet-jattr-only/runs/2026-10-19_initial/results.csv">results</a> &middot; <a href="q13-vegetarian-diet-jattr-only/notes.md">notes</a></div>
+</div>
+</section>
+<section class="question" id="q14-infant-samples-young-age">
+<h2>q14-infant-samples-young-age</h2><p class="qtext">samples from infants</p>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T14:08:32</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Correctly sql=None for SRA, Metalog used native age_category. Low overlap (1585/32039) against a narrow 3-key gold, but discovered.jattr_matches shows 57 real matches dominated by VALUE content (infant/Infant/human infant) not my hand-picked keys -- same already-established gold-incompleteness pattern as q01/q03, not independently re-derived (time-boxed).</p>
+
+<div class="links"><a href="/private/pinto-lab/plans/20261019_140832_samples-from-infants/plan.json">plan</a> &middot; <a href="q14-infant-samples-young-age/gold.sql">gold</a> &middot; <a href="q14-infant-samples-young-age/runs/2026-10-19_initial/generated.sql">sql</a> &middot; <a href="q14-infant-samples-young-age/runs/2026-10-19_initial/results.csv">results</a> &middot; <a href="q14-infant-samples-young-age/notes.md">notes</a></div>
+</div>
+</section>
+<section class="question" id="q15-pregnant-women-samples">
+<h2>q15-pregnant-women-samples</h2><p class="qtext">pregnant women samples</p>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T14:09:13</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Translator required jattr_combinator=all across [&quot;pregnant status&quot;, &quot;female sex&quot;] -- but female sex is redundant (implied by pregnancy), not independent. Confirmed: pregnant_sam alone matches 35544, but intersecting with a separately-recorded sex field wrongly excludes samples lacking that redundant field. Overlap 17773/35544 (50% recall). Mirror image of q05s finding (there, independent facts wrongly collapsed into any; here, a redundant fact wrongly required via all).</p>
+<div class="flag">❓ <strong>Needs input:</strong> Same open question as q05: worth a translator-prompt guideline, or acceptable occasional miscalibration?</div>
+<div class="links"><a href="/private/pinto-lab/plans/20261019_140913_pregnant-women-samples/plan.json">plan</a> &middot; <a href="q15-pregnant-women-samples/gold.sql">gold</a> &middot; <a href="q15-pregnant-women-samples/runs/2026-10-19_initial/generated.sql">sql</a> &middot; <a href="q15-pregnant-women-samples/runs/2026-10-19_initial/results.csv">results</a> &middot; <a href="q15-pregnant-women-samples/notes.md">notes</a></div>
+</div>
+</section>
 </body></html>

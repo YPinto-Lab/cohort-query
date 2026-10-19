@@ -27,8 +27,107 @@ def test_render_groups_runs_under_one_question_and_color_codes_judgment(tmp_path
     content = out_path.read_text()
     assert content.count("q01") >= 1
     assert "2026-10-05T00:00:00" in content and "2026-11-01T00:00:00" in content
-    assert 'class="match"' in content
-    assert 'class="partial"' in content
+    assert 'badge match">MATCH' in content
+    assert 'badge partial">PARTIAL' in content
+
+
+def test_summary_counts_reflect_latest_run_per_question(tmp_path):
+    """The actual pain point: the old report had no overview at all -- just a flat
+    list. A reader needs totals by judgment (based on each question's LATEST run,
+    not every historical run) before diving into individual questions."""
+    csv_path = tmp_path / "index.csv"
+    with csv_path.open("w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=COLUMNS)
+        writer.writeheader()
+        # q01: superseded PARTIAL -> latest is MATCH
+        writer.writerow(new_row(
+            question_id="q01", run_id="r1", question="q one",
+            checked_at="2026-10-05T00:00:00", trigger_reason="initial", judgment="PARTIAL",
+            gold_version="1", plan_path="/x/plan.json",
+            generated_sql_path="Scripts/eval/audit/q01/runs/r1/generated.sql",
+            results_path="Scripts/eval/audit/q01/runs/r1/results.csv"))
+        writer.writerow(new_row(
+            question_id="q01", run_id="r2", question="q one",
+            checked_at="2026-11-01T00:00:00", trigger_reason="code_change", judgment="MATCH",
+            gold_version="1", plan_path="/x/plan.json",
+            generated_sql_path="Scripts/eval/audit/q01/runs/r2/generated.sql",
+            results_path="Scripts/eval/audit/q01/runs/r2/results.csv"))
+        # q02: single MISMATCH run
+        writer.writerow(new_row(
+            question_id="q02", run_id="r1", question="q two",
+            checked_at="2026-10-19T00:00:00", trigger_reason="initial", judgment="MISMATCH",
+            gold_version="1", plan_path="/x/plan.json",
+            generated_sql_path="Scripts/eval/audit/q02/runs/r1/generated.sql",
+            results_path="Scripts/eval/audit/q02/runs/r1/results.csv"))
+    out_path = tmp_path / "report.html"
+    render(csv_path, out_path)
+    content = out_path.read_text()
+    assert "2 questions" in content
+    # latest-run tally: 1 MATCH (q01's r2), 0 PARTIAL, 1 MISMATCH (q02) -- PARTIAL's
+    # superseded r1 must NOT count toward the total
+    import re
+    match_count = re.search(r'<span class="num">(\d+)</span>\s*<span class="label">match</span>', content, re.I)
+    assert match_count and match_count.group(1) == "1"
+
+
+def test_judgment_reasoning_is_shown_inline(tmp_path):
+    """The other pain point: the actual analysis (why something scored PARTIAL, what
+    bug was found) lived only in judgment_reasoning/notes.md, invisible from the
+    report itself."""
+    csv_path = tmp_path / "index.csv"
+    with csv_path.open("w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=COLUMNS)
+        writer.writeheader()
+        writer.writerow(new_row(
+            question_id="q04", run_id="r1", question="BMI samples",
+            checked_at="2026-10-19T00:00:00", trigger_reason="initial", judgment="PARTIAL",
+            gold_version="1", plan_path="/x/plan.json",
+            generated_sql_path="Scripts/eval/audit/q04/runs/r1/generated.sql",
+            results_path="Scripts/eval/audit/q04/runs/r1/results.csv",
+            judgment_reasoning="CONFIRMED BUG: host_body_mass_index_sam_s_dpl230 excluded entirely.",
+            judgment_reference="Scripts/eval/audit/q04/notes.md"))
+    out_path = tmp_path / "report.html"
+    render(csv_path, out_path)
+    content = out_path.read_text()
+    assert "CONFIRMED BUG: host_body_mass_index_sam_s_dpl230 excluded entirely." in content
+    assert 'href="q04/notes.md"' in content
+
+
+def test_needs_researcher_confirmation_is_flagged(tmp_path):
+    csv_path = tmp_path / "index.csv"
+    with csv_path.open("w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=COLUMNS)
+        writer.writeheader()
+        writer.writerow(new_row(
+            question_id="q05", run_id="r1", question="ambiguous question",
+            checked_at="2026-10-19T00:00:00", trigger_reason="initial", judgment="PARTIAL",
+            gold_version="1", plan_path="/x/plan.json",
+            generated_sql_path="Scripts/eval/audit/q05/runs/r1/generated.sql",
+            results_path="Scripts/eval/audit/q05/runs/r1/results.csv",
+            needs_researcher_confirmation="yes",
+            confirmation_note="Is this interpretation defensible?"))
+    out_path = tmp_path / "report.html"
+    render(csv_path, out_path)
+    content = out_path.read_text()
+    assert "Is this interpretation defensible?" in content
+
+
+def test_toc_links_to_each_question_anchor(tmp_path):
+    csv_path = tmp_path / "index.csv"
+    with csv_path.open("w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=COLUMNS)
+        writer.writeheader()
+        writer.writerow(new_row(
+            question_id="q07-mouse-gut-metagenome", run_id="r1", question="mouse samples",
+            checked_at="2026-10-19T00:00:00", trigger_reason="initial", judgment="MATCH",
+            gold_version="1", plan_path="/x/plan.json",
+            generated_sql_path="Scripts/eval/audit/q07-mouse-gut-metagenome/runs/r1/generated.sql",
+            results_path="Scripts/eval/audit/q07-mouse-gut-metagenome/runs/r1/results.csv"))
+    out_path = tmp_path / "report.html"
+    render(csv_path, out_path)
+    content = out_path.read_text()
+    assert 'href="#q07-mouse-gut-metagenome"' in content
+    assert 'id="q07-mouse-gut-metagenome"' in content
 
 
 def test_sidecar_links_are_relative_to_the_report_not_the_repo_root(tmp_path):
