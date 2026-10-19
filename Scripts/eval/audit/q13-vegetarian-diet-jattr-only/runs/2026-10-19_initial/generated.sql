@@ -1,0 +1,1 @@
+-- SRA_METADATA: jattr-only, no native SQL
