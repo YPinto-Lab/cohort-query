@@ -9,6 +9,18 @@ from pathlib import Path
 
 _JUDGMENT_CLASS = {"MATCH": "match", "PARTIAL": "partial", "MISMATCH": "mismatch"}
 
+# index.csv stores sidecar paths relative to the repo root (run_question.py's --question-dir
+# is always "Scripts/eval/audit/qNN-.../"), but report.html itself lives inside that same
+# Scripts/eval/audit/ directory -- a raw repo-root-relative href doubles the prefix and 404s.
+# Stripping it makes the link relative to report.html's own location instead.
+_REPORT_DIR_PREFIX = "Scripts/eval/audit/"
+
+
+def _relative_href(stored_path: str) -> str:
+    if stored_path.startswith(_REPORT_DIR_PREFIX):
+        return stored_path[len(_REPORT_DIR_PREFIX):]
+    return stored_path
+
 
 def render(csv_path: Path, out_path: Path) -> None:
     out_path.write_text(_page(_grouped_by_question(csv_path)))
@@ -58,6 +70,6 @@ def _run_row(row: dict) -> str:
 <td>{html.escape(row['judgment'])}</td>
 <td>{html.escape(row['gold_version'])}</td>
 <td><a href="{html.escape(row['plan_path'])}">plan</a></td>
-<td><a href="{html.escape(row['generated_sql_path'])}">sql</a> &middot;
-    <a href="{html.escape(row['results_path'])}">results</a></td>
+<td><a href="{html.escape(_relative_href(row['generated_sql_path']))}">sql</a> &middot;
+    <a href="{html.escape(_relative_href(row['results_path']))}">results</a></td>
 </tr>"""
