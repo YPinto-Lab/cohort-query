@@ -1,0 +1,21 @@
+-- version: 1
+-- date: 2026-10-19
+-- reason: fresh question authored to cover the "ambiguous phrasing" gap. Deliberately NOT a
+--   single gold query -- "healthy adult gut microbiome samples" is ambiguous on at least
+--   three independent axes, and this question is scored by whether the translator's chosen
+--   interpretation is DEFENSIBLE among the real plausible readings, not by exact-match
+--   recall/precision against one picked answer (see notes.md for the scoring approach).
+--
+--   Axis 1 -- "healthy": could mean (a) an explicit control/healthy-labeled jattr value
+--     (e.g. disease_state='control' or similar), (b) absence of any disease-type field
+--     recorded at all, or (c) ignored entirely (no native column or clean jattr concept
+--     cleanly means "healthy" in general, it's study-specific).
+--   Axis 2 -- "adult": could mean (a) a specific age-type jattr field >= 18, (b) a
+--     host_age_category/host_age_group value like "adult", or (c) ignored if no
+--     age information is tractable for this question's scope.
+--   Axis 3 -- "gut microbiome": could mean (a) librarysource = 'METAGENOMIC' AND
+--     organism ILIKE '%gut metagenome%' (the standard fecal-metagenome native-SQL pattern
+--     used throughout this mirror, see q01), or (b) a broader jattr-based "gut" concept
+--     search independent of librarysource.
+--
+-- No SELECT below -- there is no single correct answer to compare against by set overlap.
