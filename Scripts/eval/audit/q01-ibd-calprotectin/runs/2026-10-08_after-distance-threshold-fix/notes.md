@@ -60,3 +60,19 @@ kind of question is itself a judgment call, flagged below.
 Is 55.6% precision (665/1197) an acceptable outcome for this kind of broad jattr-criteria
 question, or should gold v2's narrow co-occurrence definition be treated as the target
 precision bar going forward?
+
+## Addendum (2026-10-19): value-polarity is by design, not a defect
+
+A value-aware check across the full 1,197-row cohort found 81.8% (979/1197) have an
+affirmative value on both matched concepts, 18.2% have a negative/missing value
+(e.g. `ibd_sam='False'`, `calprotectin_ave_sam='NA'`, `'not collected'`) on at least
+one side. Researcher confirmed (2026-10-19): **this is intended behavior, not a bug**
+-- presence/content matching is deliberately value-agnostic (a sample where
+`ibd_sam=False` is recorded still "has an IBD-type field," which is what the concept
+search is designed to surface). No resolver change needed.
+
+Net judgment, superseding the PARTIAL call above: the pipeline (PR #59 + #61 + #62)
+is working as designed. The low raw precision against gold v2 (55.6%) was an artifact
+of gold v2's own incompleteness (missed real calprotectin key variants, and couldn't
+practically enumerate all ~27 generically-named keys holding IBD-type values by hand)
+-- not a system defect. No further action on this question.
