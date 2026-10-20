@@ -112,13 +112,16 @@ def test_needs_researcher_confirmation_is_flagged(tmp_path):
     assert "Is this interpretation defensible?" in content
 
 
-def test_toc_links_to_each_question_anchor(tmp_path):
+def test_list_row_selects_its_detail_panel(tmp_path):
+    """Mail-app layout: clicking a list row (identified by data-id) must reveal the
+    matching detail panel (id="detail-<question_id>"), and the row's visible title
+    must be the human question text, not the slug -- the slug is secondary."""
     csv_path = tmp_path / "index.csv"
     with csv_path.open("w", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=COLUMNS)
         writer.writeheader()
         writer.writerow(new_row(
-            question_id="q07-mouse-gut-metagenome", run_id="r1", question="mouse samples",
+            question_id="q07-mouse-gut-metagenome", run_id="r1", question="mouse gut metagenome samples",
             checked_at="2026-10-19T00:00:00", trigger_reason="initial", judgment="MATCH",
             gold_version="1", plan_path="/x/plan.json",
             generated_sql_path="Scripts/eval/audit/q07-mouse-gut-metagenome/runs/r1/generated.sql",
@@ -126,8 +129,41 @@ def test_toc_links_to_each_question_anchor(tmp_path):
     out_path = tmp_path / "report.html"
     render(csv_path, out_path)
     content = out_path.read_text()
-    assert 'href="#q07-mouse-gut-metagenome"' in content
-    assert 'id="q07-mouse-gut-metagenome"' in content
+    assert 'data-id="q07-mouse-gut-metagenome"' in content
+    assert "selectQuestion('q07-mouse-gut-metagenome')" in content
+    assert 'id="detail-q07-mouse-gut-metagenome"' in content
+    assert "mouse gut metagenome samples" in content
+
+
+def test_list_rows_carry_a_sortable_rank_putting_mismatch_before_match(tmp_path):
+    """Mail-app default: most-urgent-first ordering (MISMATCH, then PARTIAL, then
+    MATCH), sortable by clicking the column header."""
+    csv_path = tmp_path / "index.csv"
+    with csv_path.open("w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=COLUMNS)
+        writer.writeheader()
+        writer.writerow(new_row(
+            question_id="q_match", run_id="r1", question="a match question",
+            checked_at="2026-10-19T00:00:00", trigger_reason="initial", judgment="MATCH",
+            gold_version="1", plan_path="/x/plan.json",
+            generated_sql_path="Scripts/eval/audit/q_match/runs/r1/generated.sql",
+            results_path="Scripts/eval/audit/q_match/runs/r1/results.csv"))
+        writer.writerow(new_row(
+            question_id="q_mismatch", run_id="r1", question="a mismatch question",
+            checked_at="2026-10-19T00:00:00", trigger_reason="initial", judgment="MISMATCH",
+            gold_version="1", plan_path="/x/plan.json",
+            generated_sql_path="Scripts/eval/audit/q_mismatch/runs/r1/generated.sql",
+            results_path="Scripts/eval/audit/q_mismatch/runs/r1/results.csv"))
+    out_path = tmp_path / "report.html"
+    render(csv_path, out_path)
+    content = out_path.read_text()
+    import re
+    match_rank = re.search(r'data-id="q_match"\s+data-rank="(\d)_', content).group(1)
+    mismatch_rank = re.search(r'data-id="q_mismatch"\s+data-rank="(\d)_', content).group(1)
+    assert int(mismatch_rank) < int(match_rank)
+    assert "sortList('rank')" in content
+    assert "sortList('question')" in content
+    assert "sortList('checked')" in content
 
 
 def test_sidecar_links_are_relative_to_the_report_not_the_repo_root(tmp_path):

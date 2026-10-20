@@ -1,5 +1,6 @@
 """Renders index.csv into a static, grouped-by-question HTML view -- entirely
-regenerated every time, never hand-edited."""
+regenerated every time, never hand-edited. Mail-app-style master/detail layout:
+a sortable list of questions on the left, full run history on the right."""
 from __future__ import annotations
 
 import csv
@@ -8,6 +9,9 @@ from collections import defaultdict
 from pathlib import Path
 
 _JUDGMENT_CLASS = {"MATCH": "match", "PARTIAL": "partial", "MISMATCH": "mismatch"}
+# Lower rank sorts first -- "most urgent" ordering, like a mail app surfacing flagged
+# messages before read ones.
+_JUDGMENT_RANK = {"MISMATCH": 0, "PARTIAL": 1, "MATCH": 2}
 
 # index.csv stores sidecar paths relative to the repo root (run_question.py's --question-dir
 # is always "Scripts/eval/audit/qNN-.../"), but report.html itself lives inside that same
@@ -43,17 +47,40 @@ def _latest(runs: list[dict]) -> dict:
 def _page(by_question: dict[str, list[dict]]) -> str:
     ordered = sorted(by_question.items())
     latest_runs = [_latest(runs) for _, runs in ordered]
-    sections = "\n".join(_question_section(question_id, runs) for question_id, runs in ordered)
+    list_rows = "\n".join(_list_row(question_id, latest) for (question_id, _), latest
+                          in zip(ordered, latest_runs))
+    detail_panels = "\n".join(_detail_panel(question_id, runs) for question_id, runs in ordered)
+    first_id = ordered[0][0] if ordered else ""
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>CohortQuery translation accuracy audit</title>
 <style>
 {_CSS}
 </style></head><body>
+<header class="topbar">
 <h1>Translation accuracy audit</h1>
 <p class="subtitle">{len(ordered)} questions &middot; {sum(len(r) for _, r in ordered)} verification runs</p>
 {_summary(latest_runs)}
-{_toc(ordered, latest_runs)}
-{sections}
+</header>
+<div class="app">
+<div class="list-pane">
+<table id="list">
+<thead><tr>
+<th class="col-status" onclick="sortList('rank')">Status <span class="sort-indicator" id="sort-rank"></span></th>
+<th onclick="sortList('question')">Question <span class="sort-indicator" id="sort-question"></span></th>
+<th class="col-date" onclick="sortList('checked')">Checked <span class="sort-indicator" id="sort-checked"></span></th>
+</tr></thead>
+<tbody id="list-body">
+{list_rows}
+</tbody>
+</table>
+</div>
+<div class="detail-pane" id="detail-pane">
+{detail_panels}
+</div>
+</div>
+<script>
+{_JS.replace('__FIRST_ID__', first_id)}
+</script>
 </body></html>"""
 
 
@@ -72,29 +99,36 @@ def _summary(latest_runs: list[dict]) -> str:
     return f'<div class="stats">{stats}</div>'
 
 
-def _toc(ordered: list[tuple[str, list[dict]]], latest_runs: list[dict]) -> str:
-    items = "".join(
-        f"""<li><a href="#{html.escape(question_id)}">
-<span class="badge {_JUDGMENT_CLASS.get(latest['judgment'], '')}">{html.escape(latest['judgment'])}</span>
-{html.escape(question_id)}</a></li>"""
-        for (question_id, _), latest in zip(ordered, latest_runs))
-    return f'<nav class="toc"><h2>Questions</h2><ul>{items}</ul></nav>'
+def _list_row(question_id: str, latest: dict) -> str:
+    judgment_class = _JUDGMENT_CLASS.get(latest["judgment"], "")
+    rank = _JUDGMENT_RANK.get(latest["judgment"], 9)
+    question_text = html.escape(latest["question"])
+    # zero-padded composite key so a single string sort gives rank-then-alphabetical order
+    sort_key = f"{rank}_{latest['question'].lower()}"
+    checked_date = latest["checked_at"].split("T")[0]
+    return f"""<tr class="row" data-id="{html.escape(question_id)}"
+    data-rank="{html.escape(sort_key)}" data-question="{html.escape(latest['question'].lower())}"
+    data-checked="{html.escape(latest['checked_at'])}" onclick="selectQuestion('{html.escape(question_id)}')">
+<td class="col-status"><span class="badge {judgment_class}">{html.escape(latest['judgment'])}</span></td>
+<td class="row-title">{question_text}<span class="row-id">{html.escape(question_id)}</span></td>
+<td class="col-date">{html.escape(checked_date)}</td>
+</tr>"""
 
 
-def _question_section(question_id: str, runs: list[dict]) -> str:
+def _detail_panel(question_id: str, runs: list[dict]) -> str:
     question_text = html.escape(runs[0]["question"])
     run_blocks = "\n".join(_run_block(row) for row in reversed(runs))
-    return f"""<section class="question" id="{html.escape(question_id)}">
-<h2>{html.escape(question_id)}</h2><p class="qtext">{question_text}</p>
+    return f"""<article class="detail" id="detail-{html.escape(question_id)}">
+<header class="detail-header"><h2>{question_text}</h2><p class="slug">{html.escape(question_id)}</p></header>
 {run_blocks}
-</section>"""
+</article>"""
 
 
 def _run_block(row: dict) -> str:
     judgment_class = _JUDGMENT_CLASS.get(row["judgment"], "")
     reasoning = (f'<p class="reasoning">{html.escape(row["judgment_reasoning"])}</p>'
                  if row["judgment_reasoning"] else "")
-    flag = (f'<div class="flag">❓ <strong>Needs input:</strong> {html.escape(row["confirmation_note"])}</div>'
+    flag = (f'<div class="flag">&#10067; <strong>Needs input:</strong> {html.escape(row["confirmation_note"])}</div>'
             if row["needs_researcher_confirmation"] == "yes" and row["confirmation_note"] else "")
     links = _links(row)
     return f"""<div class="run">
@@ -123,36 +157,88 @@ def _links(row: dict) -> str:
 
 _CSS = """
   :root{color-scheme:light dark}
-  body{font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-       max-width:960px;margin:32px auto;padding:0 20px}
-  h1{margin-bottom:4px}
-  .subtitle{opacity:.65;margin-top:0;margin-bottom:28px}
-  .stats{display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap}
-  .stat{flex:1;min-width:110px;border-radius:10px;padding:14px 16px;text-align:center}
-  .stat .num{font-size:26px;font-weight:700;display:block}
-  .stat .label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.7}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;flex-direction:column}
+  .topbar{padding:16px 20px 0}
+  .topbar h1{margin:0 0 2px;font-size:19px}
+  .subtitle{opacity:.65;margin:0 0 14px;font-size:13px}
+  .stats{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .stat{flex:1;min-width:100px;border-radius:8px;padding:8px 12px;text-align:center}
+  .stat .num{font-size:20px;font-weight:700;display:block}
+  .stat .label{font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.7}
   .stat.match{background:#d1fae5;color:#065f46}
   .stat.partial{background:#fef3c7;color:#92400e}
   .stat.mismatch{background:#fee2e2;color:#991b1b}
   .stat.flagged{background:#ede9fe;color:#5b21b6}
-  .toc{border:1px solid rgba(127,127,127,.3);border-radius:10px;padding:14px 18px;margin-bottom:28px}
-  .toc h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;opacity:.65;margin:0 0 10px}
-  .toc ul{list-style:none;margin:0;padding:0;display:grid;
-          grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px 18px}
-  .toc a{text-decoration:none;color:inherit;font-size:13px}
+  .app{display:flex;flex:1;min-height:0;border-top:1px solid rgba(127,127,127,.3)}
+  .list-pane{width:360px;flex-shrink:0;overflow-y:auto;border-right:1px solid rgba(127,127,127,.3)}
+  .detail-pane{flex:1;overflow-y:auto;padding:24px 32px}
+  table{border-collapse:collapse;width:100%}
+  thead th{position:sticky;top:0;background:Canvas;text-align:left;font-size:11px;
+            text-transform:uppercase;letter-spacing:.04em;opacity:.6;padding:8px 12px;
+            cursor:pointer;user-select:none;border-bottom:1px solid rgba(127,127,127,.3);white-space:nowrap}
+  thead th:hover{opacity:1}
+  .sort-indicator{display:inline-block;width:10px}
+  .row{cursor:pointer;border-bottom:1px solid rgba(127,127,127,.15)}
+  .row:hover{background:rgba(127,127,127,.08)}
+  .row.selected{background:#2563eb;color:#fff}
+  .row.selected .row-id{color:#dbeafe}
+  .row td{padding:9px 12px;vertical-align:top}
+  .col-status{white-space:nowrap}
+  .col-date{white-space:nowrap;font-size:12px;opacity:.7}
+  .row-title{font-size:13px}
+  .row-id{display:block;font-size:11px;opacity:.55;margin-top:2px}
   .badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;
-         text-transform:uppercase;letter-spacing:.03em;margin-right:6px;vertical-align:middle}
+         text-transform:uppercase;letter-spacing:.03em;vertical-align:middle;white-space:nowrap}
   .badge.match{background:#10b981;color:#fff}
   .badge.partial{background:#f59e0b;color:#fff}
   .badge.mismatch{background:#ef4444;color:#fff}
-  .question{border:1px solid rgba(127,127,127,.3);border-radius:10px;padding:18px 22px;margin-bottom:18px}
-  .question h2{margin:0 0 2px;font-size:17px}
-  .qtext{opacity:.75;margin:0 0 14px}
-  .run{border-top:1px solid rgba(127,127,127,.2);padding-top:12px;margin-top:12px}
+  .detail{display:none}
+  .detail.active{display:block}
+  .detail-header{margin-bottom:18px}
+  .detail-header h2{margin:0 0 4px;font-size:20px}
+  .slug{opacity:.5;font-size:12px;margin:0}
+  .run{border-top:1px solid rgba(127,127,127,.2);padding-top:14px;margin-top:14px}
   .run:first-of-type{border-top:none;padding-top:0;margin-top:0}
-  .meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;opacity:.75;margin-bottom:6px}
-  .reasoning{margin:6px 0;font-size:14px}
+  .meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;opacity:.75;margin-bottom:8px}
+  .reasoning{margin:8px 0;font-size:14px}
   .flag{background:#ede9fe;border-left:3px solid #8b5cf6;padding:8px 12px;border-radius:6px;
         font-size:13px;margin:8px 0}
   .links a{margin-right:4px;font-size:13px}
+"""
+
+_JS = """
+function selectQuestion(id){
+  document.querySelectorAll('.detail').forEach(function(el){ el.classList.remove('active'); });
+  document.querySelectorAll('.row').forEach(function(el){ el.classList.remove('selected'); });
+  var panel = document.getElementById('detail-' + id);
+  if (panel) panel.classList.add('active');
+  var row = document.querySelector('.row[data-id="' + id + '"]');
+  if (row) row.classList.add('selected');
+}
+
+function sortList(key){
+  var tbody = document.getElementById('list-body');
+  var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+  var dir = (tbody.dataset.sortKey === key && tbody.dataset.sortDir === 'asc') ? 'desc' : 'asc';
+  rows.sort(function(a, b){
+    var av = a.dataset[key], bv = b.dataset[key];
+    if (av < bv) return dir === 'asc' ? -1 : 1;
+    if (av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+  rows.forEach(function(r){ tbody.appendChild(r); });
+  tbody.dataset.sortKey = key;
+  tbody.dataset.sortDir = dir;
+  document.querySelectorAll('.sort-indicator').forEach(function(el){ el.textContent = ''; });
+  var indicator = document.getElementById('sort-' + key);
+  if (indicator) indicator.textContent = dir === 'asc' ? '\\u25B2' : '\\u25BC';
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  var firstId = '__FIRST_ID__';
+  if (firstId) selectQuestion(firstId);
+  sortList('rank');
+});
 """
