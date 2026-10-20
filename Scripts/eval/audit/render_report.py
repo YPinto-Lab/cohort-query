@@ -1,6 +1,11 @@
 """Renders index.csv into a static, grouped-by-question HTML view -- entirely
 regenerated every time, never hand-edited. Mail-app-style master/detail layout:
-a sortable list of questions on the left, full run history on the right."""
+a sortable list of questions on the left, full run history on the right.
+
+Sidecars (gold.sql, generated.sql, results.csv, notes.md) are read and embedded
+directly in the page rather than linked -- a plain <a href> to a local .csv/.sql/.md
+file triggers an OS file-association download in some browsers instead of
+displaying anything, so there's nothing reliable to link to."""
 from __future__ import annotations
 
 import csv
@@ -14,10 +19,10 @@ _JUDGMENT_CLASS = {"MATCH": "match", "PARTIAL": "partial", "MISMATCH": "mismatch
 _JUDGMENT_RANK = {"MISMATCH": 0, "PARTIAL": 1, "MATCH": 2}
 
 # index.csv stores sidecar paths relative to the repo root (run_question.py's --question-dir
-# is always "Scripts/eval/audit/qNN-.../"), but report.html itself lives inside that same
-# Scripts/eval/audit/ directory -- a raw repo-root-relative href doubles the prefix and 404s.
-# Stripping it makes the link relative to report.html's own location instead.
+# is always "Scripts/eval/audit/qNN-.../"), but index.csv (and report.html) live inside that
+# same Scripts/eval/audit/ directory -- strip the shared prefix to read/link relative to there.
 _REPORT_DIR_PREFIX = "Scripts/eval/audit/"
+_MAX_EMBED_CHARS = 50_000
 
 
 def _relative_href(stored_path: str) -> str:
@@ -26,8 +31,22 @@ def _relative_href(stored_path: str) -> str:
     return stored_path
 
 
+def _read_sidecar(audit_dir: Path, stored_path: str) -> str:
+    if not stored_path:
+        return ""
+    file_path = audit_dir / _relative_href(stored_path)
+    try:
+        text = file_path.read_text()
+    except OSError:
+        return f"(file not found: {_relative_href(stored_path)})"
+    if len(text) > _MAX_EMBED_CHARS:
+        text = text[:_MAX_EMBED_CHARS] + f"\n... (truncated, {len(text)} chars total)"
+    return text
+
+
 def render(csv_path: Path, out_path: Path) -> None:
-    out_path.write_text(_page(_grouped_by_question(csv_path)))
+    audit_dir = csv_path.resolve().parent
+    out_path.write_text(_page(_grouped_by_question(csv_path), audit_dir))
 
 
 def _grouped_by_question(csv_path: Path) -> dict[str, list[dict]]:
@@ -44,12 +63,12 @@ def _latest(runs: list[dict]) -> dict:
     return runs[-1]  # each question's runs list is already sorted by checked_at ascending
 
 
-def _page(by_question: dict[str, list[dict]]) -> str:
+def _page(by_question: dict[str, list[dict]], audit_dir: Path) -> str:
     ordered = sorted(by_question.items())
     latest_runs = [_latest(runs) for _, runs in ordered]
     list_rows = "\n".join(_list_row(question_id, latest) for (question_id, _), latest
                           in zip(ordered, latest_runs))
-    detail_panels = "\n".join(_detail_panel(question_id, runs) for question_id, runs in ordered)
+    detail_panels = "\n".join(_detail_panel(question_id, runs, audit_dir) for question_id, runs in ordered)
     first_id = ordered[0][0] if ordered else ""
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>CohortQuery translation accuracy audit</title>
@@ -115,22 +134,32 @@ def _list_row(question_id: str, latest: dict) -> str:
 </tr>"""
 
 
-def _detail_panel(question_id: str, runs: list[dict]) -> str:
+def _detail_panel(question_id: str, runs: list[dict], audit_dir: Path) -> str:
     question_text = html.escape(runs[0]["question"])
-    run_blocks = "\n".join(_run_block(row) for row in reversed(runs))
+    gold_sql = _read_sidecar(audit_dir, runs[-1]["gold_sql_path"])
+    gold_block = (f'<details class="sidecar"><summary>Gold SQL</summary>'
+                  f'<pre>{html.escape(gold_sql)}</pre></details>' if gold_sql else "")
+    run_blocks = "\n".join(_run_block(row, audit_dir) for row in reversed(runs))
     return f"""<article class="detail" id="detail-{html.escape(question_id)}">
 <header class="detail-header"><h2>{question_text}</h2><p class="slug">{html.escape(question_id)}</p></header>
+{gold_block}
 {run_blocks}
 </article>"""
 
 
-def _run_block(row: dict) -> str:
+def _run_block(row: dict, audit_dir: Path) -> str:
     judgment_class = _JUDGMENT_CLASS.get(row["judgment"], "")
     reasoning = (f'<p class="reasoning">{html.escape(row["judgment_reasoning"])}</p>'
                  if row["judgment_reasoning"] else "")
     flag = (f'<div class="flag">&#10067; <strong>Needs input:</strong> {html.escape(row["confirmation_note"])}</div>'
             if row["needs_researcher_confirmation"] == "yes" and row["confirmation_note"] else "")
-    links = _links(row)
+    sql_text = _read_sidecar(audit_dir, row["generated_sql_path"])
+    results_text = _read_sidecar(audit_dir, row["results_path"])
+    notes_text = _read_sidecar(audit_dir, row["judgment_reference"])
+    sidecars = f"""<details class="sidecar"><summary>Generated SQL</summary><pre>{html.escape(sql_text)}</pre></details>
+<details class="sidecar"><summary>Results</summary><pre>{html.escape(results_text)}</pre></details>"""
+    if notes_text:
+        sidecars += f'\n<details class="sidecar"><summary>Notes</summary><pre>{html.escape(notes_text)}</pre></details>'
     return f"""<div class="run">
 <div class="meta">
 <span class="badge {judgment_class}">{html.escape(row['judgment'])}</span>
@@ -140,19 +169,9 @@ def _run_block(row: dict) -> str:
 </div>
 {reasoning}
 {flag}
-<div class="links">{links}</div>
+<p class="planpath">plan: {html.escape(row['plan_path'])}</p>
+{sidecars}
 </div>"""
-
-
-def _links(row: dict) -> str:
-    parts = [f'<a href="{html.escape(row["plan_path"])}">plan</a>']
-    if row["gold_sql_path"]:
-        parts.append(f'<a href="{html.escape(_relative_href(row["gold_sql_path"]))}">gold</a>')
-    parts.append(f'<a href="{html.escape(_relative_href(row["generated_sql_path"]))}">sql</a>')
-    parts.append(f'<a href="{html.escape(_relative_href(row["results_path"]))}">results</a>')
-    if row["judgment_reference"]:
-        parts.append(f'<a href="{html.escape(_relative_href(row["judgment_reference"]))}">notes</a>')
-    return " &middot; ".join(parts)
 
 
 _CSS = """
@@ -205,7 +224,11 @@ _CSS = """
   .reasoning{margin:8px 0;font-size:14px}
   .flag{background:#ede9fe;border-left:3px solid #8b5cf6;padding:8px 12px;border-radius:6px;
         font-size:13px;margin:8px 0}
-  .links a{margin-right:4px;font-size:13px}
+  .planpath{font-size:11px;opacity:.5;font-family:ui-monospace,Menlo,monospace;margin:8px 0;word-break:break-all}
+  .sidecar{margin:6px 0;border:1px solid rgba(127,127,127,.25);border-radius:6px;overflow:hidden}
+  .sidecar summary{padding:6px 10px;font-size:12px;cursor:pointer;background:rgba(127,127,127,.08)}
+  .sidecar pre{margin:0;padding:10px 12px;font-size:12px;overflow:auto;max-height:320px;
+               white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,monospace}
 """
 
 _JS = """
