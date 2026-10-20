@@ -40,6 +40,7 @@
   .badge.match{background:#10b981;color:#fff}
   .badge.partial{background:#f59e0b;color:#fff}
   .badge.mismatch{background:#ef4444;color:#fff}
+  .flag-dot{margin-left:5px;font-size:11px;vertical-align:middle}
   .detail{display:none}
   .detail.active{display:block}
   .detail-header{margin-bottom:18px}
@@ -114,7 +115,7 @@
 <tr class="row" data-id="q03-human-tumor-transcriptomic"
     data-rank="1_human tumor samples from transcriptomic sequencing" data-question="human tumor samples from transcriptomic sequencing"
     data-checked="2026-10-19T12:30:49" onclick="selectQuestion('q03-human-tumor-transcriptomic')">
-<td class="col-status"><span class="badge partial">PARTIAL</span></td>
+<td class="col-status"><span class="badge partial">PARTIAL</span><span class="flag-dot" title="Needs input">&#10067;</span></td>
 <td class="row-title">human tumor samples from transcriptomic sequencing<span class="row-id">q03-human-tumor-transcriptomic</span></td>
 <td class="col-date">2026-10-19</td>
 </tr>
@@ -128,7 +129,7 @@
 <tr class="row" data-id="q05-healthy-adult-gut-ambiguous"
     data-rank="1_healthy adult gut microbiome samples" data-question="healthy adult gut microbiome samples"
     data-checked="2026-10-19T12:33:24" onclick="selectQuestion('q05-healthy-adult-gut-ambiguous')">
-<td class="col-status"><span class="badge partial">PARTIAL</span></td>
+<td class="col-status"><span class="badge partial">PARTIAL</span><span class="flag-dot" title="Needs input">&#10067;</span></td>
 <td class="row-title">healthy adult gut microbiome samples<span class="row-id">q05-healthy-adult-gut-ambiguous</span></td>
 <td class="col-date">2026-10-19</td>
 </tr>
@@ -149,7 +150,7 @@
 <tr class="row" data-id="q08-age-over-65-numeric-threshold"
     data-rank="1_samples from patients over 65 years old" data-question="samples from patients over 65 years old"
     data-checked="2026-10-19T13:05:21" onclick="selectQuestion('q08-age-over-65-numeric-threshold')">
-<td class="col-status"><span class="badge partial">PARTIAL</span></td>
+<td class="col-status"><span class="badge partial">PARTIAL</span><span class="flag-dot" title="Needs input">&#10067;</span></td>
 <td class="row-title">samples from patients over 65 years old<span class="row-id">q08-age-over-65-numeric-threshold</span></td>
 <td class="col-date">2026-10-19</td>
 </tr>
@@ -191,7 +192,7 @@
 <tr class="row" data-id="q15-pregnant-women-samples"
     data-rank="1_pregnant women samples" data-question="pregnant women samples"
     data-checked="2026-10-19T14:09:13" onclick="selectQuestion('q15-pregnant-women-samples')">
-<td class="col-status"><span class="badge partial">PARTIAL</span></td>
+<td class="col-status"><span class="badge partial">PARTIAL</span><span class="flag-dot" title="Needs input">&#10067;</span></td>
 <td class="row-title">pregnant women samples<span class="row-id">q15-pregnant-women-samples</span></td>
 <td class="col-date">2026-10-19</td>
 </tr>
@@ -1550,6 +1551,8 @@ a concept that already implies it), or an acceptable, occasional miscalibration?
 </div>
 <script>
 
+var LAST_VIEWED_KEY = 'cohortquery-audit-last-viewed';
+
 function selectQuestion(id){
   document.querySelectorAll('.detail').forEach(function(el){ el.classList.remove('active'); });
   document.querySelectorAll('.row').forEach(function(el){ el.classList.remove('selected'); });
@@ -1557,6 +1560,7 @@ function selectQuestion(id){
   if (panel) panel.classList.add('active');
   var row = document.querySelector('.row[data-id="' + id + '"]');
   if (row) row.classList.add('selected');
+  try { localStorage.setItem(LAST_VIEWED_KEY, id); } catch (e) {}
 }
 
 function sortList(key){
@@ -1578,9 +1582,15 @@ function sortList(key){
 }
 
 document.addEventListener('DOMContentLoaded', function(){
-  var firstId = 'q01-ibd-calprotectin';
-  if (firstId) selectQuestion(firstId);
   sortList('rank');
+  var lastViewed = null;
+  try { lastViewed = localStorage.getItem(LAST_VIEWED_KEY); } catch (e) {}
+  var idToSelect = (lastViewed && document.getElementById('detail-' + lastViewed)) ? lastViewed : null;
+  if (!idToSelect) {
+    var firstRow = document.querySelector('#list-body .row');
+    idToSelect = firstRow ? firstRow.dataset.id : null;
+  }
+  if (idToSelect) selectQuestion(idToSelect);
 });
 
 </script>

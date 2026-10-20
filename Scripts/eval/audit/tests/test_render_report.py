@@ -167,6 +167,53 @@ def test_plan_path_is_plain_text_not_a_link(tmp_path):
     assert 'href="/private/pinto-lab/plans/x/plan.json"' not in content
 
 
+def test_needs_input_is_flagged_in_the_list_row_not_only_the_detail_pane(tmp_path):
+    """The actual bug: the summary stat card says "4 needs input" but the list
+    itself gives no visual indication of WHICH rows those are -- you only find
+    out by opening each question's detail pane one at a time."""
+    csv_path = tmp_path / "index.csv"
+    _write_index(csv_path, [
+        dict(question_id="q05", run_id="r1", question="ambiguous question",
+             checked_at="2026-10-19T00:00:00", trigger_reason="initial", judgment="PARTIAL",
+             gold_version="1", plan_path="/x/plan.json",
+             generated_sql_path="q05/runs/r1/generated.sql", results_path="q05/runs/r1/results.csv",
+             needs_researcher_confirmation="yes", confirmation_note="note"),
+        dict(question_id="q02", run_id="r1", question="a settled question",
+             checked_at="2026-10-19T00:00:00", trigger_reason="initial", judgment="MATCH",
+             gold_version="1", plan_path="/x/plan.json",
+             generated_sql_path="q02/runs/r1/generated.sql", results_path="q02/runs/r1/results.csv",
+             needs_researcher_confirmation="no"),
+    ])
+    out_path = tmp_path / "report.html"
+    render(csv_path, out_path)
+    content = out_path.read_text()
+    list_section = content[content.index('id="list-body"'):content.index('</tbody>')]
+    rows = list_section.split('<tr class="row"')[1:]
+    row_q05 = next(r for r in rows if 'data-id="q05"' in r)
+    row_q02 = next(r for r in rows if 'data-id="q02"' in r)
+    assert "flag-dot" in row_q05
+    assert "flag-dot" not in row_q02
+
+
+def test_last_viewed_question_is_remembered_across_page_loads(tmp_path):
+    """The actual bug: every refresh selected a hardcoded first question
+    (alphabetically first, before the JS even sorts the list) -- losing your
+    place every single reload. Fix: remember the last-viewed question via
+    localStorage and restore it on load, instead of hardcoding one."""
+    csv_path = tmp_path / "index.csv"
+    _write_index(csv_path, [
+        dict(question_id="q01", run_id="r1", question="q one",
+             checked_at="2026-10-19T00:00:00", trigger_reason="initial", judgment="MATCH",
+             gold_version="1", plan_path="/x/plan.json",
+             generated_sql_path="q01/runs/r1/generated.sql", results_path="q01/runs/r1/results.csv"),
+    ])
+    out_path = tmp_path / "report.html"
+    render(csv_path, out_path)
+    content = out_path.read_text()
+    assert "localStorage" in content
+    assert "__FIRST_ID__" not in content  # no hardcoded fallback id baked into the page
+
+
 def test_scorecard_shows_gold_vs_generated_buckets_not_a_raw_csv_dump(tmp_path):
     """The actual pain point: a raw results.csv dump (hundreds of
     "SRA_METADATA,SAMD..." lines) tells a reader nothing. When gold_count is

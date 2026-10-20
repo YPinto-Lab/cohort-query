@@ -71,7 +71,6 @@ def _page(by_question: dict[str, list[dict]], audit_dir: Path) -> str:
     list_rows = "\n".join(_list_row(question_id, latest) for (question_id, _), latest
                           in zip(ordered, latest_runs))
     detail_panels = "\n".join(_detail_panel(question_id, runs, audit_dir) for question_id, runs in ordered)
-    first_id = ordered[0][0] if ordered else ""
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>CohortQuery translation accuracy audit</title>
 <style>
@@ -100,7 +99,7 @@ def _page(by_question: dict[str, list[dict]], audit_dir: Path) -> str:
 </div>
 </div>
 <script>
-{_JS.replace('__FIRST_ID__', first_id)}
+{_JS}
 </script>
 </body></html>"""
 
@@ -127,10 +126,12 @@ def _list_row(question_id: str, latest: dict) -> str:
     # zero-padded composite key so a single string sort gives rank-then-alphabetical order
     sort_key = f"{rank}_{latest['question'].lower()}"
     checked_date = latest["checked_at"].split("T")[0]
+    flag = ('<span class="flag-dot" title="Needs input">&#10067;</span>'
+            if latest["needs_researcher_confirmation"] == "yes" else "")
     return f"""<tr class="row" data-id="{html.escape(question_id)}"
     data-rank="{html.escape(sort_key)}" data-question="{html.escape(latest['question'].lower())}"
     data-checked="{html.escape(latest['checked_at'])}" onclick="selectQuestion('{html.escape(question_id)}')">
-<td class="col-status"><span class="badge {judgment_class}">{html.escape(latest['judgment'])}</span></td>
+<td class="col-status"><span class="badge {judgment_class}">{html.escape(latest['judgment'])}</span>{flag}</td>
 <td class="row-title">{question_text}<span class="row-id">{html.escape(question_id)}</span></td>
 <td class="col-date">{html.escape(checked_date)}</td>
 </tr>"""
@@ -245,6 +246,7 @@ _CSS = """
   .badge.match{background:#10b981;color:#fff}
   .badge.partial{background:#f59e0b;color:#fff}
   .badge.mismatch{background:#ef4444;color:#fff}
+  .flag-dot{margin-left:5px;font-size:11px;vertical-align:middle}
   .detail{display:none}
   .detail.active{display:block}
   .detail-header{margin-bottom:18px}
@@ -285,6 +287,8 @@ _CSS = """
 """
 
 _JS = """
+var LAST_VIEWED_KEY = 'cohortquery-audit-last-viewed';
+
 function selectQuestion(id){
   document.querySelectorAll('.detail').forEach(function(el){ el.classList.remove('active'); });
   document.querySelectorAll('.row').forEach(function(el){ el.classList.remove('selected'); });
@@ -292,6 +296,7 @@ function selectQuestion(id){
   if (panel) panel.classList.add('active');
   var row = document.querySelector('.row[data-id="' + id + '"]');
   if (row) row.classList.add('selected');
+  try { localStorage.setItem(LAST_VIEWED_KEY, id); } catch (e) {}
 }
 
 function sortList(key){
@@ -313,8 +318,14 @@ function sortList(key){
 }
 
 document.addEventListener('DOMContentLoaded', function(){
-  var firstId = '__FIRST_ID__';
-  if (firstId) selectQuestion(firstId);
   sortList('rank');
+  var lastViewed = null;
+  try { lastViewed = localStorage.getItem(LAST_VIEWED_KEY); } catch (e) {}
+  var idToSelect = (lastViewed && document.getElementById('detail-' + lastViewed)) ? lastViewed : null;
+  if (!idToSelect) {
+    var firstRow = document.querySelector('#list-body .row');
+    idToSelect = firstRow ? firstRow.dataset.id : null;
+  }
+  if (idToSelect) selectQuestion(idToSelect);
 });
 """
