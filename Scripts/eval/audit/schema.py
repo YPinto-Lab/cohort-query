@@ -9,6 +9,11 @@ COLUMNS = (
     "question",
     "plan_path", "generated_sql_path", "results_path", "result_row_count",
     "gold_sql_path", "gold_version",
+    # Set-overlap scorecard against gold.sql -- blank when the question has no single
+    # gold answer to compare against (ambiguous phrasing, capability-boundary tests).
+    # generated_count is always the primary metadata source's count (the one gold.sql
+    # targets), not the multi-source result_row_count dict.
+    "gold_count", "generated_count", "overlap_count",
     "judgment", "judgment_reasoning", "judgment_reference",
     "missed_what", "missed_link", "why_missed",
     "needs_researcher_confirmation", "confirmation_note",

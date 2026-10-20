@@ -167,6 +167,89 @@ def test_plan_path_is_plain_text_not_a_link(tmp_path):
     assert 'href="/private/pinto-lab/plans/x/plan.json"' not in content
 
 
+def test_scorecard_shows_gold_vs_generated_buckets_not_a_raw_csv_dump(tmp_path):
+    """The actual pain point: a raw results.csv dump (hundreds of
+    "SRA_METADATA,SAMD..." lines) tells a reader nothing. When gold_count is
+    present, show the comparison that actually matters: gold/generated/overlap/
+    missed/extra counts -- not the biosample list."""
+    audit_dir = tmp_path
+    question_dir = audit_dir / "q03"
+    run_dir = question_dir / "runs" / "r1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "generated.sql").write_text("SELECT biosample FROM sra_metadata;")
+    (run_dir / "results.csv").write_text("source,biosample\nSRA_METADATA,SAMD00020630\n")
+
+    csv_path = audit_dir / "index.csv"
+    _write_index(csv_path, [
+        dict(question_id="q03", run_id="r1", question="tumor samples",
+             checked_at="2026-10-19T00:00:00", trigger_reason="initial", judgment="PARTIAL",
+             gold_version="1", plan_path="/x/plan.json",
+             generated_sql_path="Scripts/eval/audit/q03/runs/r1/generated.sql",
+             results_path="Scripts/eval/audit/q03/runs/r1/results.csv",
+             gold_count="33405", generated_count="68342", overlap_count="5212"),
+    ])
+    out_path = audit_dir / "report.html"
+    render(csv_path, out_path)
+    content = out_path.read_text()
+    assert "33,405" in content or "33405" in content
+    assert "68,342" in content or "68342" in content
+    assert "5,212" in content or "5212" in content
+    # missed = gold - overlap = 28193; extra = generated - overlap = 63130
+    assert "28,193" in content or "28193" in content
+    assert "63,130" in content or "63130" in content
+    assert "SAMD00020630" not in content
+
+
+def test_scorecard_omitted_when_no_gold_count(tmp_path):
+    """Ambiguous/capability-boundary questions (q05/q08) have no single gold
+    answer -- don't fabricate a comparison for them, just skip the scorecard."""
+    audit_dir = tmp_path
+    run_dir = audit_dir / "q05" / "runs" / "r1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "generated.sql").write_text("SELECT biosample FROM sra_metadata;")
+    (run_dir / "results.csv").write_text("source,biosample\n")
+
+    csv_path = audit_dir / "index.csv"
+    _write_index(csv_path, [
+        dict(question_id="q05", run_id="r1", question="ambiguous question",
+             checked_at="2026-10-19T00:00:00", trigger_reason="initial", judgment="PARTIAL",
+             gold_version="1", plan_path="/x/plan.json",
+             generated_sql_path="Scripts/eval/audit/q05/runs/r1/generated.sql",
+             results_path="Scripts/eval/audit/q05/runs/r1/results.csv"),
+    ])
+    out_path = audit_dir / "report.html"
+    render(csv_path, out_path)
+    content = out_path.read_text()
+    assert "no single gold" in content.lower()
+
+
+def test_notes_markdown_is_rendered_not_shown_as_raw_text(tmp_path):
+    """The other pain point: notes.md was shown as raw text inside a <pre> block
+    -- "# Heading" literally visible instead of rendering as a heading."""
+    audit_dir = tmp_path
+    run_dir = audit_dir / "q05" / "runs" / "r1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "generated.sql").write_text("SELECT 1;")
+    (run_dir / "results.csv").write_text("source,biosample\n")
+    (run_dir / "notes.md").write_text("# q05-healthy-adult-gut-ambiguous\n\n**Question:** \"healthy adults\"\n")
+
+    csv_path = audit_dir / "index.csv"
+    _write_index(csv_path, [
+        dict(question_id="q05", run_id="r1", question="ambiguous question",
+             checked_at="2026-10-19T00:00:00", trigger_reason="initial", judgment="PARTIAL",
+             gold_version="1", plan_path="/x/plan.json",
+             generated_sql_path="Scripts/eval/audit/q05/runs/r1/generated.sql",
+             results_path="Scripts/eval/audit/q05/runs/r1/results.csv",
+             judgment_reference="Scripts/eval/audit/q05/runs/r1/notes.md"),
+    ])
+    out_path = audit_dir / "report.html"
+    render(csv_path, out_path)
+    content = out_path.read_text()
+    assert "<h1>q05-healthy-adult-gut-ambiguous</h1>" in content
+    assert "<strong>Question:</strong>" in content
+    assert "# q05-healthy-adult-gut-ambiguous" not in content
+
+
 def test_sidecars_are_embedded_inline_not_linked(tmp_path):
     """The actual bug reported: clicking gold/sql/results/notes links triggered OS
     file-type downloads instead of displaying anything (a file:// + browser
@@ -198,5 +281,4 @@ def test_sidecars_are_embedded_inline_not_linked(tmp_path):
     content = out_path.read_text()
     assert "SELECT biosample FROM sra_metadata WHERE bmi_sam IS NOT NULL;" in content
     assert "SELECT biosample FROM sra_metadata WHERE jattr IS NOT NULL;" in content
-    assert "SAMN00000001" in content
     assert "Full writeup text goes here." in content

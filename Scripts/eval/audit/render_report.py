@@ -13,6 +13,8 @@ import html
 from collections import defaultdict
 from pathlib import Path
 
+import mistune
+
 _JUDGMENT_CLASS = {"MATCH": "match", "PARTIAL": "partial", "MISMATCH": "mismatch"}
 # Lower rank sorts first -- "most urgent" ordering, like a mail app surfacing flagged
 # messages before read ones.
@@ -154,12 +156,12 @@ def _run_block(row: dict, audit_dir: Path) -> str:
     flag = (f'<div class="flag">&#10067; <strong>Needs input:</strong> {html.escape(row["confirmation_note"])}</div>'
             if row["needs_researcher_confirmation"] == "yes" and row["confirmation_note"] else "")
     sql_text = _read_sidecar(audit_dir, row["generated_sql_path"])
-    results_text = _read_sidecar(audit_dir, row["results_path"])
     notes_text = _read_sidecar(audit_dir, row["judgment_reference"])
-    sidecars = f"""<details class="sidecar"><summary>Generated SQL</summary><pre>{html.escape(sql_text)}</pre></details>
-<details class="sidecar"><summary>Results</summary><pre>{html.escape(results_text)}</pre></details>"""
+    sidecars = f'<details class="sidecar"><summary>Generated SQL</summary><pre>{html.escape(sql_text)}</pre></details>'
+    sidecars += _scorecard(row)
     if notes_text:
-        sidecars += f'\n<details class="sidecar"><summary>Notes</summary><pre>{html.escape(notes_text)}</pre></details>'
+        sidecars += (f'\n<details class="sidecar"><summary>Notes</summary>'
+                     f'<div class="markdown">{mistune.html(notes_text)}</div></details>')
     return f"""<div class="run">
 <div class="meta">
 <span class="badge {judgment_class}">{html.escape(row['judgment'])}</span>
@@ -172,6 +174,36 @@ def _run_block(row: dict, audit_dir: Path) -> str:
 <p class="planpath">plan: {html.escape(row['plan_path'])}</p>
 {sidecars}
 </div>"""
+
+
+def _scorecard(row: dict) -> str:
+    """Gold vs. generated comparison -- the numbers that actually matter, not a raw
+    biosample dump. Omitted when the question has no single gold answer to compare
+    against (ambiguous phrasing, capability-boundary tests)."""
+    if not row["gold_count"]:
+        return ('<div class="sidecar no-gold">No single gold answer for this question '
+                '-- see reasoning above.</div>')
+    gold = int(row["gold_count"])
+    generated = int(row["generated_count"])
+    overlap = int(row["overlap_count"])
+    missed = gold - overlap
+    extra = generated - overlap
+    recall = round(100 * overlap / gold) if gold else 0
+    precision = round(100 * overlap / generated) if generated else 0
+    rows = "".join(f"""<tr><td>{label}</td><td class="num">{value:,}</td></tr>"""
+                   for label, value in [("Gold", gold), ("Generated", generated),
+                                        ("Overlap (correct)", overlap),
+                                        ("Missed (gold-only)", missed),
+                                        ("Extra (generated-only)", extra)])
+    return f"""<details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall {recall}%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:{recall}%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision {precision}%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:{precision}%"></div></div></div>
+<table class="scorecard-table">{rows}</table>
+</div>
+</details>"""
 
 
 _CSS = """
@@ -229,6 +261,27 @@ _CSS = """
   .sidecar summary{padding:6px 10px;font-size:12px;cursor:pointer;background:rgba(127,127,127,.08)}
   .sidecar pre{margin:0;padding:10px 12px;font-size:12px;overflow:auto;max-height:320px;
                white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,monospace}
+  .sidecar.no-gold{padding:8px 12px;font-size:12px;opacity:.6;font-style:italic}
+  .scorecard{padding:12px 14px}
+  .bar-row{margin-bottom:10px}
+  .bar-label{display:block;font-size:12px;margin-bottom:3px;opacity:.8}
+  .bar-track{background:rgba(127,127,127,.15);border-radius:4px;height:8px;overflow:hidden}
+  .bar-fill{height:100%;border-radius:4px}
+  .bar-fill.recall{background:#2563eb}
+  .bar-fill.precision{background:#8b5cf6}
+  .scorecard-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  .scorecard-table td{padding:4px 0;border-bottom:1px solid rgba(127,127,127,.12)}
+  .scorecard-table td.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+  .markdown{padding:10px 14px;font-size:13px}
+  .markdown h1{font-size:16px;margin:0 0 8px}
+  .markdown h2{font-size:14px;margin:14px 0 6px}
+  .markdown h3{font-size:13px;margin:12px 0 4px}
+  .markdown p{margin:6px 0}
+  .markdown code{font-family:ui-monospace,Menlo,monospace;background:rgba(127,127,127,.12);
+                 padding:1px 4px;border-radius:3px;font-size:12px}
+  .markdown pre{background:rgba(127,127,127,.08);padding:8px 10px;border-radius:6px;overflow:auto}
+  .markdown pre code{background:none;padding:0}
+  .markdown ul,.markdown ol{margin:6px 0;padding-left:22px}
 """
 
 _JS = """
