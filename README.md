@@ -12,7 +12,7 @@ mirror; review the cohort; materialize one `.biom`.
 Orange is what you type; everything else is `cohortquery` talking back — the question, its
 translation, the cohort preview, and a menu to run it, refine it, or save the plan for later.
 
-![`cohortquery` interactive session: asking a cohort question and previewing the result](Docs/img/cohortquery-session.png)
+![`cohortquery` interactive session: asking a cohort question and previewing the result](Docs/img/cohortquery-session.svg)
 
 "Run it" walks you through picking a feature space and sources, then submits the build. Scope
 ends at the `.biom` — open it in whatever you already use.
