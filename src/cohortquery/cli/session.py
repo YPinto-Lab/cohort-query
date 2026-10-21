@@ -238,7 +238,14 @@ _STEP_LABELS = {
     "sources": "Sources",
     "output": "Output path",
     "gpu": "GPU",
+    "submit": "Submit",
 }
+
+# BioProjects/feature space/sources have no single sane value to fall back to if
+# skipped (which BioProjects? which sources?) -- Submit blocks and sends you back to
+# the first one left blank. Output path and GPU always carry a visible default
+# (plan_dir/cohort.biom, CPU), so skipping them just keeps what's shown.
+_REQUIRED_IF_INTERACTIVE = {"bioprojects", "family", "sources"}
 
 
 class _Back:
@@ -249,28 +256,65 @@ class _Back:
 _BACK = _Back()
 
 
+class _Forward:
+    """Sentinel a step function returns on Right arrow: move to the next screen
+    WITHOUT recording an answer for this one (any earlier answer is left alone)."""
+
+
+_FORWARD = _Forward()
+
+
 class _Auto:
     """Sentinel a step function returns when it had only one possible value and
-    resolved without asking -- see _run_wizard for why this must not be treated
-    like a real answer for back-navigation."""
+    resolved without asking."""
 
     def __init__(self, value):
         self.value = value
 
 
-_BACK_HINT = "(← back · ↑↓ choose · Enter confirm)"
+_NAV_HINT = "(← back · → skip · ↑↓ choose · Enter confirm)"
 
 
-def _ask_with_back(question: questionary.Question):
-    """select/checkbox/confirm never bind Escape to anything (only Ctrl-C quits via
-    KeyboardInterrupt), so Left arrow -- otherwise unused in these widgets -- is free
-    to mean "back". Not used for text prompts, where Left already moves the cursor.
+def _ask_with_nav(question: questionary.Question):
+    """select/checkbox/confirm never bind Escape or Left/Right to anything (only
+    Ctrl-C quits via KeyboardInterrupt), so both arrows are free to mean step
+    navigation, decoupled from actually answering: Left steps back, Right skips
+    forward without recording a value. Not used for text prompts, where Left/Right
+    already move the cursor -- see _ask_text_with_nav.
 
     confirm()'s Application already merges its bindings into a read-only
     _MergedKeyBindings (no .add()), unlike select/checkbox's plain KeyBindings --
     merge_key_bindings handles both uniformly instead of mutating in place."""
     extra = KeyBindings()
     extra.add(Keys.Left, eager=True)(lambda event: event.app.exit(result=_BACK))
+    extra.add(Keys.Right, eager=True)(lambda event: event.app.exit(result=_FORWARD))
+    question.application.key_bindings = merge_key_bindings(
+        [question.application.key_bindings, extra])
+    return question.ask()
+
+
+def _ask_text_with_nav(question: questionary.Question):
+    """Left/Right already move the text cursor, so they only mean step-navigation
+    at the boundary (cursor at the very start/end) -- anywhere else they still edit
+    the path like normal."""
+    extra = KeyBindings()
+
+    @extra.add(Keys.Left, eager=True)
+    def _left(event):
+        buffer = event.app.current_buffer
+        if buffer.cursor_position == 0:
+            event.app.exit(result=_BACK)
+        else:
+            buffer.cursor_left()
+
+    @extra.add(Keys.Right, eager=True)
+    def _right(event):
+        buffer = event.app.current_buffer
+        if buffer.cursor_position == len(buffer.text):
+            event.app.exit(result=_FORWARD)
+        else:
+            buffer.cursor_right()
+
     question.application.key_bindings = merge_key_bindings(
         [question.application.key_bindings, extra])
     return question.ask()
@@ -283,36 +327,58 @@ def _continue(plan: Plan, plan_dir: Path) -> bool:
 
 
 def _run_wizard(plan: Plan, plan_dir: Path, steps: list[str]) -> bool:
-    """Walks `steps` (a subset of _STEP_ORDER, in order) as a linear wizard, printing
-    a breadcrumb before each screen. Left arrow/Ctrl-C at a screen steps back ONE
-    screen and keeps earlier answers as defaults instead of unwinding the whole chain
-    -- stepping back past the first screen returns to the caller's "What now?" menu,
-    same as the old all-or-nothing cancel, just one step at a time now.
+    """Walks `steps` (a subset of _STEP_ORDER) plus a trailing "submit" screen as a
+    back/forward-able wizard. Left steps back one screen; Right moves forward WITHOUT
+    requiring an answer on the current screen (Claude's own tab-bar navigation is the
+    model here: arrows move between tabs, Enter commits within one). Reaching Submit
+    with a required screen still blank jumps back to the first one, with a one-line
+    warning, instead of silently refusing or discarding progress.
 
     A step with only one possible value (e.g. a single feature space) auto-resolves
-    without asking -- it is NOT pushed onto `done`, so stepping back skips straight
-    over it to the previous screen that actually asked something. Pushing it would
-    make back a no-op: popping back into an auto step just re-resolves the same
-    value and advances again, landing you right back where you started."""
+    without asking and is indistinguishable from a real answer here -- nothing ever
+    "goes back into" it on purpose, since re-asking a single-option step is a no-op
+    that immediately advances again."""
     answers: dict = {}
-    done: list[str] = []
-    step = steps[0]
+    if "output" in steps:
+        answers["output"] = plan_dir / "cohort.biom"
+    if "gpu" in steps:
+        answers["gpu"] = False
+    chain = steps + ["submit"]
+    index = 0
+    warning = None
     while True:
-        breadcrumb = _breadcrumb_text(steps, answers, step)
+        step = chain[index]
+        if step == "submit":
+            missing = [name for name in steps
+                      if name in _REQUIRED_IF_INTERACTIVE and name not in answers]
+            if missing:
+                index = chain.index(missing[0])
+                warning = f"Complete {_STEP_LABELS[missing[0]]} before submitting"
+                continue
+            breadcrumb = _breadcrumb_text(chain, answers, step)
+            confirmed = _ask_with_nav(questionary.confirm(
+                f"{breadcrumb}\nSubmit this cohort build?", default=True,
+                erase_when_done=True, instruction="(← back to review · Enter submit)"))
+            if confirmed is True:
+                _submit(plan_dir, answers["sources"], answers["output"], answers["gpu"])
+                return True
+            index = max(index - 1, 0)
+            continue
+        breadcrumb = _breadcrumb_text(chain, answers, step)
+        if warning:
+            breadcrumb = f"⚠ {warning}\n{breadcrumb}"
+            warning = None
         result = _ASK_STEP[step](plan, plan_dir, answers, breadcrumb)
         if result is _BACK:
-            if not done:
+            if index == 0:
                 return False
-            step = done.pop()
+            index -= 1
+            continue
+        if result is _FORWARD:
+            index = min(index + 1, len(chain) - 1)
             continue
         answers[step] = result.value if isinstance(result, _Auto) else result
-        if not isinstance(result, _Auto):
-            done.append(step)
-        if step == steps[-1]:
-            break
-        step = steps[steps.index(step) + 1]
-    _submit(plan_dir, answers["sources"], answers["output"], answers["gpu"])
-    return True
+        index = min(index + 1, len(chain) - 1)
 
 
 def _breadcrumb_text(steps: list[str], answers: dict, current: str) -> str:
@@ -380,9 +446,11 @@ def _select_bioprojects(plan: Plan, plan_dir: Path, breadcrumb: str = "") -> Pla
               for row in rows]
     message = f"{breadcrumb}\nWhich BioProjects to include?" if breadcrumb \
              else "Which BioProjects to include?"
-    selected = _ask_with_back(questionary.checkbox(
+    selected = _ask_with_nav(questionary.checkbox(
         message, choices=choices, style=_PICKER_STYLE, erase_when_done=True,
-        instruction="(Space toggle · ↑↓ move · ← back · Enter confirm)"))
+        instruction="(Space toggle · ↑↓ move · ← back · → skip · Enter confirm)"))
+    if selected is _FORWARD:
+        return _FORWARD
     if selected is _BACK or not selected:
         return None
     narrowed = dataclasses.replace(plan, selected_bioprojects=frozenset(selected))
@@ -394,6 +462,8 @@ def _ask_bioprojects_step(plan: Plan, plan_dir: Path, answers: dict, breadcrumb:
     if not _bioproject_rows(plan):
         return _Auto(plan)
     narrowed = _select_bioprojects(plan, plan_dir, breadcrumb)
+    if narrowed is _FORWARD:
+        return _FORWARD
     return _BACK if narrowed is None else narrowed
 
 
@@ -402,9 +472,11 @@ def _ask_family_step(plan: Plan, plan_dir: Path, answers: dict, breadcrumb: str)
     families = _families(narrowed)
     if len(families) == 1:
         return _Auto(families[0])
-    chosen = _ask_with_back(questionary.select(
+    chosen = _ask_with_nav(questionary.select(
         f"{breadcrumb}\nWhich feature space?", choices=families,
-        default=answers.get("family"), erase_when_done=True, instruction=_BACK_HINT))
+        default=answers.get("family"), erase_when_done=True, instruction=_NAV_HINT))
+    if chosen is _FORWARD:
+        return _FORWARD
     return _BACK if chosen is None else chosen
 
 
@@ -415,26 +487,31 @@ def _ask_sources_step(plan: Plan, plan_dir: Path, answers: dict, breadcrumb: str
     prior = {source.name for source in answers.get("sources", [])}
     choices = [questionary.Choice(title=source.name, checked=source.name in prior)
               for source in sources]
-    picked = _ask_with_back(questionary.checkbox(
+    picked = _ask_with_nav(questionary.checkbox(
         f"{breadcrumb}\nWhich sources? (order = precedence)", choices=choices,
         erase_when_done=True,
-        instruction="(Space toggle · ↑↓ move · ← back · Enter confirm)"))
+        instruction="(Space toggle · ↑↓ move · ← back · → skip · Enter confirm)"))
+    if picked is _FORWARD:
+        return _FORWARD
     return _BACK if picked is _BACK or not picked else [Source[name] for name in picked]
 
 
 def _ask_output_step(plan: Plan, plan_dir: Path, answers: dict, breadcrumb: str):
-    default = str(answers["output"]) if "output" in answers else str(plan_dir / "cohort.biom")
-    out = questionary.text(f"{breadcrumb}\nWrite to", default=default,
-                           erase_when_done=True,
-                           instruction="(Ctrl-C to go back)").ask()
+    out = _ask_text_with_nav(questionary.text(
+        f"{breadcrumb}\nWrite to", default=str(answers["output"]), erase_when_done=True,
+        instruction="(← at start = back · → at end = skip · Ctrl-C = back)"))
+    if out in (_BACK, _FORWARD):
+        return out
     return _BACK if not out else Path(out)
 
 
 def _ask_gpu_step(plan: Plan, plan_dir: Path, answers: dict, breadcrumb: str):
-    gpu = _ask_with_back(questionary.confirm(
+    gpu = _ask_with_nav(questionary.confirm(
         f"{breadcrumb}\nUse GPU acceleration for this build?",
-        default=answers.get("gpu", False), erase_when_done=True,
-        instruction=_BACK_HINT.replace("↑↓ choose", "y/n choose")))
+        default=answers["gpu"], erase_when_done=True,
+        instruction=_NAV_HINT.replace("↑↓ choose", "y/n choose")))
+    if gpu is _FORWARD:
+        return _FORWARD
     return _BACK if gpu is None or gpu is _BACK else gpu
 
 
@@ -576,7 +653,7 @@ def _load(path: Path) -> None:
     if plan.selected_bioprojects is None:
         _print_bioproject_table(plan)
         selected = _select_bioprojects(plan, plan_dir)
-        if selected is not None:
+        if isinstance(selected, Plan):
             plan = selected
     console.print(preview_line(plan.preview))
     while True:
