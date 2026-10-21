@@ -229,16 +229,67 @@ def _bioproject_rows(plan: Plan) -> list[ProjectRow]:
     return BioProjectRollup(runtime.database()).rows(plan.discovered)
 
 
+_STEP_ORDER = ["bioprojects", "family", "sources", "output", "gpu"]
+_STEP_LABELS = {
+    "bioprojects": "BioProjects",
+    "family": "Feature space",
+    "sources": "Sources",
+    "output": "Output path",
+    "gpu": "GPU",
+}
+
+
+class _Back:
+    """Sentinel a step function returns on Ctrl-C/Esc: step back one screen,
+    not unwind the whole chain."""
+
+
+_BACK = _Back()
+
+
 def _continue(plan: Plan, plan_dir: Path) -> bool:
-    """Chains BioProject narrowing into run config into submission. Ctrl-C/Esc at
-    any prompt along the way returns None from questionary, which each step below
-    treats as "back to the What now? menu" -- the caller's `plan` is never touched
-    here, so a cancelled chain leaves it exactly as it was. Returns whether a job
-    was actually submitted, so the caller knows this plan is now spent."""
-    narrowed = _select_bioprojects(plan, plan_dir)
-    if narrowed is None:
-        return False
-    return _run(narrowed, plan_dir)
+    """The full run chain as a back/forward-able wizard. Returns whether a job was
+    actually submitted, so the caller knows this plan is now spent."""
+    return _run_wizard(plan, plan_dir, _STEP_ORDER)
+
+
+def _run_wizard(plan: Plan, plan_dir: Path, steps: list[str]) -> bool:
+    """Walks `steps` (a subset of _STEP_ORDER, in order) as a linear wizard, printing
+    a breadcrumb before each screen. Ctrl-C/Esc at a screen steps back ONE screen and
+    keeps earlier answers as defaults instead of unwinding the whole chain -- stepping
+    back past the first screen returns to the caller's "What now?" menu, same as the
+    old all-or-nothing cancel, just one step at a time now."""
+    answers: dict = {}
+    done: list[str] = []
+    step = steps[0]
+    while True:
+        _print_breadcrumb(steps, done, step)
+        result = _ASK_STEP[step](plan, plan_dir, answers)
+        if result is _BACK:
+            if not done:
+                return False
+            step = done.pop()
+            continue
+        answers[step] = result
+        done.append(step)
+        if step == steps[-1]:
+            break
+        step = steps[steps.index(step) + 1]
+    _submit(plan_dir, answers["sources"], answers["output"], answers["gpu"])
+    return True
+
+
+def _print_breadcrumb(steps: list[str], done: list[str], current: str) -> None:
+    parts = []
+    for name in steps:
+        label = _STEP_LABELS[name]
+        if name == current:
+            parts.append(f"[bold]› {label}[/bold]")
+        elif name in done:
+            parts.append(f"[dim]✓ {label}[/dim]")
+        else:
+            parts.append(f"[dim]{label}[/dim]")
+    console.print("  ".join(parts))
 
 
 def _post_run() -> bool:
@@ -280,35 +331,53 @@ def _select_bioprojects(plan: Plan, plan_dir: Path) -> Plan | None:
     return narrowed
 
 
-def _run(plan: Plan, plan_dir: Path) -> bool:
-    """Returns whether a job was actually submitted -- False on Ctrl-C/Esc at any
-    prompt here, which the caller treats as "back to the What now? menu"."""
-    families = _families(plan)
+def _ask_bioprojects_step(plan: Plan, plan_dir: Path, answers: dict):
+    narrowed = _select_bioprojects(plan, plan_dir)
+    return _BACK if narrowed is None else narrowed
+
+
+def _ask_family_step(plan: Plan, plan_dir: Path, answers: dict):
+    narrowed = answers.get("bioprojects", plan)
+    families = _families(narrowed)
     if len(families) == 1:
-        family_name = families[0]
-        console.print(f"  feature space: {family_name} (only option)")
-    else:
-        family_name = questionary.select("Which feature space?", choices=families).ask()
-        if family_name is None:
-            return False
-    sources = _sources_of(ProfilerFamily[family_name])
+        console.print(f"  feature space: {families[0]} (only option)")
+        return families[0]
+    chosen = questionary.select("Which feature space?", choices=families,
+                                default=answers.get("family")).ask()
+    return _BACK if chosen is None else chosen
+
+
+def _ask_sources_step(plan: Plan, plan_dir: Path, answers: dict):
+    sources = _sources_of(ProfilerFamily[answers["family"]])
     if len(sources) == 1:
-        chosen = sources
         console.print(f"  sources: {sources[0].name} (only option)")
-    else:
-        picked = questionary.checkbox("Which sources? (order = precedence)",
-                                      choices=[source.name for source in sources]).ask()
-        if not picked:
-            return False
-        chosen = [Source[name] for name in picked]
-    out = questionary.text("Write to", default=str(plan_dir / "cohort.biom")).ask()
-    if not out:
-        return False
-    gpu = questionary.confirm("Use GPU acceleration for this build?", default=False).ask()
-    if gpu is None:
-        return False
-    _submit(plan_dir, chosen, Path(out), gpu)
-    return True
+        return sources
+    prior = {source.name for source in answers.get("sources", [])}
+    choices = [questionary.Choice(title=source.name, checked=source.name in prior)
+              for source in sources]
+    picked = questionary.checkbox("Which sources? (order = precedence)", choices=choices).ask()
+    return _BACK if not picked else [Source[name] for name in picked]
+
+
+def _ask_output_step(plan: Plan, plan_dir: Path, answers: dict):
+    default = str(answers["output"]) if "output" in answers else str(plan_dir / "cohort.biom")
+    out = questionary.text("Write to", default=default).ask()
+    return _BACK if not out else Path(out)
+
+
+def _ask_gpu_step(plan: Plan, plan_dir: Path, answers: dict):
+    gpu = questionary.confirm("Use GPU acceleration for this build?",
+                              default=answers.get("gpu", False)).ask()
+    return _BACK if gpu is None else gpu
+
+
+_ASK_STEP = {
+    "bioprojects": _ask_bioprojects_step,
+    "family": _ask_family_step,
+    "sources": _ask_sources_step,
+    "output": _ask_output_step,
+    "gpu": _ask_gpu_step,
+}
 
 
 def _submit(plan_dir: Path, sources: list[Source], out: Path, gpu: bool) -> None:
@@ -446,7 +515,7 @@ def _load(path: Path) -> None:
     while True:
         choice = questionary.select("What now?", choices=["Run it", "Discard", "Quit"]).ask()
         if choice == "Run it":
-            _run(plan, plan_dir)
+            _run_wizard(plan, plan_dir, _STEP_ORDER[1:])
         elif choice == "Discard":
             _discard_loaded(plan_dir, keep=path)
             return
