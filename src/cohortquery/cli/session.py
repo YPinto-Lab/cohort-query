@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 
 import questionary
+from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
 from prompt_toolkit.keys import Keys
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
@@ -263,9 +264,15 @@ _BACK_HINT = "(← back · ↑↓ choose · Enter confirm)"
 def _ask_with_back(question: questionary.Question):
     """select/checkbox/confirm never bind Escape to anything (only Ctrl-C quits via
     KeyboardInterrupt), so Left arrow -- otherwise unused in these widgets -- is free
-    to mean "back". Not used for text prompts, where Left already moves the cursor."""
-    question.application.key_bindings.add(Keys.Left, eager=True)(
-        lambda event: event.app.exit(result=_BACK))
+    to mean "back". Not used for text prompts, where Left already moves the cursor.
+
+    confirm()'s Application already merges its bindings into a read-only
+    _MergedKeyBindings (no .add()), unlike select/checkbox's plain KeyBindings --
+    merge_key_bindings handles both uniformly instead of mutating in place."""
+    extra = KeyBindings()
+    extra.add(Keys.Left, eager=True)(lambda event: event.app.exit(result=_BACK))
+    question.application.key_bindings = merge_key_bindings(
+        [question.application.key_bindings, extra])
     return question.ask()
 
 
