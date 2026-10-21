@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 
 import questionary
+from prompt_toolkit.keys import Keys
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
@@ -240,11 +241,22 @@ _STEP_LABELS = {
 
 
 class _Back:
-    """Sentinel a step function returns on Ctrl-C/Esc: step back one screen,
+    """Sentinel a step function returns on Left arrow/Ctrl-C: step back one screen,
     not unwind the whole chain."""
 
 
 _BACK = _Back()
+
+_BACK_HINT = "(← back · ↑↓ choose · Enter confirm)"
+
+
+def _ask_with_back(question: questionary.Question):
+    """select/checkbox/confirm never bind Escape to anything (only Ctrl-C quits via
+    KeyboardInterrupt), so Left arrow -- otherwise unused in these widgets -- is free
+    to mean "back". Not used for text prompts, where Left already moves the cursor."""
+    question.application.key_bindings.add(Keys.Left, eager=True)(
+        lambda event: event.app.exit(result=_BACK))
+    return question.ask()
 
 
 def _continue(plan: Plan, plan_dir: Path) -> bool:
@@ -322,9 +334,10 @@ def _select_bioprojects(plan: Plan, plan_dir: Path) -> Plan | None:
     choices = [questionary.Choice(title=bioproject_choice_label(row), value=row.project,
                                   checked=False)
               for row in rows]
-    selected = questionary.checkbox("Which BioProjects to include?", choices=choices,
-                                    style=_PICKER_STYLE).ask()
-    if not selected:
+    selected = _ask_with_back(questionary.checkbox(
+        "Which BioProjects to include?", choices=choices, style=_PICKER_STYLE,
+        instruction="(Space toggle · ↑↓ move · ← back · Enter confirm)"))
+    if selected is _BACK or not selected:
         return None
     narrowed = dataclasses.replace(plan, selected_bioprojects=frozenset(selected))
     narrowed.save(plan_dir / "plan.json")
@@ -342,8 +355,9 @@ def _ask_family_step(plan: Plan, plan_dir: Path, answers: dict):
     if len(families) == 1:
         console.print(f"  feature space: {families[0]} (only option)")
         return families[0]
-    chosen = questionary.select("Which feature space?", choices=families,
-                                default=answers.get("family")).ask()
+    chosen = _ask_with_back(questionary.select(
+        "Which feature space?", choices=families, default=answers.get("family"),
+        instruction=_BACK_HINT))
     return _BACK if chosen is None else chosen
 
 
@@ -355,20 +369,24 @@ def _ask_sources_step(plan: Plan, plan_dir: Path, answers: dict):
     prior = {source.name for source in answers.get("sources", [])}
     choices = [questionary.Choice(title=source.name, checked=source.name in prior)
               for source in sources]
-    picked = questionary.checkbox("Which sources? (order = precedence)", choices=choices).ask()
-    return _BACK if not picked else [Source[name] for name in picked]
+    picked = _ask_with_back(questionary.checkbox(
+        "Which sources? (order = precedence)", choices=choices,
+        instruction="(Space toggle · ↑↓ move · ← back · Enter confirm)"))
+    return _BACK if picked is _BACK or not picked else [Source[name] for name in picked]
 
 
 def _ask_output_step(plan: Plan, plan_dir: Path, answers: dict):
     default = str(answers["output"]) if "output" in answers else str(plan_dir / "cohort.biom")
-    out = questionary.text("Write to", default=default).ask()
+    out = questionary.text("Write to", default=default,
+                           instruction="(Ctrl-C to go back)").ask()
     return _BACK if not out else Path(out)
 
 
 def _ask_gpu_step(plan: Plan, plan_dir: Path, answers: dict):
-    gpu = questionary.confirm("Use GPU acceleration for this build?",
-                              default=answers.get("gpu", False)).ask()
-    return _BACK if gpu is None else gpu
+    gpu = _ask_with_back(questionary.confirm(
+        "Use GPU acceleration for this build?", default=answers.get("gpu", False),
+        instruction=_BACK_HINT.replace("↑↓ choose", "y/n choose")))
+    return _BACK if gpu is None or gpu is _BACK else gpu
 
 
 _ASK_STEP = {
