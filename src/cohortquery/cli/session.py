@@ -247,6 +247,16 @@ class _Back:
 
 _BACK = _Back()
 
+
+class _Auto:
+    """Sentinel a step function returns when it had only one possible value and
+    resolved without asking -- see _run_wizard for why this must not be treated
+    like a real answer for back-navigation."""
+
+    def __init__(self, value):
+        self.value = value
+
+
 _BACK_HINT = "(← back · ↑↓ choose · Enter confirm)"
 
 
@@ -267,10 +277,16 @@ def _continue(plan: Plan, plan_dir: Path) -> bool:
 
 def _run_wizard(plan: Plan, plan_dir: Path, steps: list[str]) -> bool:
     """Walks `steps` (a subset of _STEP_ORDER, in order) as a linear wizard, printing
-    a breadcrumb before each screen. Ctrl-C/Esc at a screen steps back ONE screen and
-    keeps earlier answers as defaults instead of unwinding the whole chain -- stepping
-    back past the first screen returns to the caller's "What now?" menu, same as the
-    old all-or-nothing cancel, just one step at a time now."""
+    a breadcrumb before each screen. Left arrow/Ctrl-C at a screen steps back ONE
+    screen and keeps earlier answers as defaults instead of unwinding the whole chain
+    -- stepping back past the first screen returns to the caller's "What now?" menu,
+    same as the old all-or-nothing cancel, just one step at a time now.
+
+    A step with only one possible value (e.g. a single feature space) auto-resolves
+    without asking -- it is NOT pushed onto `done`, so stepping back skips straight
+    over it to the previous screen that actually asked something. Pushing it would
+    make back a no-op: popping back into an auto step just re-resolves the same
+    value and advances again, landing you right back where you started."""
     answers: dict = {}
     done: list[str] = []
     step = steps[0]
@@ -282,8 +298,9 @@ def _run_wizard(plan: Plan, plan_dir: Path, steps: list[str]) -> bool:
                 return False
             step = done.pop()
             continue
-        answers[step] = result
-        done.append(step)
+        answers[step] = result.value if isinstance(result, _Auto) else result
+        if not isinstance(result, _Auto):
+            done.append(step)
         if step == steps[-1]:
             break
         step = steps[steps.index(step) + 1]
@@ -345,6 +362,8 @@ def _select_bioprojects(plan: Plan, plan_dir: Path) -> Plan | None:
 
 
 def _ask_bioprojects_step(plan: Plan, plan_dir: Path, answers: dict):
+    if not _bioproject_rows(plan):
+        return _Auto(plan)
     narrowed = _select_bioprojects(plan, plan_dir)
     return _BACK if narrowed is None else narrowed
 
@@ -354,7 +373,7 @@ def _ask_family_step(plan: Plan, plan_dir: Path, answers: dict):
     families = _families(narrowed)
     if len(families) == 1:
         console.print(f"  feature space: {families[0]} (only option)")
-        return families[0]
+        return _Auto(families[0])
     chosen = _ask_with_back(questionary.select(
         "Which feature space?", choices=families, default=answers.get("family"),
         instruction=_BACK_HINT))
@@ -365,7 +384,7 @@ def _ask_sources_step(plan: Plan, plan_dir: Path, answers: dict):
     sources = _sources_of(ProfilerFamily[answers["family"]])
     if len(sources) == 1:
         console.print(f"  sources: {sources[0].name} (only option)")
-        return sources
+        return _Auto(sources)
     prior = {source.name for source in answers.get("sources", [])}
     choices = [questionary.Choice(title=source.name, checked=source.name in prior)
               for source in sources]
