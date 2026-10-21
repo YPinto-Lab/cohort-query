@@ -298,8 +298,8 @@ def _run_wizard(plan: Plan, plan_dir: Path, steps: list[str]) -> bool:
     done: list[str] = []
     step = steps[0]
     while True:
-        _print_breadcrumb(steps, done, step)
-        result = _ASK_STEP[step](plan, plan_dir, answers)
+        breadcrumb = _breadcrumb_text(steps, answers, step)
+        result = _ASK_STEP[step](plan, plan_dir, answers, breadcrumb)
         if result is _BACK:
             if not done:
                 return False
@@ -315,17 +315,34 @@ def _run_wizard(plan: Plan, plan_dir: Path, steps: list[str]) -> bool:
     return True
 
 
-def _print_breadcrumb(steps: list[str], done: list[str], current: str) -> None:
+def _breadcrumb_text(steps: list[str], answers: dict, current: str) -> str:
+    """Each step's prompt is rendered with erase_when_done=True, so this line is
+    the ONLY trace of a finished screen left on terminal -- past answers show here
+    as a checkmark + short value instead of a separate permanent print, which is
+    what makes consecutive steps redraw in place instead of scrolling."""
     parts = []
     for name in steps:
         label = _STEP_LABELS[name]
         if name == current:
-            parts.append(f"[bold]› {label}[/bold]")
-        elif name in done:
-            parts.append(f"[dim]✓ {label}[/dim]")
+            parts.append(f"› {label}")
+        elif name in answers:
+            parts.append(f"✓ {label} ({_display(name, answers[name])})")
         else:
-            parts.append(f"[dim]{label}[/dim]")
-    console.print("  ".join(parts))
+            parts.append(label)
+    return "   ".join(parts)
+
+
+def _display(name: str, value) -> str:
+    if name == "bioprojects":
+        selected = value.selected_bioprojects
+        return f"{len(selected)} selected" if selected else "all"
+    if name == "sources":
+        return ", ".join(source.name for source in value)
+    if name == "output":
+        return value.name
+    if name == "gpu":
+        return "GPU" if value else "CPU"
+    return str(value)
 
 
 def _post_run() -> bool:
@@ -345,21 +362,26 @@ def _post_run() -> bool:
         return False
 
 
-def _select_bioprojects(plan: Plan, plan_dir: Path) -> Plan | None:
+def _select_bioprojects(plan: Plan, plan_dir: Path, breadcrumb: str = "") -> Plan | None:
     """Recall-first discovery means the same project can satisfy one criterion,
     several, or none the researcher actually meant -- the researcher decides
     which to keep, not the system (see the explain design). Every BioProject
     starts UNCHECKED: the researcher opts in to what they actually want, rather
     than deselecting what they don't. The table itself was already shown in the
-    preview (_print_bioproject_table) -- this only picks."""
+    preview (_print_bioproject_table) -- this only picks.
+
+    `breadcrumb` is empty when called from `_load`'s upfront narrowing, outside
+    the wizard chain -- there is no run of steps to show a position in yet."""
     rows = _bioproject_rows(plan)
     if not rows:
         return plan
     choices = [questionary.Choice(title=bioproject_choice_label(row), value=row.project,
                                   checked=False)
               for row in rows]
+    message = f"{breadcrumb}\nWhich BioProjects to include?" if breadcrumb \
+             else "Which BioProjects to include?"
     selected = _ask_with_back(questionary.checkbox(
-        "Which BioProjects to include?", choices=choices, style=_PICKER_STYLE,
+        message, choices=choices, style=_PICKER_STYLE, erase_when_done=True,
         instruction="(Space toggle · ↑↓ move · ← back · Enter confirm)"))
     if selected is _BACK or not selected:
         return None
@@ -368,49 +390,50 @@ def _select_bioprojects(plan: Plan, plan_dir: Path) -> Plan | None:
     return narrowed
 
 
-def _ask_bioprojects_step(plan: Plan, plan_dir: Path, answers: dict):
+def _ask_bioprojects_step(plan: Plan, plan_dir: Path, answers: dict, breadcrumb: str):
     if not _bioproject_rows(plan):
         return _Auto(plan)
-    narrowed = _select_bioprojects(plan, plan_dir)
+    narrowed = _select_bioprojects(plan, plan_dir, breadcrumb)
     return _BACK if narrowed is None else narrowed
 
 
-def _ask_family_step(plan: Plan, plan_dir: Path, answers: dict):
+def _ask_family_step(plan: Plan, plan_dir: Path, answers: dict, breadcrumb: str):
     narrowed = answers.get("bioprojects", plan)
     families = _families(narrowed)
     if len(families) == 1:
-        console.print(f"  feature space: {families[0]} (only option)")
         return _Auto(families[0])
     chosen = _ask_with_back(questionary.select(
-        "Which feature space?", choices=families, default=answers.get("family"),
-        instruction=_BACK_HINT))
+        f"{breadcrumb}\nWhich feature space?", choices=families,
+        default=answers.get("family"), erase_when_done=True, instruction=_BACK_HINT))
     return _BACK if chosen is None else chosen
 
 
-def _ask_sources_step(plan: Plan, plan_dir: Path, answers: dict):
+def _ask_sources_step(plan: Plan, plan_dir: Path, answers: dict, breadcrumb: str):
     sources = _sources_of(ProfilerFamily[answers["family"]])
     if len(sources) == 1:
-        console.print(f"  sources: {sources[0].name} (only option)")
         return _Auto(sources)
     prior = {source.name for source in answers.get("sources", [])}
     choices = [questionary.Choice(title=source.name, checked=source.name in prior)
               for source in sources]
     picked = _ask_with_back(questionary.checkbox(
-        "Which sources? (order = precedence)", choices=choices,
+        f"{breadcrumb}\nWhich sources? (order = precedence)", choices=choices,
+        erase_when_done=True,
         instruction="(Space toggle · ↑↓ move · ← back · Enter confirm)"))
     return _BACK if picked is _BACK or not picked else [Source[name] for name in picked]
 
 
-def _ask_output_step(plan: Plan, plan_dir: Path, answers: dict):
+def _ask_output_step(plan: Plan, plan_dir: Path, answers: dict, breadcrumb: str):
     default = str(answers["output"]) if "output" in answers else str(plan_dir / "cohort.biom")
-    out = questionary.text("Write to", default=default,
+    out = questionary.text(f"{breadcrumb}\nWrite to", default=default,
+                           erase_when_done=True,
                            instruction="(Ctrl-C to go back)").ask()
     return _BACK if not out else Path(out)
 
 
-def _ask_gpu_step(plan: Plan, plan_dir: Path, answers: dict):
+def _ask_gpu_step(plan: Plan, plan_dir: Path, answers: dict, breadcrumb: str):
     gpu = _ask_with_back(questionary.confirm(
-        "Use GPU acceleration for this build?", default=answers.get("gpu", False),
+        f"{breadcrumb}\nUse GPU acceleration for this build?",
+        default=answers.get("gpu", False), erase_when_done=True,
         instruction=_BACK_HINT.replace("↑↓ choose", "y/n choose")))
     return _BACK if gpu is None or gpu is _BACK else gpu
 
