@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import time
-import warnings
 from pathlib import Path
 
 import duckdb
@@ -360,7 +359,6 @@ def open_local_embedder() -> LocalEmbedder:
     start = time.monotonic()
     os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
     logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
-    warnings.filterwarnings("ignore", message="You are sending unauthenticated requests")
     from transformers import AutoModel, AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(LocalEmbedder.MODEL_NAME)
