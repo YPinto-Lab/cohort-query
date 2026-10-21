@@ -58,6 +58,7 @@ def main() -> None:
         if path is not None:
             _load(path)
         return
+    console.clear()
     _configure()
     _session()
 
