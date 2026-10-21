@@ -1,0 +1,1597 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>CohortQuery translation accuracy audit</title>
+<style>
+
+  :root{color-scheme:light dark}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;flex-direction:column}
+  .topbar{padding:16px 20px 0}
+  .topbar h1{margin:0 0 2px;font-size:19px}
+  .subtitle{opacity:.65;margin:0 0 14px;font-size:13px}
+  .stats{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .stat{flex:1;min-width:100px;border-radius:8px;padding:8px 12px;text-align:center}
+  .stat .num{font-size:20px;font-weight:700;display:block}
+  .stat .label{font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.7}
+  .stat.match{background:#d1fae5;color:#065f46}
+  .stat.partial{background:#fef3c7;color:#92400e}
+  .stat.mismatch{background:#fee2e2;color:#991b1b}
+  .stat.flagged{background:#ede9fe;color:#5b21b6}
+  .app{display:flex;flex:1;min-height:0;border-top:1px solid rgba(127,127,127,.3)}
+  .list-pane{width:360px;flex-shrink:0;overflow-y:auto;border-right:1px solid rgba(127,127,127,.3)}
+  .detail-pane{flex:1;overflow-y:auto;padding:24px 32px}
+  table{border-collapse:collapse;width:100%}
+  thead th{position:sticky;top:0;background:Canvas;text-align:left;font-size:11px;
+            text-transform:uppercase;letter-spacing:.04em;opacity:.6;padding:8px 12px;
+            cursor:pointer;user-select:none;border-bottom:1px solid rgba(127,127,127,.3);white-space:nowrap}
+  thead th:hover{opacity:1}
+  .sort-indicator{display:inline-block;width:10px}
+  .row{cursor:pointer;border-bottom:1px solid rgba(127,127,127,.15)}
+  .row:hover{background:rgba(127,127,127,.08)}
+  .row.selected{background:#2563eb;color:#fff}
+  .row.selected .row-id{color:#dbeafe}
+  .row td{padding:9px 12px;vertical-align:top}
+  .col-status{white-space:nowrap}
+  .col-date{white-space:nowrap;font-size:12px;opacity:.7}
+  .row-title{font-size:13px}
+  .row-id{display:block;font-size:11px;opacity:.55;margin-top:2px}
+  .badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;
+         text-transform:uppercase;letter-spacing:.03em;vertical-align:middle;white-space:nowrap}
+  .badge.match{background:#10b981;color:#fff}
+  .badge.partial{background:#f59e0b;color:#fff}
+  .badge.mismatch{background:#ef4444;color:#fff}
+  .flag-dot{margin-left:5px;font-size:11px;vertical-align:middle}
+  .detail{display:none}
+  .detail.active{display:block}
+  .detail-header{margin-bottom:18px}
+  .detail-header h2{margin:0 0 4px;font-size:20px}
+  .slug{opacity:.5;font-size:12px;margin:0}
+  .run{border-top:1px solid rgba(127,127,127,.2);padding-top:14px;margin-top:14px}
+  .run:first-of-type{border-top:none;padding-top:0;margin-top:0}
+  .meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;opacity:.75;margin-bottom:8px}
+  .reasoning{margin:8px 0;font-size:14px}
+  .flag{background:#ede9fe;border-left:3px solid #8b5cf6;padding:8px 12px;border-radius:6px;
+        font-size:13px;margin:8px 0}
+  .planpath{font-size:11px;opacity:.5;font-family:ui-monospace,Menlo,monospace;margin:8px 0;word-break:break-all}
+  .sidecar{margin:6px 0;border:1px solid rgba(127,127,127,.25);border-radius:6px;overflow:hidden}
+  .sidecar summary{padding:6px 10px;font-size:12px;cursor:pointer;background:rgba(127,127,127,.08)}
+  .sidecar pre{margin:0;padding:10px 12px;font-size:12px;overflow:auto;max-height:320px;
+               white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,monospace}
+  .sidecar.no-gold{padding:8px 12px;font-size:12px;opacity:.6;font-style:italic}
+  .scorecard{padding:12px 14px}
+  .bar-row{margin-bottom:10px}
+  .bar-label{display:block;font-size:12px;margin-bottom:3px;opacity:.8}
+  .bar-track{background:rgba(127,127,127,.15);border-radius:4px;height:8px;overflow:hidden}
+  .bar-fill{height:100%;border-radius:4px}
+  .bar-fill.recall{background:#2563eb}
+  .bar-fill.precision{background:#8b5cf6}
+  .scorecard-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  .scorecard-table td{padding:4px 0;border-bottom:1px solid rgba(127,127,127,.12)}
+  .scorecard-table td.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+  .markdown{padding:10px 14px;font-size:13px}
+  .markdown h1{font-size:16px;margin:0 0 8px}
+  .markdown h2{font-size:14px;margin:14px 0 6px}
+  .markdown h3{font-size:13px;margin:12px 0 4px}
+  .markdown p{margin:6px 0}
+  .markdown code{font-family:ui-monospace,Menlo,monospace;background:rgba(127,127,127,.12);
+                 padding:1px 4px;border-radius:3px;font-size:12px}
+  .markdown pre{background:rgba(127,127,127,.08);padding:8px 10px;border-radius:6px;overflow:auto}
+  .markdown pre code{background:none;padding:0}
+  .markdown ul,.markdown ol{margin:6px 0;padding-left:22px}
+
+</style></head><body>
+<header class="topbar">
+<h1>Translation accuracy audit</h1>
+<p class="subtitle">14 questions &middot; 18 verification runs</p>
+<div class="stats"><div class="stat match">
+<span class="num">5</span><span class="label">match</span></div><div class="stat partial">
+<span class="num">9</span><span class="label">partial</span></div><div class="stat mismatch">
+<span class="num">0</span><span class="label">mismatch</span></div><div class="stat flagged"><span class="num">4</span>
+<span class="label">needs input</span></div></div>
+</header>
+<div class="app">
+<div class="list-pane">
+<table id="list">
+<thead><tr>
+<th class="col-status" onclick="sortList('rank')">Status <span class="sort-indicator" id="sort-rank"></span></th>
+<th onclick="sortList('question')">Question <span class="sort-indicator" id="sort-question"></span></th>
+<th class="col-date" onclick="sortList('checked')">Checked <span class="sort-indicator" id="sort-checked"></span></th>
+</tr></thead>
+<tbody id="list-body">
+<tr class="row" data-id="q01-ibd-calprotectin"
+    data-rank="2_ibd fecal metagenomic with calprotectin" data-question="ibd fecal metagenomic with calprotectin"
+    data-checked="2026-10-19T00:00:00" onclick="selectQuestion('q01-ibd-calprotectin')">
+<td class="col-status"><span class="badge match">MATCH</span></td>
+<td class="row-title">IBD fecal metagenomic with calprotectin<span class="row-id">q01-ibd-calprotectin</span></td>
+<td class="col-date">2026-10-19</td>
+</tr>
+<tr class="row" data-id="q02-prjna400072-bioproject-lookup"
+    data-rank="2_samples from bioproject prjna400072" data-question="samples from bioproject prjna400072"
+    data-checked="2026-10-19T11:52:47" onclick="selectQuestion('q02-prjna400072-bioproject-lookup')">
+<td class="col-status"><span class="badge match">MATCH</span></td>
+<td class="row-title">samples from bioproject PRJNA400072<span class="row-id">q02-prjna400072-bioproject-lookup</span></td>
+<td class="col-date">2026-10-19</td>
+</tr>
+<tr class="row" data-id="q03-human-tumor-transcriptomic"
+    data-rank="1_human tumor samples from transcriptomic sequencing" data-question="human tumor samples from transcriptomic sequencing"
+    data-checked="2026-10-19T12:30:49" onclick="selectQuestion('q03-human-tumor-transcriptomic')">
+<td class="col-status"><span class="badge partial">PARTIAL</span><span class="flag-dot" title="Needs input">&#10067;</span></td>
+<td class="row-title">human tumor samples from transcriptomic sequencing<span class="row-id">q03-human-tumor-transcriptomic</span></td>
+<td class="col-date">2026-10-19</td>
+</tr>
+<tr class="row" data-id="q04-recorded-bmi-jattr-only"
+    data-rank="1_samples with recorded body mass index" data-question="samples with recorded body mass index"
+    data-checked="2026-10-19T12:32:27" onclick="selectQuestion('q04-recorded-bmi-jattr-only')">
+<td class="col-status"><span class="badge partial">PARTIAL</span></td>
+<td class="row-title">samples with recorded body mass index<span class="row-id">q04-recorded-bmi-jattr-only</span></td>
+<td class="col-date">2026-10-19</td>
+</tr>
+<tr class="row" data-id="q05-healthy-adult-gut-ambiguous"
+    data-rank="1_healthy adult gut microbiome samples" data-question="healthy adult gut microbiome samples"
+    data-checked="2026-10-19T12:33:24" onclick="selectQuestion('q05-healthy-adult-gut-ambiguous')">
+<td class="col-status"><span class="badge partial">PARTIAL</span><span class="flag-dot" title="Needs input">&#10067;</span></td>
+<td class="row-title">healthy adult gut microbiome samples<span class="row-id">q05-healthy-adult-gut-ambiguous</span></td>
+<td class="col-date">2026-10-19</td>
+</tr>
+<tr class="row" data-id="q06-antibiotic-exposure-jattr-only"
+    data-rank="1_samples with antibiotic exposure" data-question="samples with antibiotic exposure"
+    data-checked="2026-10-19T13:02:17" onclick="selectQuestion('q06-antibiotic-exposure-jattr-only')">
+<td class="col-status"><span class="badge partial">PARTIAL</span></td>
+<td class="row-title">samples with antibiotic exposure<span class="row-id">q06-antibiotic-exposure-jattr-only</span></td>
+<td class="col-date">2026-10-19</td>
+</tr>
+<tr class="row" data-id="q07-mouse-gut-metagenome"
+    data-rank="2_mouse gut metagenome samples" data-question="mouse gut metagenome samples"
+    data-checked="2026-10-19T13:03:30" onclick="selectQuestion('q07-mouse-gut-metagenome')">
+<td class="col-status"><span class="badge match">MATCH</span></td>
+<td class="row-title">mouse gut metagenome samples<span class="row-id">q07-mouse-gut-metagenome</span></td>
+<td class="col-date">2026-10-19</td>
+</tr>
+<tr class="row" data-id="q08-age-over-65-numeric-threshold"
+    data-rank="1_samples from patients over 65 years old" data-question="samples from patients over 65 years old"
+    data-checked="2026-10-19T13:05:21" onclick="selectQuestion('q08-age-over-65-numeric-threshold')">
+<td class="col-status"><span class="badge partial">PARTIAL</span><span class="flag-dot" title="Needs input">&#10067;</span></td>
+<td class="row-title">samples from patients over 65 years old<span class="row-id">q08-age-over-65-numeric-threshold</span></td>
+<td class="col-date">2026-10-19</td>
+</tr>
+<tr class="row" data-id="q10-united-states-geography"
+    data-rank="2_samples collected in the united states" data-question="samples collected in the united states"
+    data-checked="2026-10-19T13:08:33" onclick="selectQuestion('q10-united-states-geography')">
+<td class="col-status"><span class="badge match">MATCH</span></td>
+<td class="row-title">samples collected in the United States<span class="row-id">q10-united-states-geography</span></td>
+<td class="col-date">2026-10-19</td>
+</tr>
+<tr class="row" data-id="q11-illumina-novaseq-platform"
+    data-rank="2_samples sequenced on illumina novaseq" data-question="samples sequenced on illumina novaseq"
+    data-checked="2026-10-19T14:02:26" onclick="selectQuestion('q11-illumina-novaseq-platform')">
+<td class="col-status"><span class="badge match">MATCH</span></td>
+<td class="row-title">samples sequenced on Illumina NovaSeq<span class="row-id">q11-illumina-novaseq-platform</span></td>
+<td class="col-date">2026-10-19</td>
+</tr>
+<tr class="row" data-id="q12-type2-diabetes-jattr"
+    data-rank="1_samples from patients with type 2 diabetes" data-question="samples from patients with type 2 diabetes"
+    data-checked="2026-10-19T14:06:34" onclick="selectQuestion('q12-type2-diabetes-jattr')">
+<td class="col-status"><span class="badge partial">PARTIAL</span></td>
+<td class="row-title">samples from patients with type 2 diabetes<span class="row-id">q12-type2-diabetes-jattr</span></td>
+<td class="col-date">2026-10-19</td>
+</tr>
+<tr class="row" data-id="q13-vegetarian-diet-jattr-only"
+    data-rank="1_vegetarian diet samples" data-question="vegetarian diet samples"
+    data-checked="2026-10-19T14:07:46" onclick="selectQuestion('q13-vegetarian-diet-jattr-only')">
+<td class="col-status"><span class="badge partial">PARTIAL</span></td>
+<td class="row-title">vegetarian diet samples<span class="row-id">q13-vegetarian-diet-jattr-only</span></td>
+<td class="col-date">2026-10-19</td>
+</tr>
+<tr class="row" data-id="q14-infant-samples-young-age"
+    data-rank="1_samples from infants" data-question="samples from infants"
+    data-checked="2026-10-19T14:08:32" onclick="selectQuestion('q14-infant-samples-young-age')">
+<td class="col-status"><span class="badge partial">PARTIAL</span></td>
+<td class="row-title">samples from infants<span class="row-id">q14-infant-samples-young-age</span></td>
+<td class="col-date">2026-10-19</td>
+</tr>
+<tr class="row" data-id="q15-pregnant-women-samples"
+    data-rank="1_pregnant women samples" data-question="pregnant women samples"
+    data-checked="2026-10-19T14:09:13" onclick="selectQuestion('q15-pregnant-women-samples')">
+<td class="col-status"><span class="badge partial">PARTIAL</span><span class="flag-dot" title="Needs input">&#10067;</span></td>
+<td class="row-title">pregnant women samples<span class="row-id">q15-pregnant-women-samples</span></td>
+<td class="col-date">2026-10-19</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="detail-pane" id="detail-pane">
+<article class="detail" id="detail-q01-ibd-calprotectin">
+<header class="detail-header"><h2>IBD fecal metagenomic with calprotectin</h2><p class="slug">q01-ibd-calprotectin</p></header>
+<details class="sidecar"><summary>Gold SQL</summary><pre>-- version: 1 (SUPERSEDED by version 2 below -- kept for history, not executed)
+-- date: 2026-10-05
+-- reason: initial authoring. Seeded from the translator&#x27;s 2026-10-05_initial run (which
+--   recognized &quot;IBD diagnosis&quot; and &quot;calprotectin measurement&quot; as jattr concepts but then
+--   also wrote an overly broad native-SQL bucket that swamped them via UNION semantics --
+--   see notes.md). Independently verified against real mirror values: the jattr key
+--   fecalcalprotectin_run exists on exactly 134 rows mirror-wide, ALL of them in bioproject
+--   PRJNA1265906 -- confirmed via two independent counts that agree (134 == 134).
+--   Fecal calprotectin is a standard clinical biomarker used almost exclusively to monitor
+--   IBD (Crohn&#x27;s disease / ulcerative colitis) activity, so a dataset recording it is IBD
+--   research by biological convention even though no literal &quot;IBD&quot; text appears anywhere
+--   in this mirror&#x27;s study/sample_name/attributes for this bioproject (confirmed by a prior
+--   session, 2026-08-25).
+--
+-- SELECT biosample FROM sra_metadata
+-- WHERE bioproject = &#x27;PRJNA1265906&#x27;
+--   AND json_extract_string(jattr, &#x27;$.fecalcalprotectin_run&#x27;) IS NOT NULL;
+
+-- version: 2 (current)
+-- date: 2026-10-08
+-- reason: v1&#x27;s &quot;calprotectin implies IBD by clinical convention&quot; assumption was explicitly
+--   rejected by the researcher (2026-10-08) -- gold requires an EXPLICIT IBD-type jattr key
+--   on the SAME sample as an explicit calprotectin-type jattr key, not an inferred link.
+--   Re-derived independently (not via the translator/pipeline under test): any of the real
+--   IBD-naming variants AND any of the real calprotectin-naming variants (found via the
+--   rebuilt attribute_keys_index) must both be present, non-null, on one biosample.
+--   Result: 665 biosamples, ALL in bioproject PRJEB18471 -- a DIFFERENT bioproject than v1&#x27;s
+--   PRJNA1265906, which has no explicit IBD field at all and is correctly excluded under v2.
+SELECT biosample FROM sra_metadata
+WHERE jattr IS NOT NULL
+  AND list_filter(json_extract_string(jattr, [
+        &#x27;$.ibd_diagnosis_sam&#x27;, &#x27;$.ibd_disease_sam&#x27;, &#x27;$.ibd_sam&#x27;, &#x27;$.ibd_diagnosis_refined_sam&#x27;,
+        &#x27;$.ibd_or_not_sam&#x27;, &#x27;$.ibd_type_sam&#x27;, &#x27;$.ibd_subtype_sam&#x27;, &#x27;$.ibd_history_sam&#x27;,
+        &#x27;$.inflam_bowel_disease_sam&#x27;, &#x27;$.inflammatory_bowel_disease_sam&#x27;,
+        &#x27;$.ibd___0_no__1_yes_sam&#x27;, &#x27;$.ibd_case_control_sam&#x27;, &#x27;$.crohns_disease_sam&#x27;, &#x27;$.ibdstatus_sam&#x27;
+      ]), x -&gt; x IS NOT NULL) != []
+  AND list_filter(json_extract_string(jattr, [
+        &#x27;$.calprotectin_sam&#x27;, &#x27;$.calprotectin_numeric_sam&#x27;, &#x27;$.calprotectin0_sam&#x27;,
+        &#x27;$.calprotectin_ms_sam&#x27;, &#x27;$.value_calprotectin_sam&#x27;, &#x27;$.calprotectin_units_sam&#x27;,
+        &#x27;$.feacal_calprotectin_sam&#x27;, &#x27;$.fecal_calprotectin_sam&#x27;, &#x27;$.fecalcalprotectin_run&#x27;,
+        &#x27;$.host_fecal_calprotectin_mgpergdryweight_sam&#x27;, &#x27;$.baseline_calprotectin_sam&#x27;
+      ]), x -&gt; x IS NOT NULL) != [];
+</pre></details>
+<div class="run">
+<div class="meta">
+<span class="badge match">MATCH</span>
+<span>2026-10-19T00:00:00</span>
+<span>&middot; code_change</span>
+<span>&middot; gold v2</span>
+</div>
+<p class="reasoning">Supersedes the PARTIAL judgment from the same run_id: a value-aware check found 81.8% (979/1197) have an affirmative value on both matched concepts; the remaining 18.2% have a negative/missing value (e.g. ibd_sam=False, calprotectin=NA/not collected) on at least one side. Researcher confirmed presence/content matching is deliberately value-agnostic by design -- a recorded False/NA value still means the field exists, which is what concept search is meant to surface. The low raw precision against gold v2 (55.6%) was gold v2 incompleteness (missed real calprotectin key variants; could not practically hand-enumerate all ~27 generically-named keys holding IBD-type values), not a system defect. See notes.md addendum.</p>
+
+<p class="planpath">plan: /private/pinto-lab/plans/20261008_123437_ibd-fecal-metagenomic-with-calprotectin/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA
+SELECT biosample FROM sra_metadata WHERE librarysource = &#x27;METAGENOMIC&#x27; OR organism ILIKE &#x27;%gut metagenome%&#x27; OR organism ILIKE &#x27;%feces metagenome%&#x27; OR organism ILIKE &#x27;%metagenome%&#x27; OR array_to_string(biosamplemodel_sam, &#x27; &#x27;) ILIKE &#x27;%human-gut%&#x27; OR array_to_string(biosamplemodel_sam, &#x27; &#x27;) ILIKE &#x27;%metagenome%&#x27;;</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 100%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:100%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 56%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:56%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">665</td></tr><tr><td>Generated</td><td class="num">1,197</td></tr><tr><td>Overlap (correct)</td><td class="num">665</td></tr><tr><td>Missed (gold-only)</td><td class="num">0</td></tr><tr><td>Extra (generated-only)</td><td class="num">532</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>Run: 2026-10-08_after-distance-threshold-fix</h1>
+<p><strong>Context:</strong> recheck against a mirror where all three fixes are live: PR #59 (intersect
+semantics), PR #61 (deterministic key eligibility), and PR #62 (distance-threshold +
+capped-candidate retrieval, replacing fixed <code>TOP_K=5</code>).</p>
+<h2>Translation</h2>
+<pre><code class="language-json">{
+  &quot;sql&quot;: &quot;SELECT biosample FROM sra_metadata WHERE librarysource = 'METAGENOMIC' OR organism ILIKE '%gut metagenome%' OR organism ILIKE '%feces metagenome%' OR organism ILIKE '%metagenome%' OR array_to_string(biosamplemodel_sam, ' ') ILIKE '%human-gut%' OR array_to_string(biosamplemodel_sam, ' ') ILIKE '%metagenome%'&quot;,
+  &quot;jattr_criteria&quot;: [&quot;IBD diagnosis&quot;, &quot;calprotectin measurement&quot;],
+  &quot;jattr_combinator&quot;: &quot;all&quot;,
+  &quot;sql_jattr_combinator&quot;: &quot;intersect&quot;
+}
+</code></pre>
+<h2>PR #62 confirmed working</h2>
+<p>&quot;calprotectin measurement&quot; now matches 77 keys/values, <strong>including <code>fecalcalprotectin_run</code></strong>
+(the key PR #61's rebuild restored, that the old <code>TOP_K=5</code> still couldn't surface). The
+distance-threshold retrieval fix is directly verified: the correct key is now actually used.</p>
+<h2>But: gold v1 was wrong, not the pipeline</h2>
+<p>Generated cohort: 1,197 biosamples. Overlap with <strong>gold v1</strong> (134, <code>PRJNA1265906</code>): 0. Dug in:
+none of the 52,980 biosamples matched by &quot;IBD diagnosis&quot; overlap <code>PRJNA1265906</code> at all -- that
+bioproject genuinely has no explicit IBD-type jattr field, confirmed directly against the
+real mirror. Gold v1's premise (&quot;calprotectin implies IBD by clinical convention, even with
+no literal IBD field&quot;) was put to the researcher and explicitly <strong>rejected</strong> 2026-10-08: gold
+must require an explicit IBD-type field, not an inferred one.</p>
+<p>Re-derived gold independently under that stricter rule (see <code>gold.sql</code> v2): biosamples with
+BOTH an explicit IBD-type jattr key AND an explicit calprotectin-type jattr key, non-null, on
+the same sample. Result: <strong>665 biosamples, all in bioproject PRJEB18471</strong> -- a different
+bioproject entirely from v1's guess.</p>
+<h2>Verification against gold v2</h2>
+<ul>
+<li>Overlap: <strong>665 / 665</strong> -- full recall, zero missed.</li>
+<li>Generated-only (extra): 532 (precision 665/1197 = 55.6%).</li>
+</ul>
+<h2>Judgment: PARTIAL</h2>
+<p>100% recall, 55.6% precision. The extra 532 rows are the native-SQL bucket's breadth
+(<code>librarysource = 'METAGENOMIC' OR organism ILIKE ...</code>, a wide net) intersected with
+jattr matches that are real but not as tightly scoped as gold's two-key-co-occurrence
+rule -- e.g. a sample might match &quot;IBD diagnosis&quot; via a loosely-related value and
+&quot;calprotectin measurement&quot; via a different real calprotectin key than gold's own list,
+both genuinely jattr-relevant but not meeting gold v2's stricter definition.</p>
+<p>This is a precision question, not a correctness bug: the translator's native-SQL bucket is
+intentionally broad (any metagenomic/gut sample) and intersected with two independently
+resolved jattr concepts -- reasonable behavior. Whether gold v2's narrow co-occurrence
+rule or the system's broader jattr-concept-based reach is the &quot;right&quot; granularity for this
+kind of question is itself a judgment call, flagged below.</p>
+<h2>needs_researcher_confirmation: yes</h2>
+<p>Is 55.6% precision (665/1197) an acceptable outcome for this kind of broad jattr-criteria
+question, or should gold v2's narrow co-occurrence definition be treated as the target
+precision bar going forward?</p>
+<h2>Addendum (2026-10-19): value-polarity is by design, not a defect</h2>
+<p>A value-aware check across the full 1,197-row cohort found 81.8% (979/1197) have an
+affirmative value on both matched concepts, 18.2% have a negative/missing value
+(e.g. <code>ibd_sam='False'</code>, <code>calprotectin_ave_sam='NA'</code>, <code>'not collected'</code>) on at least
+one side. Researcher confirmed (2026-10-19): <strong>this is intended behavior, not a bug</strong>
+-- presence/content matching is deliberately value-agnostic (a sample where
+<code>ibd_sam=False</code> is recorded still &quot;has an IBD-type field,&quot; which is what the concept
+search is designed to surface). No resolver change needed.</p>
+<p>Net judgment, superseding the PARTIAL call above: the pipeline (PR #59 + #61 + #62)
+is working as designed. The low raw precision against gold v2 (55.6%) was an artifact
+of gold v2's own incompleteness (missed real calprotectin key variants, and couldn't
+practically enumerate all ~27 generically-named keys holding IBD-type values by hand)
+-- not a system defect. No further action on this question.</p>
+</div></details>
+</div>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-08T12:34:37</span>
+<span>&middot; code_change</span>
+<span>&middot; gold v2</span>
+</div>
+<p class="reasoning">PR #62 (distance threshold) confirmed working: fecalcalprotectin_run now matched for &quot;calprotectin measurement&quot; (was silently dropped before). Gold v1 was wrong, not the pipeline -- its calprotectin-implies-IBD assumption was explicitly rejected by the researcher 2026-10-08. Re-derived gold v2 requires explicit IBD-key + calprotectin-key co-occurrence on the same sample: 665 biosamples, all in PRJEB18471 (different bioproject than v1 guessed). Overlap with gold v2: 665/665 (100% recall), precision 665/1197=55.6%. See notes.md.</p>
+<div class="flag">&#10067; <strong>Needs input:</strong> Is 55.6% precision (665/1197) acceptable for this kind of broad jattr-criteria question, or should gold v2&#x27;s narrow co-occurrence definition be the precision bar going forward?</div>
+<p class="planpath">plan: /private/pinto-lab/plans/20261008_123437_ibd-fecal-metagenomic-with-calprotectin/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA
+SELECT biosample FROM sra_metadata WHERE librarysource = &#x27;METAGENOMIC&#x27; OR organism ILIKE &#x27;%gut metagenome%&#x27; OR organism ILIKE &#x27;%feces metagenome%&#x27; OR organism ILIKE &#x27;%metagenome%&#x27; OR array_to_string(biosamplemodel_sam, &#x27; &#x27;) ILIKE &#x27;%human-gut%&#x27; OR array_to_string(biosamplemodel_sam, &#x27; &#x27;) ILIKE &#x27;%metagenome%&#x27;;</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 100%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:100%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 56%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:56%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">665</td></tr><tr><td>Generated</td><td class="num">1,197</td></tr><tr><td>Overlap (correct)</td><td class="num">665</td></tr><tr><td>Missed (gold-only)</td><td class="num">0</td></tr><tr><td>Extra (generated-only)</td><td class="num">532</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>Run: 2026-10-08_after-distance-threshold-fix</h1>
+<p><strong>Context:</strong> recheck against a mirror where all three fixes are live: PR #59 (intersect
+semantics), PR #61 (deterministic key eligibility), and PR #62 (distance-threshold +
+capped-candidate retrieval, replacing fixed <code>TOP_K=5</code>).</p>
+<h2>Translation</h2>
+<pre><code class="language-json">{
+  &quot;sql&quot;: &quot;SELECT biosample FROM sra_metadata WHERE librarysource = 'METAGENOMIC' OR organism ILIKE '%gut metagenome%' OR organism ILIKE '%feces metagenome%' OR organism ILIKE '%metagenome%' OR array_to_string(biosamplemodel_sam, ' ') ILIKE '%human-gut%' OR array_to_string(biosamplemodel_sam, ' ') ILIKE '%metagenome%'&quot;,
+  &quot;jattr_criteria&quot;: [&quot;IBD diagnosis&quot;, &quot;calprotectin measurement&quot;],
+  &quot;jattr_combinator&quot;: &quot;all&quot;,
+  &quot;sql_jattr_combinator&quot;: &quot;intersect&quot;
+}
+</code></pre>
+<h2>PR #62 confirmed working</h2>
+<p>&quot;calprotectin measurement&quot; now matches 77 keys/values, <strong>including <code>fecalcalprotectin_run</code></strong>
+(the key PR #61's rebuild restored, that the old <code>TOP_K=5</code> still couldn't surface). The
+distance-threshold retrieval fix is directly verified: the correct key is now actually used.</p>
+<h2>But: gold v1 was wrong, not the pipeline</h2>
+<p>Generated cohort: 1,197 biosamples. Overlap with <strong>gold v1</strong> (134, <code>PRJNA1265906</code>): 0. Dug in:
+none of the 52,980 biosamples matched by &quot;IBD diagnosis&quot; overlap <code>PRJNA1265906</code> at all -- that
+bioproject genuinely has no explicit IBD-type jattr field, confirmed directly against the
+real mirror. Gold v1's premise (&quot;calprotectin implies IBD by clinical convention, even with
+no literal IBD field&quot;) was put to the researcher and explicitly <strong>rejected</strong> 2026-10-08: gold
+must require an explicit IBD-type field, not an inferred one.</p>
+<p>Re-derived gold independently under that stricter rule (see <code>gold.sql</code> v2): biosamples with
+BOTH an explicit IBD-type jattr key AND an explicit calprotectin-type jattr key, non-null, on
+the same sample. Result: <strong>665 biosamples, all in bioproject PRJEB18471</strong> -- a different
+bioproject entirely from v1's guess.</p>
+<h2>Verification against gold v2</h2>
+<ul>
+<li>Overlap: <strong>665 / 665</strong> -- full recall, zero missed.</li>
+<li>Generated-only (extra): 532 (precision 665/1197 = 55.6%).</li>
+</ul>
+<h2>Judgment: PARTIAL</h2>
+<p>100% recall, 55.6% precision. The extra 532 rows are the native-SQL bucket's breadth
+(<code>librarysource = 'METAGENOMIC' OR organism ILIKE ...</code>, a wide net) intersected with
+jattr matches that are real but not as tightly scoped as gold's two-key-co-occurrence
+rule -- e.g. a sample might match &quot;IBD diagnosis&quot; via a loosely-related value and
+&quot;calprotectin measurement&quot; via a different real calprotectin key than gold's own list,
+both genuinely jattr-relevant but not meeting gold v2's stricter definition.</p>
+<p>This is a precision question, not a correctness bug: the translator's native-SQL bucket is
+intentionally broad (any metagenomic/gut sample) and intersected with two independently
+resolved jattr concepts -- reasonable behavior. Whether gold v2's narrow co-occurrence
+rule or the system's broader jattr-concept-based reach is the &quot;right&quot; granularity for this
+kind of question is itself a judgment call, flagged below.</p>
+<h2>needs_researcher_confirmation: yes</h2>
+<p>Is 55.6% precision (665/1197) an acceptable outcome for this kind of broad jattr-criteria
+question, or should gold v2's narrow co-occurrence definition be treated as the target
+precision bar going forward?</p>
+<h2>Addendum (2026-10-19): value-polarity is by design, not a defect</h2>
+<p>A value-aware check across the full 1,197-row cohort found 81.8% (979/1197) have an
+affirmative value on both matched concepts, 18.2% have a negative/missing value
+(e.g. <code>ibd_sam='False'</code>, <code>calprotectin_ave_sam='NA'</code>, <code>'not collected'</code>) on at least
+one side. Researcher confirmed (2026-10-19): <strong>this is intended behavior, not a bug</strong>
+-- presence/content matching is deliberately value-agnostic (a sample where
+<code>ibd_sam=False</code> is recorded still &quot;has an IBD-type field,&quot; which is what the concept
+search is designed to surface). No resolver change needed.</p>
+<p>Net judgment, superseding the PARTIAL call above: the pipeline (PR #59 + #61 + #62)
+is working as designed. The low raw precision against gold v2 (55.6%) was an artifact
+of gold v2's own incompleteness (missed real calprotectin key variants, and couldn't
+practically enumerate all ~27 generically-named keys holding IBD-type values by hand)
+-- not a system defect. No further action on this question.</p>
+</div></details>
+</div>
+<div class="run">
+<div class="meta">
+<span class="badge mismatch">MISMATCH</span>
+<span>2026-10-08T09:47:40</span>
+<span>&middot; mirror_rebuild</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Translator correct this time (intersect fix holds, no union-swamping). attribute_keys_index rebuild (PR #61) also confirmed correct: fecalcalprotectin_run now present with all 134 biosamples. But jattr concept search still misses it in production: ranks #27/85143 nearest keys for &quot;calprotectin measurement&quot; (distance 0.817), crowded out of TOP_K=5 by ~18 near-duplicate calprotectin_*_sam naming variants. Overlap=0, gold-only(missed)=134, generated-only(extra)=665. See notes.md.</p>
+<div class="flag">&#10067; <strong>Needs input:</strong> What TOP_K (or a dedup/rerank step) reliably surfaces true matches in naming-duplicate-heavy neighborhoods without blowing up matching cost mirror-wide?</div>
+<p class="planpath">plan: /private/pinto-lab/plans/20261008_094740_ibd-fecal-metagenomic-with-calprotectin/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA
+SELECT biosample FROM sra_metadata WHERE sra_metadata.librarysource = &#x27;METAGENOMIC&#x27; AND (sra_metadata.organism ILIKE &#x27;%fecal metagenome%&#x27; OR sra_metadata.organism ILIKE &#x27;%human gut metagenome%&#x27; OR sra_metadata.organism ILIKE &#x27;%gut metagenome%&#x27; OR sra_metadata.organism ILIKE &#x27;%feces metagenome%&#x27; OR list_contains(sra_metadata.biosamplemodel_sam, &#x27;MIGS/MIMS/MIMARKS.human-gut&#x27;));</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 0%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:0%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 0%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:0%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">134</td></tr><tr><td>Generated</td><td class="num">665</td></tr><tr><td>Overlap (correct)</td><td class="num">0</td></tr><tr><td>Missed (gold-only)</td><td class="num">134</td></tr><tr><td>Extra (generated-only)</td><td class="num">665</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>Run: 2026-10-08_after-index-rebuild</h1>
+<p><strong>Context:</strong> first recheck against a mirror where BOTH fixes are live:
+PR #59 (<code>sql_jattr_combinator</code> intersect semantics) and PR #61 (deterministic,
+sampling-free key eligibility -- <code>attribute_keys_index</code>/<code>attribute_values_index</code>
+fully rebuilt 2026-10-07/08, job 32916510).</p>
+<p><strong>Also fixed in this run:</strong> <code>run_question.py</code>'s <code>write_sidecars</code> was re-executing
+<code>query.sql</code> directly instead of using the resolved <code>Cohort</code> (<code>plan.discovered</code>),
+silently recording the raw native-SQL bucket's row count instead of the real,
+jattr-intersected answer. A first attempt at this recheck (discarded, not
+recorded in index.csv) produced 6,567,905 rows this way, even though the real
+resolved cohort for that plan was 0. Fixed in commit 764cef4 before this run.</p>
+<h2>Translation</h2>
+<pre><code class="language-json">{
+  &quot;sql&quot;: &quot;SELECT biosample FROM sra_metadata WHERE librarysource = 'METAGENOMIC' AND (organism ILIKE '%fecal metagenome%' OR organism ILIKE '%human gut metagenome%' OR organism ILIKE '%gut metagenome%' OR organism ILIKE '%feces metagenome%' OR list_contains(biosamplemodel_sam, 'MIGS/MIMS/MIMARKS.human-gut'))&quot;,
+  &quot;jattr_criteria&quot;: [&quot;IBD diagnosis&quot;, &quot;calprotectin measurement&quot;],
+  &quot;jattr_combinator&quot;: &quot;all&quot;,
+  &quot;sql_jattr_combinator&quot;: &quot;intersect&quot;
+}
+</code></pre>
+<p>Correct translation this time: native SQL narrows to fecal/gut metagenomes, jattr
+criteria narrow further to IBD+calprotectin, combined via intersect. No repeat of
+the original union-swamping bug.</p>
+<h2>Verification against gold (134 rows, <code>fecalcalprotectin_run</code>, exclusive to PRJNA1265906)</h2>
+<ul>
+<li>Generated cohort: <strong>665</strong> biosamples.</li>
+<li>Overlap with gold: <strong>0</strong>. Gold-only (missed): 134. Generated-only (extra): 665.</li>
+</ul>
+<h2>Root cause: NOT the key-presence bug PR #61 fixed</h2>
+<p>Confirmed directly against the real <code>attribute_keys_index</code>:</p>
+<ul>
+<li><code>fecalcalprotectin_run</code> <strong>is present</strong> in the rebuilt index (it was absent before
+PR #61) and its row carries all 134 correct biosamples.</li>
+<li>Querying the index for &quot;calprotectin measurement&quot; with <code>limit(50)</code> instead of the
+production <code>TOP_K=5</code>: <code>fecalcalprotectin_run</code> ranks <strong>#27</strong> (distance 0.817) among
+85,143 keys -- a real, close semantic match.</li>
+<li>Why it never surfaces in production: <code>TOP_K=5</code> (<code>src/cohortquery/jattr_concepts.py</code>)
+returns only the 5 nearest keys. Ranks #1-18 are all near-duplicate
+<code>calprotectin_*_sam</code>/<code>calprotectin*_run</code> naming variants (<code>calprotectin_sam</code>,
+<code>calprotectin_numeric_sam</code>, <code>calprotectin0_sam</code>, ... <code>fecal_calprotectin_sam</code>,
+<code>baseline_calprotectin_sam</code>), crowding the true answer out of the top 5 entirely.</li>
+</ul>
+<p>This is a <strong>distinct, still-open issue</strong>: retrieval breadth (<code>TOP_K</code>), not key
+eligibility/classification. The data is correct; the search returns too few
+candidates for a vocabulary with this much naming duplication.</p>
+<h2>Judgment: MISMATCH</h2>
+<p>Gold not found. Translator behavior is now correct (intersect fix holds); the
+index now contains the right key with the right data; the failure is purely in
+how many nearest neighbors get surfaced to the resolver.</p>
+<h2>needs_researcher_confirmation: yes</h2>
+<p>What TOP_K (or a smarter dedup/rerank step) would reliably surface true matches
+in naming-duplicate-heavy neighborhoods like this one, without blowing up
+matching cost across the whole mirror? Flagging to the user rather than
+picking a number unilaterally.</p>
+</div></details>
+</div>
+<div class="run">
+<div class="meta">
+<span class="badge mismatch">MISMATCH</span>
+<span>2026-10-06T11:31:17</span>
+<span>&middot; code_change</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">sql_jattr_combinator=intersect fix verified working as designed (996410 -&gt; 436 rows). But ZERO overlap with the 134-row gold: the jattr concept search for calprotectin measurement matched 10 jattr keys (2625 biosamples) but NOT fecalcalprotectin_run, the exact key all 134 gold samples use -- an embedding/concept-search gap, pre-existing, unmasked by this fix. See notes.md.</p>
+<div class="flag">&#10067; <strong>Needs input:</strong> (1) worth fixing the embedding gap for fecalcalprotectin_run? (2) is jattr_combinator=all right for IBD+calprotectin given IBD context may be study-level/implicit rather than per-sample?</div>
+<p class="planpath">plan: /private/pinto-lab/plans/20261006_113117_ibd-fecal-metagenomic-with-calprotectin/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA (native bucket; actual cohort below is this INTERSECTED with
+-- jattr_criteria=[&#x27;IBD diagnosis&#x27;,&#x27;calprotectin measurement&#x27;], jattr_combinator=all,
+-- sql_jattr_combinator=intersect -- the jattr resolution is not expressible as flat SQL)
+SELECT biosample FROM sra_metadata WHERE librarysource = &#x27;METAGENOMIC&#x27; AND (array_to_string(biosamplemodel_sam, &#x27; &#x27;) ILIKE &#x27;%fecal%&#x27; OR array_to_string(biosamplemodel_sam, &#x27; &#x27;) ILIKE &#x27;%gut%&#x27;);</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 0%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:0%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 0%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:0%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">134</td></tr><tr><td>Generated</td><td class="num">436</td></tr><tr><td>Overlap (correct)</td><td class="num">0</td></tr><tr><td>Missed (gold-only)</td><td class="num">134</td></tr><tr><td>Extra (generated-only)</td><td class="num">436</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>q01-ibd-calprotectin — recheck after sql_jattr_combinator fix</h1>
+<p><strong>Trigger:</strong> code_change (PR #59 merged — <code>sql_jattr_combinator: &quot;union&quot;|&quot;intersect&quot;</code> on <code>SourceQuery</code>)</p>
+<p><strong>Plan:</strong> <code>/private/pinto-lab/plans/20261006_113117_ibd-fecal-metagenomic-with-calprotectin/plan.json</code></p>
+<h2>What changed vs. the initial run</h2>
+<p>The LLM now correctly emits <code>sql_jattr_combinator: &quot;intersect&quot;</code> for this question, with:</p>
+<ul>
+<li>native bucket: <code>librarysource = 'METAGENOMIC' AND (biosamplemodel_sam ILIKE '%fecal%' OR '%gut%')</code></li>
+<li>jattr: <code>[&quot;IBD diagnosis&quot;, &quot;calprotectin measurement&quot;]</code>, combinator <code>&quot;all&quot;</code></li>
+</ul>
+<p>Result: <strong>436 rows</strong> (down from 996,410 — the intersect mechanism works exactly as designed).</p>
+<h2>But: zero overlap with gold (134 rows)</h2>
+<p>Checked directly: the native bucket alone <em>does</em> correctly match all 134 gold
+(PRJNA1265906) samples (134/134, confirmed by query). The loss happens entirely on the
+jattr side. The plan's own standalone per-concept counts show why:</p>
+<ul>
+<li><code>&quot;IBD diagnosis&quot;</code> standalone: 97,987 biosamples matched</li>
+<li><code>&quot;calprotectin measurement&quot;</code> standalone: 2,625 biosamples matched, across 10 distinct
+jattr keys: <code>calprotectin_sam</code>, <code>calprotectin_units_sam</code>, <code>calprotectin_numeric_sam</code>,
+<code>calprotectin_ave_sam</code>, <code>value_calprotectin_sam</code>, <code>Calprotectin</code>, <code>calprotectin</code>,
+<code>inhibitory calprotectin</code>, <code>subinhibitory calprotectin</code>, <code>calprotectin buffer</code></li>
+</ul>
+<p><strong><code>fecalcalprotectin_run</code> — the exact key all 134 gold samples use — is not among the
+matched keys.</strong> The nearest-neighbor embedding lookup against <code>attribute_values_index</code>/
+<code>attribute_keys_index</code> simply never surfaced it as similar enough to &quot;calprotectin
+measurement,&quot; despite ten other, more loosely-named calprotectin keys matching fine.</p>
+<p>Since <code>jattr_combinator=&quot;all&quot;</code> requires a sample to match BOTH concepts, and these 134
+samples are entirely absent from the &quot;calprotectin measurement&quot; match set, they're
+excluded regardless of what &quot;IBD diagnosis&quot; found for them.</p>
+<h2>This is a separate, pre-existing bug, not a regression from the sql_jattr_combinator fix</h2>
+<p>Under the old (broken) union behavior this gap was invisible — the broad native-SQL
+bucket swallowed everything into the result regardless of what jattr found, so a
+concept-search miss never surfaced. The fix made the pipeline <em>correctly</em> depend on
+jattr matching for this kind of question, which is exactly what exposed the miss.
+<strong>Fixing the union bug was necessary to even see this one.</strong></p>
+<h2>Judgment: MISMATCH (recall 0% against this specific gold set)</h2>
+<p>The 436-row result is <em>precision-plausible</em> (10 real calprotectin jattr keys, properly
+intersected with IBD-diagnosis concept matches) but misses the one bioproject
+independently verified as ground truth entirely, due to the embedding gap above.</p>
+<h2>needs_researcher_confirmation: yes</h2>
+<p>Two separate things to confirm:</p>
+<ol>
+<li>Is the jattr concept-search embedding gap for <code>fecalcalprotectin_run</code> worth
+investigating/fixing (likely scope: LanceDB attribute_values_index re-embedding, or
+a key-name normalization step — concatenated <code>fecalcalprotectin_run</code> may embed
+poorly compared to the more conventional <code>calprotectin_*_sam</code> naming pattern)?</li>
+<li>Is <code>jattr_combinator=&quot;all&quot;</code> the right choice for &quot;IBD diagnosis&quot; + &quot;calprotectin
+measurement&quot; at all, given IBD context for a calprotectin study may be implicit at
+the study/publication level rather than recorded per-sample? If so, &quot;any&quot; (with a
+post-hoc researcher review of the union) might be the more honest default for this
+kind of compound clinical-context question — a separate, prompt-level decision from
+today's sql_jattr_combinator fix.</li>
+</ol>
+</div></details>
+</div>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-05T18:49:18</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Recall 100% (gold subset of generated, 134/134 found), precision ~0.0134% (134/996410) -- native-SQL bucket unioned with correct jattr criteria, swamping them. See notes.md.</p>
+<div class="flag">&#10067; <strong>Needs input:</strong> Is the narrow 134-row fecalcalprotectin_run set the complete gold answer, or should broader jattr keys from Workspaces/IBD_calprotectin/0_inputs/plan.json (1261 rows, unverified on current mirror) also count?</div>
+<p class="planpath">plan: /private/pinto-lab/plans/20261005_184918_ibd-fecal-metagenomic-with-calprotectin/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA
+SELECT biosample FROM sra_metadata WHERE librarysource = &#x27;METAGENOMIC&#x27; AND (organism ILIKE &#x27;%feces metagenome%&#x27; OR organism ILIKE &#x27;%human gut metagenome%&#x27; OR list_contains(biosamplemodel_sam, &#x27;MIGS/MIMS/MIMARKS.human-gut&#x27;));</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 100%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:100%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 0%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:0%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">134</td></tr><tr><td>Generated</td><td class="num">996,410</td></tr><tr><td>Overlap (correct)</td><td class="num">134</td></tr><tr><td>Missed (gold-only)</td><td class="num">0</td></tr><tr><td>Extra (generated-only)</td><td class="num">996,276</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>q01-ibd-calprotectin</h1>
+<p><strong>Question:</strong> &quot;IBD fecal metagenomic with calprotectin&quot;</p>
+<h2>Run: 2026-10-05_initial</h2>
+<p><strong>Plan:</strong> <code>/private/pinto-lab/plans/20261005_184918_ibd-fecal-metagenomic-with-calprotectin/plan.json</code></p>
+<p><strong>Translation:</strong> the translator correctly identified &quot;IBD diagnosis&quot; and &quot;calprotectin measurement&quot;
+as <code>jattr_criteria</code> (combinator <code>&quot;all&quot;</code>), but <em>also</em> wrote a native-SQL bucket matching any
+feces/gut-metagenome sample (<code>librarysource = 'METAGENOMIC' AND (organism ILIKE '%feces metagenome%' OR organism ILIKE '%human gut metagenome%' OR biosamplemodel 'human-gut')</code>), with
+no disease/biomarker constraint at all.</p>
+<p><strong>Why this produced 996,410 rows despite &quot;correct&quot; jattr concepts:</strong> <code>CriterionResolver._resolve</code>
+(<code>src/cohortquery/cohort.py</code>) combines the native-SQL bucket and the jattr-criteria bucket via set
+<strong>union</strong>, by design (documented: &quot;bucket 2's same-fact-recorded-twice case&quot;). Union can only add
+matches, never remove them. Since the native bucket alone already covers virtually every
+feces/gut-metagenome sample in the mirror, the jattr narrowing became invisible in the final count
+— confirmed: <strong>no pipeline bug</strong>, this is the correct, documented behavior; it's the translator's
+bucket assignment that's wrong for this question. The native bucket should have stayed empty/narrow
+(or been omitted, <code>sql=None</code>) and let <code>jattr_criteria</code> alone carry the IBD+calprotectin matching.</p>
+<h2>Independent verification (live mirror queries, 2026-10-05)</h2>
+<ul>
+<li><code>bioproject = 'PRJNA1265906' AND json_extract_string(jattr, '$.fecalcalprotectin_run') IS NOT NULL</code>
+→ <strong>134 rows</strong></li>
+<li><code>json_extract_string(jattr, '$.fecalcalprotectin_run') IS NOT NULL</code> (no bioproject filter, mirror-wide)
+→ <strong>134 rows</strong> — identical count confirms this jattr key is exclusive to PRJNA1265906.</li>
+<li>Fecal calprotectin is a standard clinical biomarker used almost exclusively to monitor IBD
+(Crohn's disease / ulcerative colitis) disease activity — a dataset recording it is IBD research
+by biological/clinical convention, even though no literal &quot;IBD&quot; text appears anywhere in this
+bioproject's study/sample_name/attributes (confirmed by a prior session, 2026-08-25, recorded in
+<code>Scripts/eval/questions.jsonl</code>'s own history for a related, narrower-worded question).</li>
+<li>Set comparison: generated (996,410) ⊇ gold (134) exactly — <strong>overlap = 134, gold-only (missed) = 0</strong>.
+The translator's result is not wrong by omission; every correct answer is in there, buried among
+~996,276 false positives.</li>
+</ul>
+<h2>Judgment: PARTIAL</h2>
+<p>Recall = 100% (0 correct answers missed). Precision ≈ 0.0134% (134 / 996,410). Under the existing
+<code>run_eval.py</code> scorer (exact set equality), this would score as a hard 0/MISMATCH — which is the
+right call for that binary metric, but loses the nuance that the translator's jattr-concept
+recognition itself worked; the failure is specifically in how the native-SQL bucket was scoped
+alongside it.</p>
+<h2>needs_researcher_confirmation: yes</h2>
+<p><strong>What to confirm:</strong> is <code>fecalcalprotectin_run</code> (134 rows, exclusively PRJNA1265906) the complete,
+correct ground truth for &quot;calprotectin measured,&quot; or should it also include adjacent jattr keys
+seen in an older, pre-concept-search plan for a similarly-worded question
+(<code>Workspaces/IBD_calprotectin/0_inputs/plan.json</code>, 1,261 rows via a broad OR of ~30 jattr key names
+including <code>calprotectin_sam</code>, <code>calprotectin_numeric_sam</code>, <code>host_fecal_calprotectin_mgpergdryweight_sam</code>,
+etc.) — those additional keys were NOT independently re-verified in this session (their real presence/
+semantics on the current mirror is unconfirmed), so gold here is deliberately the narrow, fully-verified
+134-row set rather than the broader, partially-unverified 1,261-row set. A researcher should say
+whether the broader set's extra keys are genuine synonyms worth folding into gold v2.</p>
+<h2>Why missed (translator)</h2>
+<p>Not a literal terminology gap — the translator <em>did</em> recognize the right concepts as jattr
+criteria. The gap is architectural/prompt-level: the translator doesn't appear to understand that
+the native-SQL bucket and jattr_criteria combine via union (additive), so writing a broad native
+bucket &quot;just in case&quot; actively defeats the jattr narrowing instead of being a harmless redundant
+check. Worth flagging to whoever owns <code>prompt.py</code>: the system prompt may need to state explicitly
+that the native-SQL bucket is unioned in, not intersected, so an LLM's instinct to &quot;also match
+broadly for safety&quot; needs to be suppressed for this field.</p>
+</div></details>
+</div>
+</article>
+<article class="detail" id="detail-q02-prjna400072-bioproject-lookup">
+<header class="detail-header"><h2>samples from bioproject PRJNA400072</h2><p class="slug">q02-prjna400072-bioproject-lookup</p></header>
+<details class="sidecar"><summary>Gold SQL</summary><pre>-- version: 1
+-- date: 2026-10-19
+-- reason: mined from a historical pre-pivot ask() run (Workspaces/PRJNA400072/PRJNA400072/0_inputs/plan.json,
+--   question &quot;samples from bioproject PRJNA400072&quot;), chosen as a benchmark question because it&#x27;s the
+--   opposite case from q01: a pure exact-match bioproject lookup with zero jattr ambiguity -- a useful
+--   control/baseline contrast to q01&#x27;s fuzzy-search-heavy case.
+--   Independently verified against the real mirror: the native `bioproject` column alone matches 220
+--   biosamples (matches the historical plan&#x27;s own discovered count). Checked whether any additional
+--   biosamples exist ONLY via jattr fallback keys (bioproject_accession_sam_s_dpl219, bioproject_id_sam,
+--   etc. -- the hedge the historical plan&#x27;s SQL used) and found zero: the native column fully covers
+--   this bioproject, the jattr fallback was unnecessary defensive breadth, not a real gap.
+SELECT biosample FROM sra_metadata WHERE bioproject = &#x27;PRJNA400072&#x27;;
+</pre></details>
+<div class="run">
+<div class="meta">
+<span class="badge match">MATCH</span>
+<span>2026-10-19T11:52:47</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Exact match: generated 220 biosamples, gold 220, overlap 220, missed 0, extra 0. Mined from a historical pre-pivot ask() run as a deliberate control case opposite q01 -- pure native-column bioproject lookup, zero jattr ambiguity. Confirms the simple exact-match path works correctly end to end.</p>
+
+<p class="planpath">plan: /private/pinto-lab/plans/20261019_115247_samples-from-bioproject-prjna400072/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA
+SELECT biosample FROM sra_metadata WHERE bioproject = &#x27;PRJNA400072&#x27;;
+
+-- METALOG_METADATA
+SELECT biosample, sample_alias FROM metalog_metadata WHERE study_accession = &#x27;PRJNA400072&#x27;;</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 100%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:100%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 100%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:100%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">220</td></tr><tr><td>Generated</td><td class="num">220</td></tr><tr><td>Overlap (correct)</td><td class="num">220</td></tr><tr><td>Missed (gold-only)</td><td class="num">0</td></tr><tr><td>Extra (generated-only)</td><td class="num">0</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>q02-prjna400072-bioproject-lookup</h1>
+<p><strong>Question:</strong> &quot;samples from bioproject PRJNA400072&quot;</p>
+<p><strong>Why this question:</strong> mined from a historical pre-pivot <code>ask()</code> run
+(<code>Workspaces/PRJNA400072/PRJNA400072/0_inputs/plan.json</code>). Deliberately the opposite case
+from q01: a pure exact-match bioproject lookup with zero jattr ambiguity -- a control/baseline
+contrast to q01's fuzzy-search-heavy case, exercising the simple native-SQL path end to end.</p>
+<h2>Run: 2026-10-19_initial</h2>
+<p><strong>Plan:</strong> <code>/private/pinto-lab/plans/20261019_115247_samples-from-bioproject-prjna400072/plan.json</code></p>
+<p><strong>Translation:</strong></p>
+<pre><code class="language-json">[
+  {&quot;source&quot;: &quot;SRA_METADATA&quot;, &quot;sql&quot;: &quot;SELECT biosample FROM sra_metadata WHERE bioproject = 'PRJNA400072'&quot;},
+  {&quot;source&quot;: &quot;METALOG_METADATA&quot;, &quot;sql&quot;: &quot;SELECT biosample, sample_alias FROM metalog_metadata WHERE study_accession = 'PRJNA400072'&quot;}
+]
+</code></pre>
+<p>No jattr_criteria on either source -- correctly recognized as a pure native-column lookup.</p>
+<h2>Independent verification (live mirror, 2026-10-19)</h2>
+<ul>
+<li><code>bioproject = 'PRJNA400072'</code> -&gt; <strong>220 biosamples</strong>, matching the historical plan's own
+discovered count exactly.</li>
+<li>Checked whether the native <code>bioproject</code> column misses anything the historical plan's jattr
+fallback keys (<code>bioproject_accession_sam_s_dpl219</code>, <code>bioproject_id_sam</code>, etc.) would catch:
+<strong>zero</strong> extra biosamples found via fallback-only. The native column fully covers this
+bioproject; the historical plan's jattr hedge was unnecessary defensive breadth, not a real gap.</li>
+<li>Set comparison: generated (220) == gold (220) exactly. Overlap 220, missed 0, extra 0.</li>
+</ul>
+<h2>Judgment: MATCH</h2>
+<p>Exact match, 100% recall and precision. Confirms the simple native-SQL exact-match path works
+correctly end to end on the current pipeline (PR #59 + #61 + #62), independent of all the
+jattr-search machinery q01 exercised.</p>
+</div></details>
+</div>
+</article>
+<article class="detail" id="detail-q03-human-tumor-transcriptomic">
+<header class="detail-header"><h2>human tumor samples from transcriptomic sequencing</h2><p class="slug">q03-human-tumor-transcriptomic</p></header>
+<details class="sidecar"><summary>Gold SQL</summary><pre>-- version: 1
+-- date: 2026-10-19
+-- reason: fresh question authored to cover the &quot;non-metagenome&quot; gap (per project memory
+--   project_askslm_not_metagenomics_only.md: STAT profiles every SRA run, so human-tumour
+--   cohorts are valid science and must never be filtered out by a metagenome-only bias).
+--   Independently verified: `is_tumor_sam` is a clean boolean-ish jattr key stored as a
+--   single-element JSON array ([&quot;Yes&quot;]/[&quot;No&quot;], no other values, no mid-ground). Counting
+--   DISTINCT biosamples (some biosamples carry multiple SRA runs, so a raw row count
+--   overstates this): 33,405 distinct Homo sapiens / TRANSCRIPTOMIC biosamples have
+--   is_tumor_sam[0] = &#x27;Yes&#x27;.
+SELECT biosample FROM sra_metadata
+WHERE organism = &#x27;Homo sapiens&#x27;
+  AND librarysource = &#x27;TRANSCRIPTOMIC&#x27;
+  AND json_extract_string(jattr, &#x27;$.is_tumor_sam[0]&#x27;) = &#x27;Yes&#x27;;
+</pre></details>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T12:30:49</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Correctly recognized as non-metagenomic (no metagenome bias). Overlap with narrow is_tumor_sam-based gold: 5212/33405 (15.6%). is_tumor_sam itself was never matched by any of the 3 jattr concepts used -- system instead matched ~211 other real tumor/cancer keys and values. Same class of finding as q01 (narrow single-key gold under-enumerates a content-matched population), not independently spot-checked further (time-boxed). See notes.md.</p>
+<div class="flag">&#10067; <strong>Needs input:</strong> Is 15.6% overlap against this narrow gold acceptable given the q01 precedent, or does this concept area warrant value-aware re-scoring?</div>
+<p class="planpath">plan: /private/pinto-lab/plans/20261019_123049_human-tumor-samples-from-transcriptomic/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA
+SELECT biosample FROM sra_metadata WHERE organism = &#x27;Homo sapiens&#x27; AND (assay_type = &#x27;RNA-Seq&#x27; OR librarysource IN (&#x27;TRANSCRIPTOMIC&#x27;, &#x27;METATRANSCRIPTOMIC&#x27;));</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 16%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:16%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 8%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:8%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">33,405</td></tr><tr><td>Generated</td><td class="num">68,342</td></tr><tr><td>Overlap (correct)</td><td class="num">5,212</td></tr><tr><td>Missed (gold-only)</td><td class="num">28,193</td></tr><tr><td>Extra (generated-only)</td><td class="num">63,130</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>q03-human-tumor-transcriptomic</h1>
+<p><strong>Question:</strong> &quot;human tumor samples from transcriptomic sequencing&quot;</p>
+<p><strong>Why this question:</strong> fresh question authored to cover the &quot;non-metagenome&quot; benchmark gap
+(per project memory: STAT profiles every SRA run, so human-tumour cohorts are valid science
+and must never be filtered by a metagenome-only bias).</p>
+<h2>Run: 2026-10-19_initial</h2>
+<p><strong>Plan:</strong> <code>/private/pinto-lab/plans/20261019_123049_human-tumor-samples-from-transcriptomic/plan.json</code></p>
+<p><strong>Translation:</strong></p>
+<pre><code class="language-json">{
+  &quot;sql&quot;: &quot;SELECT biosample FROM sra_metadata WHERE organism = 'Homo sapiens' AND (assay_type = 'RNA-Seq' OR librarysource IN ('TRANSCRIPTOMIC', 'METATRANSCRIPTOMIC'))&quot;,
+  &quot;jattr_criteria&quot;: [&quot;tumor sample&quot;, &quot;cancer sample&quot;, &quot;neoplasm&quot;],
+  &quot;jattr_combinator&quot;: &quot;any&quot;,
+  &quot;sql_jattr_combinator&quot;: &quot;intersect&quot;
+}
+</code></pre>
+<p>Correctly recognized as non-metagenomic (no librarysource=METAGENOMIC bias at all), correctly
+intersected native RNA-Seq/transcriptomic scoping with tumor-concept jattr criteria.</p>
+<h2>Verification against gold (distinct biosamples; see gold.sql)</h2>
+<ul>
+<li>Gold: 33,405 (Homo sapiens / TRANSCRIPTOMIC / <code>is_tumor_sam[0]='Yes'</code>)</li>
+<li>Generated: 68,342</li>
+<li>Overlap: 5,212. Missed: 28,193. Extra: 63,130.</li>
+</ul>
+<h2>Root cause: <code>is_tumor_sam</code> itself was never matched by any of the 3 jattr concepts</h2>
+<p>Checked <code>discovered.jattr_matches</code> directly: none of &quot;tumor sample&quot;/&quot;cancer sample&quot;/&quot;neoplasm&quot;
+matched <code>is_tumor_sam</code> (confirmed: <code>'is_tumor_sam' in matched_on</code> is False for all three). The
+system instead matched ~211 OTHER real tumor/cancer-related keys and values
+(<code>tumor_sample_sam</code>, <code>cancer_sam</code>, <code>carcinoma_sam</code>, <code>neoplasia_type_sam</code>, free-text values like
+<code>&quot;Tumor&quot;</code>/<code>&quot;Neoplasm&quot;</code>, etc.) -- a genuinely different, overlapping-but-distinct population from
+my single-key gold definition. Same class of finding as q01: a narrow single-key gold
+under-enumerates the real population a content-based search legitimately reaches via other
+synonyms. Not independently spot-checked sample-by-sample here (time-boxed per Task 10's
+breadth-over-depth goal) -- flagging as PARTIAL rather than fully re-deriving a value-aware
+gold v2 the way q01 did.</p>
+<h2>Judgment: PARTIAL</h2>
+<p>Low overlap against a narrow single-key gold, consistent with the already-understood pattern
+(gold incompleteness for free-text/content-matched concepts) rather than a confirmed new defect.
+Worth a deeper pass later if this concept area gets revisited.</p>
+<h2>needs_researcher_confirmation: yes</h2>
+<p>Is 15.6% overlap (5212/33405) against this narrow gold acceptable given the q01 precedent
+(gold incompleteness, not necessarily a system defect), or does this concept area warrant the
+same value-aware re-scoring q01 got?</p>
+</div></details>
+</div>
+</article>
+<article class="detail" id="detail-q04-recorded-bmi-jattr-only">
+<header class="detail-header"><h2>samples with recorded body mass index</h2><p class="slug">q04-recorded-bmi-jattr-only</p></header>
+<details class="sidecar"><summary>Gold SQL</summary><pre>-- version: 1
+-- date: 2026-10-19
+-- reason: fresh question authored to cover the &quot;jattr-only&quot; gap (no native SQL column for
+--   BMI exists anywhere in the mirror&#x27;s schema -- this question can ONLY be answered via
+--   jattr_criteria, sql=None is the only correct translation shape). Independently verified:
+--   the two real, well-populated BMI-recording keys (bmi_sam, host_body_mass_index_sam_s_dpl230)
+--   together cover 221,094 DISTINCT biosamples with a recorded BMI value (counting distinct
+--   biosamples, not raw rows -- some biosamples carry multiple SRA runs).
+SELECT biosample FROM sra_metadata
+WHERE jattr IS NOT NULL
+  AND (json_extract_string(jattr, &#x27;$.bmi_sam&#x27;) IS NOT NULL
+       OR json_extract_string(jattr, &#x27;$.host_body_mass_index_sam_s_dpl230&#x27;) IS NOT NULL);
+</pre></details>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T12:32:27</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Correctly recognized sql=None for SRA_METADATA (no native BMI column) and correctly used Metalog native bmi column. Overlap 88458/221094 (40%). CONFIRMED BUG: host_body_mass_index_sam_s_dpl230 is entirely absent from attribute_keys_index -- excluded at build time by ID_NAME_RE bare substring match on &quot;index&quot; (matches body_mass_index same as it matches sample_index). Root-caused, not yet fixed. See notes.md.</p>
+
+<p class="planpath">plan: /private/pinto-lab/plans/20261019_123227_samples-with-recorded-body-mass-index/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA: jattr-only, no native SQL
+
+-- METALOG_METADATA
+SELECT biosample, sample_alias FROM metalog_metadata WHERE bmi IS NOT NULL;</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 40%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:40%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 85%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:85%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">221,094</td></tr><tr><td>Generated</td><td class="num">104,346</td></tr><tr><td>Overlap (correct)</td><td class="num">88,458</td></tr><tr><td>Missed (gold-only)</td><td class="num">132,636</td></tr><tr><td>Extra (generated-only)</td><td class="num">15,888</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>q04-recorded-bmi-jattr-only</h1>
+<p><strong>Question:</strong> &quot;samples with recorded body mass index&quot;</p>
+<p><strong>Why this question:</strong> fresh question authored to cover the &quot;jattr-only&quot; benchmark gap --
+no native SQL column for BMI exists anywhere in the SRA metadata schema, so <code>sql=None</code> with
+a pure jattr_criteria is the only correct translation shape for SRA_METADATA.</p>
+<h2>Run: 2026-10-19_initial</h2>
+<p><strong>Plan:</strong> <code>/private/pinto-lab/plans/20261019_123227_samples-with-recorded-body-mass-index/plan.json</code></p>
+<p><strong>Translation:</strong></p>
+<pre><code class="language-json">[
+  {&quot;source&quot;: &quot;SRA_METADATA&quot;, &quot;sql&quot;: null, &quot;jattr_criteria&quot;: [&quot;body mass index&quot;], &quot;jattr_combinator&quot;: &quot;any&quot;, &quot;sql_jattr_combinator&quot;: &quot;union&quot;},
+  {&quot;source&quot;: &quot;METALOG_METADATA&quot;, &quot;sql&quot;: &quot;SELECT biosample, sample_alias FROM metalog_metadata WHERE bmi IS NOT NULL&quot;, &quot;jattr_criteria&quot;: [], &quot;jattr_combinator&quot;: &quot;any&quot;, &quot;sql_jattr_combinator&quot;: &quot;union&quot;}
+]
+</code></pre>
+<p>Correctly recognized <code>sql=None</code> for SRA_METADATA (no native BMI column exists -- pure jattr
+concept) and correctly used Metalog's own native <code>bmi</code> column where one DOES exist. Good
+cross-source behavior: the same underlying concept resolved differently per source, each
+correctly.</p>
+<h2>Verification against gold (distinct biosamples; see gold.sql)</h2>
+<ul>
+<li>Gold: 221,094 (<code>bmi_sam</code> OR <code>host_body_mass_index_sam_s_dpl230</code> non-null)</li>
+<li>Generated (SRA_METADATA only): 104,346</li>
+<li>Overlap: 88,458. Missed: 132,636. Extra: 15,888.</li>
+</ul>
+<h2>Confirmed bug: <code>host_body_mass_index_sam_s_dpl230</code> is entirely absent from the rebuilt keys index</h2>
+<p>Checked <code>discovered.jattr_matches</code>: <code>bmi_sam</code> WAS matched (87,298 biosamples) but
+<code>host_body_mass_index_sam_s_dpl230</code> was not among any matched key. Queried the real
+<code>attribute_keys_index</code> directly for this exact key -- <strong>zero rows</strong>. It was excluded at
+build time, not a retrieval-ranking miss (unlike q01's case).</p>
+<p><strong>Root cause, confirmed:</strong> <code>ID_NAME_RE</code> in <code>step7_build_attribute_indexes.py</code> includes a bare,
+unanchored <code>index</code> alternative (meant to catch generic numeric index/position fields like
+<code>sample_index</code>), but it matches as a <strong>substring</strong> anywhere in the key name -- so it also
+silently excludes any biologically meaningful key that happens to contain &quot;index&quot; as part of
+a compound word, like <code>body_mass_index</code>. Same severity class as the original
+<code>fecalcalprotectin_run</code> incident (PR #61): a real, biologically important key silently dropped
+regardless of its value. This is a build-time exclusion bug, not a retrieval-tuning question --
+confirmed, reproducible, root-caused. <strong>Not yet fixed</strong> (deferred per 2026-10-19 decision: flag
+now, continue authoring Task 10 questions, fix later as its own bug branch).</p>
+<h2>Judgment: PARTIAL (confirmed defect, not yet fixed)</h2>
+<h2>needs_researcher_confirmation: no -- root cause is confirmed, not a judgment call.</h2>
+<p>Action needed: fix <code>ID_NAME_RE</code>'s <code>index</code> pattern. Note a word-boundary/token fix alone won't
+separate the two cases cleanly -- <code>sample_index</code> and <code>body_mass_index</code> have the identical
+<code>_index</code> suffix shape, so no regex can tell &quot;generic row/position index&quot; from &quot;a named
+biological index&quot; by shape alone. The realistic fix is removing <code>index</code> from the denylist
+entirely: presence-only matching is already value-agnostic and cheap, so a few harmless generic
+index/position keys slipping into the search space costs far less than silently dropping a real
+biological key like BMI. Then rebuild/patch the keys index and recheck this question.</p>
+</div></details>
+</div>
+</article>
+<article class="detail" id="detail-q05-healthy-adult-gut-ambiguous">
+<header class="detail-header"><h2>healthy adult gut microbiome samples</h2><p class="slug">q05-healthy-adult-gut-ambiguous</p></header>
+<details class="sidecar"><summary>Gold SQL</summary><pre>-- version: 1
+-- date: 2026-10-19
+-- reason: fresh question authored to cover the &quot;ambiguous phrasing&quot; gap. Deliberately NOT a
+--   single gold query -- &quot;healthy adult gut microbiome samples&quot; is ambiguous on at least
+--   three independent axes, and this question is scored by whether the translator&#x27;s chosen
+--   interpretation is DEFENSIBLE among the real plausible readings, not by exact-match
+--   recall/precision against one picked answer (see notes.md for the scoring approach).
+--
+--   Axis 1 -- &quot;healthy&quot;: could mean (a) an explicit control/healthy-labeled jattr value
+--     (e.g. disease_state=&#x27;control&#x27; or similar), (b) absence of any disease-type field
+--     recorded at all, or (c) ignored entirely (no native column or clean jattr concept
+--     cleanly means &quot;healthy&quot; in general, it&#x27;s study-specific).
+--   Axis 2 -- &quot;adult&quot;: could mean (a) a specific age-type jattr field &gt;= 18, (b) a
+--     host_age_category/host_age_group value like &quot;adult&quot;, or (c) ignored if no
+--     age information is tractable for this question&#x27;s scope.
+--   Axis 3 -- &quot;gut microbiome&quot;: could mean (a) librarysource = &#x27;METAGENOMIC&#x27; AND
+--     organism ILIKE &#x27;%gut metagenome%&#x27; (the standard fecal-metagenome native-SQL pattern
+--     used throughout this mirror, see q01), or (b) a broader jattr-based &quot;gut&quot; concept
+--     search independent of librarysource.
+--
+-- No SELECT below -- there is no single correct answer to compare against by set overlap.
+</pre></details>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T12:33:24</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">No single gold -- scored by interpretation defensibility (see gold.sql for the 3 ambiguity axes). Metalog resolution (native environmental_package/age_category/subject_disease_status=CTR) is clean and fully defensible. SRA resolution folded three independent required facts (adult age, healthy status, no disease) into one flat jattr_criteria list with combinator=any, meaning a sample matching only ONE of the three counts -- looser than the question implies. Surfaces a real schema expressiveness gap (no way to require independent AND/OR sub-groups within one SourceQuery), not a resolver bug. See notes.md.</p>
+<div class="flag">&#10067; <strong>Needs input:</strong> Is the flat jattr_combinator expressiveness gap worth a future design pass, or an intentional simplicity tradeoff?</div>
+<p class="planpath">plan: /private/pinto-lab/plans/20261019_123324_healthy-adult-gut-microbiome-samples/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA
+SELECT biosample FROM sra_metadata WHERE librarysource = &#x27;METAGENOMIC&#x27; AND (organism ILIKE &#x27;%gut metagenome%&#x27; OR array_to_string(biosamplemodel_sam, &#x27; &#x27;) ILIKE &#x27;%human-gut%&#x27; OR array_to_string(biosamplemodel_sam, &#x27; &#x27;) ILIKE &#x27;%metagenome%&#x27;);
+
+-- METALOG_METADATA
+SELECT biosample, sample_alias FROM metalog_metadata WHERE (environmental_package = &#x27;human-gut&#x27; OR tissue_type = &#x27;Stool&#x27;) AND age_category IN (&#x27;adult&#x27;, &#x27;adolescent, adult&#x27;) AND subject_disease_status = &#x27;CTR&#x27;;</pre></details><div class="sidecar no-gold">No single gold answer for this question -- see reasoning above.</div>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>q05-healthy-adult-gut-ambiguous</h1>
+<p><strong>Question:</strong> &quot;healthy adult gut microbiome samples&quot;</p>
+<p><strong>Why this question:</strong> fresh question authored to cover the &quot;ambiguous phrasing&quot; benchmark
+gap. Deliberately vague on three axes (see gold.sql): what counts as &quot;healthy&quot;, what age
+threshold is &quot;adult&quot;, what counts as &quot;gut microbiome&quot;. Scored by whether the translator's
+chosen interpretation is defensible, not by exact-match overlap against one picked answer.</p>
+<h2>Run: 2026-10-19_initial</h2>
+<p><strong>Plan:</strong> <code>/private/pinto-lab/plans/20261019_123324_healthy-adult-gut-microbiome-samples/plan.json</code></p>
+<p><strong>Translation (SRA_METADATA):</strong></p>
+<pre><code class="language-json">{
+  &quot;sql&quot;: &quot;SELECT biosample FROM sra_metadata WHERE librarysource = 'METAGENOMIC' AND (organism ILIKE '%gut metagenome%' OR array_to_string(biosamplemodel_sam, ' ') ILIKE '%human-gut%' OR array_to_string(biosamplemodel_sam, ' ') ILIKE '%metagenome%')&quot;,
+  &quot;jattr_criteria&quot;: [&quot;adult age&quot;, &quot;healthy status&quot;, &quot;no disease&quot;],
+  &quot;jattr_combinator&quot;: &quot;any&quot;,
+  &quot;sql_jattr_combinator&quot;: &quot;intersect&quot;
+}
+</code></pre>
+<p><strong>Translation (METALOG_METADATA):</strong></p>
+<pre><code class="language-sql">SELECT biosample, sample_alias FROM metalog_metadata
+WHERE (environmental_package = 'human-gut' OR tissue_type = 'Stool')
+  AND age_category IN ('adult', 'adolescent, adult')
+  AND subject_disease_status = 'CTR'
+</code></pre>
+<p>Result: SRA_METADATA 255,474 biosamples; METALOG_METADATA 8,768.</p>
+<h2>Interpretation chosen, per axis</h2>
+<ul>
+<li><strong>Gut microbiome</strong>: both sources used the standard metagenomic/fecal-sample native pattern
+(q01's own established pattern for SRA; Metalog's <code>environmental_package</code>/<code>tissue_type</code>).
+Defensible, the most common and least ambiguous reading.</li>
+<li><strong>Adult</strong>: SRA folded &quot;adult age&quot; into the jattr_criteria list; Metalog used its native
+<code>age_category</code> column precisely (<code>'adult'</code> or <code>'adolescent, adult'</code>). Defensible on both sides.</li>
+<li><strong>Healthy</strong>: SRA folded &quot;healthy status&quot; and &quot;no disease&quot; into the same jattr_criteria list;
+Metalog used <code>subject_disease_status = 'CTR'</code> (control) precisely. Metalog's choice is clean
+and defensible. SRA's is murkier -- see finding below.</li>
+</ul>
+<h2>A real expressiveness gap, surfaced by this question</h2>
+<p>SRA_METADATA combined all three semantically distinct asks -- &quot;adult age&quot;, &quot;healthy status&quot;,
+&quot;no disease&quot; -- into ONE flat <code>jattr_criteria</code> list with <code>jattr_combinator=&quot;any&quot;</code>. That means a
+biosample only needs to match <strong>any one</strong> of the three to count, not &quot;adult AND (healthy OR
+no-disease)&quot; as the question actually implies. A sample matched purely via an age-type field,
+with zero information about health/disease status, still counts as &quot;healthy&quot; under this
+translation -- the &quot;adult&quot; and &quot;healthy&quot; requirements are independent, both-required facts, not
+alternative phrasings of the same fact (contrast q01's calprotectin-key-synonym case, where
+&quot;any&quot; correctly meant &quot;any synonym of the same single fact&quot;).</p>
+<p>This isn't a bug in the resolver (<code>jattr_combinator</code> behaves exactly as documented) -- it's a
+genuine <strong>expressiveness gap</strong>: the current schema has one flat all-or-any combinator across an
+entire jattr_criteria list, with no way to express &quot;require axis A, and separately require (B or
+C)&quot;. Flagging as an architecture observation, not something to fix now.</p>
+<h2>Judgment: PARTIAL</h2>
+<p>Metalog's resolution is clean and fully defensible. SRA's resolution is defensible in its
+native-SQL/gut-scoping half but structurally too loose in its age+health half, due to a real
+schema expressiveness limit rather than a translator mistake per se.</p>
+<h2>needs_researcher_confirmation: yes</h2>
+<p>Is this flat jattr_combinator expressiveness gap (can't require independent sub-conditions
+within one SourceQuery) worth a future design pass, or is the current one-flat-list-per-source
+shape an intentional simplicity tradeoff?</p>
+</div></details>
+</div>
+</article>
+<article class="detail" id="detail-q06-antibiotic-exposure-jattr-only">
+<header class="detail-header"><h2>samples with antibiotic exposure</h2><p class="slug">q06-antibiotic-exposure-jattr-only</p></header>
+<details class="sidecar"><summary>Gold SQL</summary><pre>-- version: 1
+-- date: 2026-10-19
+-- reason: fresh question authored for a second jattr-only concept (antibiotic exposure has no
+--   native SQL column), chosen because it has a large real naming-variant neighborhood
+--   (antibiotic_exposure_sam, antibiotics_run, antibiotic_treatment_sam, ... 300+ real
+--   variants scouted earlier this session) -- a good breadth/precision test distinct from
+--   q04&#x27;s BMI case. Gold deliberately narrow: the two most literal, unambiguous keys.
+SELECT biosample FROM sra_metadata
+WHERE jattr IS NOT NULL
+  AND (json_extract_string(jattr, &#x27;$.antibiotic_exposure_sam&#x27;) IS NOT NULL
+       OR json_extract_string(jattr, &#x27;$.antibiotics_exposure_sam&#x27;) IS NOT NULL);
+</pre></details>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T13:02:17</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Correctly sql=None (no native column). Full recall against narrow 2-key gold (2874/2874), generated is a strict superset (75172 total). Same already-settled pattern as q01/q03: narrow gold undercounts a content-matched population. See notes.md.</p>
+
+<p class="planpath">plan: /private/pinto-lab/plans/20261019_130217_samples-with-antibiotic-exposure/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA: jattr-only, no native SQL
+
+-- METALOG_METADATA
+SELECT biosample, sample_alias FROM metalog_metadata WHERE antibiotic IS NOT NULL OR Drug_antibiotic_last3y IS NOT NULL OR days_since_antibiotics IS NOT NULL OR range_days_since_antibiotics IS NOT NULL OR medication ILIKE &#x27;%antibiotic%&#x27; OR medication_full ILIKE &#x27;%antibiotic%&#x27; OR medication_with_parents ILIKE &#x27;%antibiotic%&#x27;;</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 100%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:100%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 4%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:4%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">2,874</td></tr><tr><td>Generated</td><td class="num">75,172</td></tr><tr><td>Overlap (correct)</td><td class="num">2,874</td></tr><tr><td>Missed (gold-only)</td><td class="num">0</td></tr><tr><td>Extra (generated-only)</td><td class="num">72,298</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>q06-antibiotic-exposure-jattr-only</h1>
+<p><strong>Question:</strong> &quot;samples with antibiotic exposure&quot;</p>
+<p><strong>Why this question:</strong> second jattr-only concept (no native SQL column for antibiotic
+exposure exists), chosen for its large real naming-variant neighborhood (300+ real key
+variants scouted this session) -- a breadth test distinct from q04's BMI case.</p>
+<h2>Run: 2026-10-19_initial</h2>
+<p><strong>Translation:</strong></p>
+<pre><code class="language-json">{&quot;source&quot;: &quot;SRA_METADATA&quot;, &quot;sql&quot;: null,
+ &quot;jattr_criteria&quot;: [&quot;antibiotic exposure&quot;, &quot;antibiotic treatment&quot;, &quot;antibiotic administration&quot;],
+ &quot;jattr_combinator&quot;: &quot;any&quot;}
+</code></pre>
+<p>Correctly <code>sql=None</code> -- no native column exists, pure jattr concept search, three phrasing
+variants unioned.</p>
+<h2>Verification against gold (narrow: antibiotic_exposure_sam OR antibiotics_exposure_sam)</h2>
+<ul>
+<li>Gold: 2,874. Generated: 75,172. Overlap: 2,874 (100% recall). Extra: 72,298.</li>
+</ul>
+<h2>Judgment: PARTIAL (same pattern as q01/q03/q06 family)</h2>
+<p>Full recall against the narrow gold -- the system's generated cohort is a strict superset.
+The 72,298 &quot;extra&quot; rows are the now-familiar, already-settled pattern: real matches via many
+other genuine antibiotic-related keys/values my narrow 2-key gold didn't enumerate, consistent
+with q01's resolved finding (gold incompleteness, not a system defect) and the confirmed
+value-polarity-agnostic design. Not spot-checked further (time-boxed, same reasoning as q03).</p>
+<h2>needs_researcher_confirmation: no -- consistent with already-resolved precedent (q01).</h2>
+</div></details>
+</div>
+</article>
+<article class="detail" id="detail-q07-mouse-gut-metagenome">
+<header class="detail-header"><h2>mouse gut metagenome samples</h2><p class="slug">q07-mouse-gut-metagenome</p></header>
+<details class="sidecar"><summary>Gold SQL</summary><pre>-- version: 1 (SUPERSEDED by version 2 below -- kept for history, not executed)
+-- date: 2026-10-19
+-- reason: fresh question authored to extend the &quot;non-metagenome bias&quot; check to the opposite
+--   direction -- host diversity WITHIN metagenomic samples. Initially verified naively using
+--   the host SPECIES name (Mus musculus): 45,806 distinct biosamples.
+--
+-- SELECT biosample FROM sra_metadata
+-- WHERE organism = &#x27;Mus musculus&#x27; AND librarysource = &#x27;METAGENOMIC&#x27;;
+
+-- version: 2 (current)
+-- date: 2026-10-19
+-- reason: v1 conflated host SPECIES (Mus musculus, which includes every tissue/library type --
+--   genomic, transcriptomic, single-cell, etc., most of which are NOT metagenomic gut samples)
+--   with the actual metagenome-sample organism LABEL. The translator&#x27;s own generated SQL used
+--   `organism = &#x27;mouse gut metagenome&#x27;` -- the standard NCBI organism-string convention for
+--   whole-metagenome shotgun sequencing of mouse gut samples (the same naming convention as
+--   &quot;human gut metagenome&quot; established in q01). This is MORE precise than v1, not less --
+--   confirmed independently: 249,477 distinct biosamples, exactly matching the system&#x27;s own
+--   generated count. Corrected gold to the right, more precise definition rather than scoring
+--   a correct answer as wrong.
+SELECT biosample FROM sra_metadata
+WHERE organism = &#x27;mouse gut metagenome&#x27;
+  AND (librarysource = &#x27;METAGENOMIC&#x27; OR librarysource = &#x27;METATRANSCRIPTOMIC&#x27;);
+</pre></details>
+<div class="run">
+<div class="meta">
+<span class="badge match">MATCH</span>
+<span>2026-10-19T13:03:30</span>
+<span>&middot; initial</span>
+<span>&middot; gold v2</span>
+</div>
+<p class="reasoning">Exact match 249477/249477. Gold corrected from v1 (naive Mus musculus species filter) to v2 (precise mouse gut metagenome organism-label, matching the systems own more-correct translation). Confirms non-metagenome-bias extends correctly to non-human hosts.</p>
+
+<p class="planpath">plan: /private/pinto-lab/plans/20261019_130330_mouse-gut-metagenome-samples/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA
+SELECT biosample FROM sra_metadata WHERE organism = &#x27;mouse gut metagenome&#x27; AND (librarysource = &#x27;METAGENOMIC&#x27; OR librarysource = &#x27;METATRANSCRIPTOMIC&#x27;);
+
+-- METALOG_METADATA
+SELECT biosample, sample_alias FROM metalog_metadata WHERE (host_common_name = &#x27;Mouse&#x27; OR host_scientific_name = &#x27;Mus musculus&#x27;) AND (environment_feature ILIKE &#x27;%intestine%&#x27; OR environment_material ILIKE &#x27;%fecal%&#x27; OR environment_material ILIKE &#x27;%feces%&#x27; OR tissue_type = &#x27;Stool&#x27;) AND sample_description ILIKE &#x27;%metagenome%&#x27;;</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 100%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:100%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 100%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:100%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">249,477</td></tr><tr><td>Generated</td><td class="num">249,477</td></tr><tr><td>Overlap (correct)</td><td class="num">249,477</td></tr><tr><td>Missed (gold-only)</td><td class="num">0</td></tr><tr><td>Extra (generated-only)</td><td class="num">0</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>q07-mouse-gut-metagenome</h1>
+<p><strong>Question:</strong> &quot;mouse gut metagenome samples&quot;</p>
+<p><strong>Why this question:</strong> extends the &quot;non-metagenome bias&quot; check to host diversity -- tests
+that the pipeline doesn't implicitly assume &quot;metagenome&quot; means &quot;human gut metagenome.&quot;</p>
+<h2>Run: 2026-10-19_initial</h2>
+<p><strong>Translation:</strong></p>
+<pre><code class="language-json">{&quot;source&quot;: &quot;SRA_METADATA&quot;,
+ &quot;sql&quot;: &quot;SELECT biosample FROM sra_metadata WHERE organism = 'mouse gut metagenome' AND (librarysource = 'METAGENOMIC' OR librarysource = 'METATRANSCRIPTOMIC')&quot;,
+ &quot;jattr_criteria&quot;: []}
+</code></pre>
+<p>Pure native SQL, correctly used the exact NCBI organism-label convention (&quot;mouse gut
+metagenome&quot;, the same pattern as &quot;human gut metagenome&quot; from q01) rather than the broader
+host-species name (Mus musculus, which spans all tissue/library types).</p>
+<h2>Gold correction (v1 -&gt; v2)</h2>
+<p>Initial gold used <code>organism = 'Mus musculus'</code> (45,806 biosamples) -- naively defined before
+seeing the system's own translation. The system's more precise organism-label query (249,477
+biosamples) is actually the <em>more correct</em> definition for &quot;mouse gut metagenome samples&quot;, not
+a looser one. Corrected gold to match (see gold.sql v2) rather than scoring a correct answer
+as wrong.</p>
+<h2>Verification against gold v2</h2>
+<ul>
+<li>Gold: 249,477. Generated: 249,477. Overlap: 249,477. Missed: 0. Extra: 0.</li>
+</ul>
+<h2>Judgment: MATCH</h2>
+<p>Exact match once gold reflects the right definition. Confirms non-metagenome-bias extends
+correctly to non-human hosts, and that organism-label precision (not species name) is handled
+correctly by the translator.</p>
+</div></details>
+</div>
+</article>
+<article class="detail" id="detail-q08-age-over-65-numeric-threshold">
+<header class="detail-header"><h2>samples from patients over 65 years old</h2><p class="slug">q08-age-over-65-numeric-threshold</p></header>
+<details class="sidecar"><summary>Gold SQL</summary><pre>-- version: 1
+-- date: 2026-10-19
+-- reason: capability-boundary question, NOT a set-overlap gold. &quot;Over 65 years old&quot; is a
+--   numeric predicate on a value (age_sam / host_age_sam, both real, well-populated keys),
+--   but JattrConceptIndex only does embedding-distance concept matching over key NAMES and
+--   value CONTENT -- there is no mechanism anywhere in the translation/resolution pipeline
+--   to express or evaluate a numeric threshold against a matched value. Expected outcome:
+--   the translator either (a) ignores the numeric threshold and matches generically on an
+--   age-presence concept (recall-favoring but imprecise -- includes all ages, not just &gt;65),
+--   or (b) attempts some native-SQL numeric cast against age_sam that may or may not work
+--   given age_sam&#x27;s real-world value messiness (free text, units, ranges all mixed in the
+--   same key). This question is scored by documenting WHICH of these happened, not by a
+--   set-overlap gold -- there is no reachable &quot;gold&quot; for &quot;evaluate a numeric threshold&quot; given
+--   the current architecture has no such capability.
+-- No SELECT below -- see notes.md for what was actually observed.
+</pre></details>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T13:05:21</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Capability-boundary test, not set-overlap scored. Metalog correctly used native age_years&gt;65.0 (exact numeric threshold). SRA fell back to jattr concept search on age over 65 years old -- confirmed via matched values a MIX of correct (&gt;65, 65 years old) and wrong (age_above_45_sam, 60-65 years old, Age 64, over 60) matches: pure text/embedding proximity to 65, not real numeric evaluation. See notes.md.</p>
+<div class="flag">&#10067; <strong>Needs input:</strong> Worth a numeric-predicate criterion type if threshold questions are expected to be common, or acceptable given Metalog already covers the clean cases?</div>
+<p class="planpath">plan: /private/pinto-lab/plans/20261019_130521_samples-from-patients-over-65-years-old/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA: jattr-only, no native SQL
+
+-- METALOG_METADATA
+SELECT biosample, sample_alias FROM metalog_metadata WHERE age_years &gt; 65.0;</pre></details><div class="sidecar no-gold">No single gold answer for this question -- see reasoning above.</div>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>q08-age-over-65-numeric-threshold</h1>
+<p><strong>Question:</strong> &quot;samples from patients over 65 years old&quot;</p>
+<p><strong>Why this question:</strong> capability-boundary test -- does the pipeline have any way to
+evaluate a numeric threshold against a jattr value?</p>
+<h2>Run: 2026-10-19_initial</h2>
+<p><strong>Translation:</strong></p>
+<pre><code class="language-json">[
+  {&quot;source&quot;: &quot;SRA_METADATA&quot;, &quot;sql&quot;: null, &quot;jattr_criteria&quot;: [&quot;age over 65 years old&quot;]},
+  {&quot;source&quot;: &quot;METALOG_METADATA&quot;, &quot;sql&quot;: &quot;SELECT biosample, sample_alias FROM metalog_metadata WHERE age_years &gt; 65.0&quot;}
+]
+</code></pre>
+<p><strong>Metalog correctly used a real native numeric column</strong> (<code>age_years &gt; 65.0</code>) -- clean,
+correct, exact threshold evaluation, because Metalog's harmonized schema has an actual numeric
+age column.</p>
+<p><strong>SRA has no native age column</strong>, so it fell back to a single jattr_criteria phrase, &quot;age over
+65 years old&quot;, resolved via embedding-distance concept search (51 biosample matches). Inspected
+the actual matched values directly: a MIX of correct (<code>&gt;65</code>, <code>65 years old</code>, <code>65-year-old</code>) and
+clearly wrong values (<code>age_above_45_sam</code> -- a 45 threshold, not 65; <code>60-65 years old</code> and
+<code>60 - 65 years</code> -- ranges spanning BELOW 65; <code>over 60</code>, <code>older_60</code> -- a 60 threshold; <code>Age 64</code>
+-- literally under 65). This directly confirms the predicted capability gap: the concept search
+does pure text/embedding proximity to the literal digits &quot;65&quot;, not actual numeric evaluation --
+it cannot distinguish &quot;&gt;65&quot; from &quot;a nearby but different numeric threshold&quot; or &quot;a range that
+happens to include 65.&quot;</p>
+<h2>Judgment: capability gap confirmed (not a bug -- documents an architecture limit)</h2>
+<p>SRA-side results for this question are <strong>not reliable</strong> for a numeric-threshold question: some
+matches are correct, some are off by the threshold itself. Metalog-side results are fully
+correct because a real numeric column exists there. There is currently no mechanism anywhere
+in JattrConceptIndex/CriterionResolver to evaluate <code>&gt;</code>, <code>&lt;</code>, or any numeric comparison against
+a matched jattr value -- only embedding-distance &quot;closeness in meaning,&quot; which happens to give
+partial, unreliable signal for numeric concepts expressed as text.</p>
+<h2>needs_researcher_confirmation: yes</h2>
+<p>Worth a future design pass (e.g. a numeric-predicate criterion type, separate from
+jattr_criteria's semantic matching) if numeric-threshold questions are expected to be common,
+or is this an acceptable known limitation given Metalog already handles the clean cases?</p>
+</div></details>
+</div>
+</article>
+<article class="detail" id="detail-q10-united-states-geography">
+<header class="detail-header"><h2>samples collected in the United States</h2><p class="slug">q10-united-states-geography</p></header>
+<details class="sidecar"><summary>Gold SQL</summary><pre>-- version: 1
+-- date: 2026-10-19
+-- reason: fresh question authored to cover geography (per CLAUDE.md&#x27;s own motivating example:
+--   &quot;fecal metagenomes from adults with IBD, Western countries&quot;). Discovered the translator
+--   uses a real native SQL column, geo_loc_name_country_calc, not a jattr concept at all --
+--   simpler than expected, but still worth having in the suite as a geography baseline.
+--   Independently verified: exact match, 7,776,499 distinct biosamples -- consistent with the
+--   US historically dominating SRA submission volume across all library/assay types (not
+--   metagenome-specific).
+SELECT biosample FROM sra_metadata WHERE geo_loc_name_country_calc = &#x27;USA&#x27;;
+</pre></details>
+<div class="run">
+<div class="meta">
+<span class="badge match">MATCH</span>
+<span>2026-10-19T13:08:33</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Exact match 7776499/7776499. Translator used a real native SQL column (geo_loc_name_country_calc), simpler than expected -- no jattr involved at all. Large count expected: US dominates SRA submission volume mirror-wide, not metagenome-specific.</p>
+
+<p class="planpath">plan: /private/pinto-lab/plans/20261019_130833_samples-collected-in-the-united-states/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA
+SELECT biosample FROM sra_metadata WHERE geo_loc_name_country_calc = &#x27;USA&#x27;;
+
+-- METALOG_METADATA
+SELECT biosample, sample_alias FROM metalog_metadata WHERE geographic_location = &#x27;USA&#x27;;</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 100%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:100%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 100%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:100%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">7,776,499</td></tr><tr><td>Generated</td><td class="num">7,776,499</td></tr><tr><td>Overlap (correct)</td><td class="num">7,776,499</td></tr><tr><td>Missed (gold-only)</td><td class="num">0</td></tr><tr><td>Extra (generated-only)</td><td class="num">0</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>q10-united-states-geography</h1>
+<p><strong>Question:</strong> &quot;samples collected in the United States&quot;</p>
+<p><strong>Why this question:</strong> geography coverage, per CLAUDE.md's own motivating example question
+(&quot;fecal metagenomes from adults with IBD, Western countries&quot;).</p>
+<h2>Run: 2026-10-19_initial</h2>
+<p><strong>Translation:</strong></p>
+<pre><code class="language-json">{&quot;source&quot;: &quot;SRA_METADATA&quot;,
+ &quot;sql&quot;: &quot;SELECT biosample FROM sra_metadata WHERE geo_loc_name_country_calc = 'USA'&quot;,
+ &quot;jattr_criteria&quot;: []}
+</code></pre>
+<p>Simpler than expected: the translator used a real native SQL column
+(<code>geo_loc_name_country_calc</code>), not a jattr concept at all.</p>
+<h2>Verification against gold</h2>
+<ul>
+<li>Gold: 7,776,499. Generated: 7,776,499. Overlap: 7,776,499. Missed: 0. Extra: 0.</li>
+</ul>
+<h2>Judgment: MATCH</h2>
+<p>Exact match. Large count is expected and correct -- the US historically dominates SRA
+submission volume across all library/assay types (not metagenome-specific; this question
+didn't scope to metagenomic samples).</p>
+</div></details>
+</div>
+</article>
+<article class="detail" id="detail-q11-illumina-novaseq-platform">
+<header class="detail-header"><h2>samples sequenced on Illumina NovaSeq</h2><p class="slug">q11-illumina-novaseq-platform</p></header>
+<details class="sidecar"><summary>Gold SQL</summary><pre>-- version: 1
+-- date: 2026-10-19
+-- reason: fresh question covering sequencing-technology scoping via a real native column
+--   (instrument) -- a clean exact-match baseline test, same shape as q02/q10. Independently
+--   verified: 9,538,316 distinct biosamples across the three real NovaSeq instrument string
+--   variants (Illumina NovaSeq 6000 / X / X Plus).
+SELECT biosample FROM sra_metadata WHERE instrument ILIKE &#x27;%novaseq%&#x27;;
+</pre></details>
+<div class="run">
+<div class="meta">
+<span class="badge match">MATCH</span>
+<span>2026-10-19T14:02:26</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Exact match 9538316/9538316 via native instrument column.</p>
+
+<p class="planpath">plan: /private/pinto-lab/plans/20261019_140226_samples-sequenced-on-illumina-novaseq/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA
+SELECT biosample FROM sra_metadata WHERE instrument ILIKE &#x27;%NovaSeq%&#x27;;</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 100%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:100%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 100%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:100%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">9,538,316</td></tr><tr><td>Generated</td><td class="num">9,538,316</td></tr><tr><td>Overlap (correct)</td><td class="num">9,538,316</td></tr><tr><td>Missed (gold-only)</td><td class="num">0</td></tr><tr><td>Extra (generated-only)</td><td class="num">0</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>q11-illumina-novaseq-platform</h1>
+<p><strong>Question:</strong> &quot;samples sequenced on Illumina NovaSeq&quot;</p>
+<p><strong>Why this question:</strong> sequencing-technology scoping via a real native column -- a clean
+exact-match baseline, same shape as q02/q10.</p>
+<h2>Run: 2026-10-19_initial</h2>
+<p><strong>Translation:</strong> <code>SELECT biosample FROM sra_metadata WHERE instrument ILIKE '%novaseq%'</code></p>
+<h2>Verification</h2>
+<ul>
+<li>Gold: 9,538,316. Generated: 9,538,316. Overlap: 9,538,316. Missed: 0. Extra: 0.</li>
+</ul>
+<h2>Judgment: MATCH</h2>
+<p>Exact match.</p>
+</div></details>
+</div>
+</article>
+<article class="detail" id="detail-q12-type2-diabetes-jattr">
+<header class="detail-header"><h2>samples from patients with type 2 diabetes</h2><p class="slug">q12-type2-diabetes-jattr</p></header>
+<details class="sidecar"><summary>Gold SQL</summary><pre>-- version: 1 (SUPERSEDED by version 2 below -- kept for history, not executed)
+-- date: 2026-10-19
+-- reason: fresh question covering a second disease concept (distinct from q03&#x27;s tumor case)
+--   to broaden disease-concept coverage. Initially verified without a host-organism filter:
+--   46,271 distinct biosamples via the two most literal diabetes keys.
+--
+-- SELECT biosample FROM sra_metadata
+-- WHERE jattr IS NOT NULL
+--   AND (json_extract_string(jattr, &#x27;$.diabetes_sam&#x27;) IS NOT NULL
+--        OR json_extract_string(jattr, &#x27;$.diabetes_type_sam_s_dpl165&#x27;) IS NOT NULL);
+
+-- version: 2 (current)
+-- date: 2026-10-19
+-- reason: v1 missed that &quot;patients&quot; implies human -- diabetes_sam is overwhelmingly a MOUSE
+--   disease-model field (45,736 total occurrences vs. only 9,221 when restricted to Homo
+--   sapiens). The translator&#x27;s own SQL correctly intersected with organism = &#x27;Homo sapiens&#x27;;
+--   v1&#x27;s naive gold, with no host filter, was wrong in the same direction as q07&#x27;s mistake.
+--   Corrected: 9,221 distinct Homo sapiens biosamples with diabetes_sam present.
+SELECT biosample FROM sra_metadata
+WHERE organism = &#x27;Homo sapiens&#x27;
+  AND jattr IS NOT NULL
+  AND (json_extract_string(jattr, &#x27;$.diabetes_sam&#x27;) IS NOT NULL
+       OR json_extract_string(jattr, &#x27;$.diabetes_type_sam_s_dpl165&#x27;) IS NOT NULL);
+</pre></details>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T14:06:34</span>
+<span>&middot; initial</span>
+<span>&middot; gold v2</span>
+</div>
+<p class="reasoning">Gold corrected v1-&gt;v2 (added organism=Homo sapiens, same pattern as q07): diabetes_sam is overwhelmingly a mouse disease-model field (45736 total vs 9221 Homo sapiens). Full recall against corrected gold: 9257/9257. Extra 21395 is the already-settled gold-incompleteness pattern (q01/q06 precedent).</p>
+
+<p class="planpath">plan: /private/pinto-lab/plans/20261019_140634_samples-from-patients-with-type-2-diabet/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA
+SELECT biosample FROM sra_metadata WHERE organism = &#x27;Homo sapiens&#x27;;
+
+-- METALOG_METADATA
+SELECT biosample, sample_alias FROM metalog_metadata WHERE (subject_disease_status ILIKE &#x27;%type 2 diabetes%&#x27; OR Comorbidities_1 IN (&#x27;Diabetes mellitus&#x27;, &#x27;Diabetes mellitus, hypertension, hyperlipidemia&#x27;)) AND host = &#x27;Homo sapiens&#x27;;</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 100%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:100%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 30%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:30%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">9,257</td></tr><tr><td>Generated</td><td class="num">30,652</td></tr><tr><td>Overlap (correct)</td><td class="num">9,257</td></tr><tr><td>Missed (gold-only)</td><td class="num">0</td></tr><tr><td>Extra (generated-only)</td><td class="num">21,395</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>q12-type2-diabetes-jattr</h1>
+<p><strong>Question:</strong> &quot;samples from patients with type 2 diabetes&quot;</p>
+<p><strong>Why this question:</strong> second disease concept (distinct from q03's tumor case) to broaden
+disease-concept coverage.</p>
+<h2>Run: 2026-10-19_initial</h2>
+<p><strong>Translation:</strong></p>
+<pre><code class="language-json">{&quot;source&quot;: &quot;SRA_METADATA&quot;, &quot;sql&quot;: &quot;SELECT biosample FROM sra_metadata WHERE organism = 'Homo sapiens'&quot;,
+ &quot;jattr_criteria&quot;: [&quot;type 2 diabetes&quot;], &quot;sql_jattr_combinator&quot;: &quot;intersect&quot;}
+</code></pre>
+<h2>Gold correction (v1 -&gt; v2), same pattern as q07</h2>
+<p>Initial gold had no host-organism filter: 46,271 biosamples. The translator's own SQL
+intersected with <code>organism = 'Homo sapiens'</code> (&quot;patients&quot; implies human) -- checked directly:
+<code>diabetes_sam</code> is overwhelmingly a MOUSE disease-model field in this mirror (45,736 total
+occurrences, only 9,221 restricted to Homo sapiens). v1's naive gold was wrong in the same
+direction as q07's mistake (conflating a jattr key's total reach with the human-only subset
+the question actually implies). Corrected gold v2: 9,257 Homo sapiens biosamples.</p>
+<h2>Verification against gold v2</h2>
+<ul>
+<li>Gold: 9,257. Generated: 30,652. Overlap: 9,257 (100% recall). Extra: 21,395.</li>
+</ul>
+<h2>Judgment: PARTIAL</h2>
+<p>Full recall against the corrected gold. Extra rows are the now-familiar, already-settled
+pattern (real matches via other genuine diabetes-related keys/values my narrow 2-key gold
+didn't enumerate -- consistent with q01/q06's precedent).</p>
+</div></details>
+</div>
+</article>
+<article class="detail" id="detail-q13-vegetarian-diet-jattr-only">
+<header class="detail-header"><h2>vegetarian diet samples</h2><p class="slug">q13-vegetarian-diet-jattr-only</p></header>
+<details class="sidecar"><summary>Gold SQL</summary><pre>-- version: 1
+-- date: 2026-10-19
+-- reason: fresh jattr-only question in a new domain (diet, distinct from BMI/antibiotics) --
+--   no native diet column exists. Independently verified: 599 distinct biosamples with a
+--   non-null vegetarian_sam value.
+SELECT biosample FROM sra_metadata
+WHERE jattr IS NOT NULL AND json_extract_string(jattr, &#x27;$.vegetarian_sam&#x27;) IS NOT NULL;
+</pre></details>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T14:07:46</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Correctly sql=None. Full recall against narrow 1-key gold (599/599), generated is a strict superset. Same already-settled pattern as q01/q06/q12.</p>
+
+<p class="planpath">plan: /private/pinto-lab/plans/20261019_140746_vegetarian-diet-samples/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA: jattr-only, no native SQL</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 100%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:100%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 6%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:6%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">599</td></tr><tr><td>Generated</td><td class="num">9,610</td></tr><tr><td>Overlap (correct)</td><td class="num">599</td></tr><tr><td>Missed (gold-only)</td><td class="num">0</td></tr><tr><td>Extra (generated-only)</td><td class="num">9,011</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>q13-vegetarian-diet-jattr-only</h1>
+<p><strong>Question:</strong> &quot;vegetarian diet samples&quot;</p>
+<p><strong>Why this question:</strong> fresh jattr-only question in a new domain (diet), no native column
+exists.</p>
+<h2>Run: 2026-10-19_initial</h2>
+<p><strong>Translation:</strong> <code>sql=None</code>, pure jattr concept search (confirmed correct shape).</p>
+<h2>Verification</h2>
+<ul>
+<li>Gold: 599. Generated: 9,610. Overlap: 599 (100% recall). Extra: 9,011.</li>
+</ul>
+<h2>Judgment: PARTIAL</h2>
+<p>Full recall, same already-settled pattern as q01/q06/q12: narrow single-key gold undercounts
+the real population a content-based search legitimately reaches via other synonyms.</p>
+</div></details>
+</div>
+</article>
+<article class="detail" id="detail-q14-infant-samples-young-age">
+<header class="detail-header"><h2>samples from infants</h2><p class="slug">q14-infant-samples-young-age</p></header>
+<details class="sidecar"><summary>Gold SQL</summary><pre>-- version: 1
+-- date: 2026-10-19
+-- reason: fresh age-concept question at the opposite extreme from q08 (&quot;over 65 years old&quot;)
+--   -- infants. Unlike q08, there is no single &quot;age_years&quot; numeric column cleanly applicable
+--   here (infant age is usually recorded in weeks/days, not years), so this tests whether the
+--   jattr concept search handles a young-age concept as well as it (partially) handled an old-
+--   age one. Independently verified: 32,039 distinct biosamples via the three most literal
+--   infant-age keys (infant_age_sam, host_age_infant_sam, fed_as_infant_sam).
+SELECT biosample FROM sra_metadata
+WHERE jattr IS NOT NULL
+  AND (json_extract_string(jattr, &#x27;$.infant_age_sam&#x27;) IS NOT NULL
+       OR json_extract_string(jattr, &#x27;$.host_age_infant_sam&#x27;) IS NOT NULL
+       OR json_extract_string(jattr, &#x27;$.fed_as_infant_sam&#x27;) IS NOT NULL);
+</pre></details>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T14:08:32</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Correctly sql=None for SRA, Metalog used native age_category. Low overlap (1585/32039) against a narrow 3-key gold, but discovered.jattr_matches shows 57 real matches dominated by VALUE content (infant/Infant/human infant) not my hand-picked keys -- same already-established gold-incompleteness pattern as q01/q03, not independently re-derived (time-boxed).</p>
+
+<p class="planpath">plan: /private/pinto-lab/plans/20261019_140832_samples-from-infants/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA: jattr-only, no native SQL
+
+-- METALOG_METADATA
+SELECT biosample, sample_alias FROM metalog_metadata WHERE age_category IN (&#x27;baby&#x27;, &#x27;baby, child&#x27;);</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 5%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:5%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 2%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:2%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">32,039</td></tr><tr><td>Generated</td><td class="num">71,038</td></tr><tr><td>Overlap (correct)</td><td class="num">1,585</td></tr><tr><td>Missed (gold-only)</td><td class="num">30,454</td></tr><tr><td>Extra (generated-only)</td><td class="num">69,453</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>q14-infant-samples-young-age</h1>
+<p><strong>Question:</strong> &quot;samples from infants&quot;</p>
+<p><strong>Why this question:</strong> age concept at the opposite extreme from q08 (&quot;over 65 years old&quot;) --
+tests whether the jattr concept search handles a young-age concept with the same (partial)
+breadth it showed for the old-age one, without a clean numeric column to fall back on.</p>
+<h2>Run: 2026-10-19_initial</h2>
+<p><strong>Translation:</strong></p>
+<pre><code class="language-json">[
+  {&quot;source&quot;: &quot;SRA_METADATA&quot;, &quot;sql&quot;: null, &quot;jattr_criteria&quot;: [&quot;infant&quot;]},
+  {&quot;source&quot;: &quot;METALOG_METADATA&quot;, &quot;sql&quot;: &quot;SELECT biosample, sample_alias FROM metalog_metadata WHERE age_category IN ('baby', 'baby, child')&quot;}
+]
+</code></pre>
+<p>Correctly <code>sql=None</code> for SRA (no clean native infant-age column); Metalog used its own native
+<code>age_category</code> column.</p>
+<h2>Verification against narrow gold (infant_age_sam / host_age_infant_sam / fed_as_infant_sam)</h2>
+<ul>
+<li>Gold: 32,039. Generated: 71,038. Overlap: 1,585. Missed: 30,454. Extra: 69,453.</li>
+</ul>
+<p>Low overlap looks dramatic, but checked <code>discovered.jattr_matches</code> directly: the &quot;infant&quot;
+concept matched 57 real keys/values, dominated by literal VALUES (<code>&quot;infant&quot;</code>, <code>&quot;Infant&quot;</code>,
+<code>&quot;infants&quot;</code>, <code>&quot;human infant&quot;</code>) rather than my hand-picked 3-key list -- not shown surfacing
+<code>infant_age_sam</code>/<code>host_age_infant_sam</code>/<code>fed_as_infant_sam</code> in the top 15 inspected. Same
+already-established class of finding as q01/q03: a narrow single/few-key gold under-enumerates
+a population reached mostly through VALUE content, not the specific keys I guessed. Not
+independently re-derived with a broader gold (time-boxed, same reasoning as q03).</p>
+<h2>Judgment: PARTIAL</h2>
+<p>Consistent with the q01/q03 precedent (gold incompleteness for value-matched concepts), not
+confirmed as a system defect.</p>
+</div></details>
+</div>
+</article>
+<article class="detail" id="detail-q15-pregnant-women-samples">
+<header class="detail-header"><h2>pregnant women samples</h2><p class="slug">q15-pregnant-women-samples</p></header>
+<details class="sidecar"><summary>Gold SQL</summary><pre>-- version: 1
+-- date: 2026-10-19
+-- reason: fresh health-state jattr concept with an unusually clean, literal, well-populated
+--   single key (pregnant_sam) -- a good &quot;should be easy&quot; control case for the jattr-only
+--   family, contrasting with q04/q06/q12/q13&#x27;s messier multi-key neighborhoods.
+--   Independently verified: 35,544 distinct biosamples.
+SELECT biosample FROM sra_metadata
+WHERE jattr IS NOT NULL AND json_extract_string(jattr, &#x27;$.pregnant_sam&#x27;) IS NOT NULL;
+</pre></details>
+<div class="run">
+<div class="meta">
+<span class="badge partial">PARTIAL</span>
+<span>2026-10-19T14:09:13</span>
+<span>&middot; initial</span>
+<span>&middot; gold v1</span>
+</div>
+<p class="reasoning">Translator required jattr_combinator=all across [&quot;pregnant status&quot;, &quot;female sex&quot;] -- but female sex is redundant (implied by pregnancy), not independent. Confirmed: pregnant_sam alone matches 35544, but intersecting with a separately-recorded sex field wrongly excludes samples lacking that redundant field. Overlap 17773/35544 (50% recall). Mirror image of q05s finding (there, independent facts wrongly collapsed into any; here, a redundant fact wrongly required via all).</p>
+<div class="flag">&#10067; <strong>Needs input:</strong> Same open question as q05: worth a translator-prompt guideline, or acceptable occasional miscalibration?</div>
+<p class="planpath">plan: /private/pinto-lab/plans/20261019_140913_pregnant-women-samples/plan.json</p>
+<details class="sidecar"><summary>Generated SQL</summary><pre>-- SRA_METADATA: jattr-only, no native SQL
+
+-- METALOG_METADATA
+SELECT biosample, sample_alias FROM metalog_metadata WHERE gestational_state = &#x27;pregnant&#x27; AND sex = &#x27;female&#x27;;</pre></details><details class="sidecar" open><summary>Results comparison</summary>
+<div class="scorecard">
+<div class="bar-row"><span class="bar-label">Recall 50%</span>
+<div class="bar-track"><div class="bar-fill recall" style="width:50%"></div></div></div>
+<div class="bar-row"><span class="bar-label">Precision 56%</span>
+<div class="bar-track"><div class="bar-fill precision" style="width:56%"></div></div></div>
+<table class="scorecard-table"><tr><td>Gold</td><td class="num">35,544</td></tr><tr><td>Generated</td><td class="num">31,711</td></tr><tr><td>Overlap (correct)</td><td class="num">17,773</td></tr><tr><td>Missed (gold-only)</td><td class="num">17,771</td></tr><tr><td>Extra (generated-only)</td><td class="num">13,938</td></tr></table>
+</div>
+</details>
+<details class="sidecar"><summary>Notes</summary><div class="markdown"><h1>q15-pregnant-women-samples</h1>
+<p><strong>Question:</strong> &quot;pregnant women samples&quot;</p>
+<p><strong>Why this question:</strong> clean, literal, well-populated single key (<code>pregnant_sam</code>) chosen as a
+&quot;should be easy&quot; control case -- instead surfaced a genuine combinator finding.</p>
+<h2>Run: 2026-10-19_initial</h2>
+<p><strong>Translation:</strong></p>
+<pre><code class="language-json">{&quot;source&quot;: &quot;SRA_METADATA&quot;, &quot;sql&quot;: null,
+ &quot;jattr_criteria&quot;: [&quot;pregnant status&quot;, &quot;female sex&quot;],
+ &quot;jattr_combinator&quot;: &quot;all&quot;, &quot;sql_jattr_combinator&quot;: &quot;intersect&quot;}
+</code></pre>
+<h2>Verification against gold (<code>pregnant_sam</code> non-null)</h2>
+<ul>
+<li>Gold: 35,544. Generated: 31,711. Overlap: 17,773. Missed: 17,771. Extra: 13,938.</li>
+</ul>
+<h2>Finding: &quot;all&quot; combinator over a redundant fact, the mirror image of q05</h2>
+<p>The translator required BOTH &quot;pregnant status&quot; AND &quot;female sex&quot; to match on the same sample
+(<code>jattr_combinator=&quot;all&quot;</code>). But &quot;female sex&quot; is not an independent fact here -- it's implied by
+pregnancy, not a separate requirement the question actually asks for. Confirmed directly:
+<code>pregnant_sam</code> alone matches 35,544 biosamples, but many of those don't ALSO carry a
+separately-recorded sex-type field, so the &quot;all&quot; intersection with &quot;female sex&quot; wrongly
+excludes genuinely pregnant samples. This is the inverse of q05's finding: there, independent
+facts (adult AND healthy) were wrongly collapsed into &quot;any&quot; (too loose); here, a single fact
+with a redundant restatement was wrongly required via &quot;all&quot; (too strict). Both point at the
+same root cause: a flat <code>jattr_combinator</code> per source can't distinguish &quot;these are alternate
+phrasings of one fact&quot; from &quot;these are genuinely separate required facts&quot; -- that judgment is
+made per-question by the translator, and it got this one backwards.</p>
+<h2>Judgment: PARTIAL</h2>
+<h2>needs_researcher_confirmation: yes</h2>
+<p>Same open question as q05: is this flat-combinator expressiveness/judgment issue worth a
+translator-prompt-level guideline (e.g. don't require a redundant demographic fact alongside
+a concept that already implies it), or an acceptable, occasional miscalibration?</p>
+</div></details>
+</div>
+</article>
+</div>
+</div>
+<script>
+
+var LAST_VIEWED_KEY = 'cohortquery-audit-last-viewed';
+
+function selectQuestion(id){
+  document.querySelectorAll('.detail').forEach(function(el){ el.classList.remove('active'); });
+  document.querySelectorAll('.row').forEach(function(el){ el.classList.remove('selected'); });
+  var panel = document.getElementById('detail-' + id);
+  if (panel) panel.classList.add('active');
+  var row = document.querySelector('.row[data-id="' + id + '"]');
+  if (row) row.classList.add('selected');
+  try { localStorage.setItem(LAST_VIEWED_KEY, id); } catch (e) {}
+}
+
+function sortList(key){
+  var tbody = document.getElementById('list-body');
+  var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+  var dir = (tbody.dataset.sortKey === key && tbody.dataset.sortDir === 'asc') ? 'desc' : 'asc';
+  rows.sort(function(a, b){
+    var av = a.dataset[key], bv = b.dataset[key];
+    if (av < bv) return dir === 'asc' ? -1 : 1;
+    if (av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+  rows.forEach(function(r){ tbody.appendChild(r); });
+  tbody.dataset.sortKey = key;
+  tbody.dataset.sortDir = dir;
+  document.querySelectorAll('.sort-indicator').forEach(function(el){ el.textContent = ''; });
+  var indicator = document.getElementById('sort-' + key);
+  if (indicator) indicator.textContent = dir === 'asc' ? '\u25B2' : '\u25BC';
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  sortList('rank');
+  var lastViewed = null;
+  try { lastViewed = localStorage.getItem(LAST_VIEWED_KEY); } catch (e) {}
+  var idToSelect = (lastViewed && document.getElementById('detail-' + lastViewed)) ? lastViewed : null;
+  if (!idToSelect) {
+    var firstRow = document.querySelector('#list-body .row');
+    idToSelect = firstRow ? firstRow.dataset.id : null;
+  }
+  if (idToSelect) selectQuestion(idToSelect);
+});
+
+</script>
+</body></html>

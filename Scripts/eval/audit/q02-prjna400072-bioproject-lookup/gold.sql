@@ -1,0 +1,12 @@
+-- version: 1
+-- date: 2026-10-19
+-- reason: mined from a historical pre-pivot ask() run (Workspaces/PRJNA400072/PRJNA400072/0_inputs/plan.json,
+--   question "samples from bioproject PRJNA400072"), chosen as a benchmark question because it's the
+--   opposite case from q01: a pure exact-match bioproject lookup with zero jattr ambiguity -- a useful
+--   control/baseline contrast to q01's fuzzy-search-heavy case.
+--   Independently verified against the real mirror: the native `bioproject` column alone matches 220
+--   biosamples (matches the historical plan's own discovered count). Checked whether any additional
+--   biosamples exist ONLY via jattr fallback keys (bioproject_accession_sam_s_dpl219, bioproject_id_sam,
+--   etc. -- the hedge the historical plan's SQL used) and found zero: the native column fully covers
+--   this bioproject, the jattr fallback was unnecessary defensive breadth, not a real gap.
+SELECT biosample FROM sra_metadata WHERE bioproject = 'PRJNA400072';

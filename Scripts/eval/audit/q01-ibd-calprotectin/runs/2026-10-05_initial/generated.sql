@@ -1,0 +1,2 @@
+-- SRA_METADATA
+SELECT biosample FROM sra_metadata WHERE librarysource = 'METAGENOMIC' AND (organism ILIKE '%feces metagenome%' OR organism ILIKE '%human gut metagenome%' OR list_contains(biosamplemodel_sam, 'MIGS/MIMS/MIMARKS.human-gut'));

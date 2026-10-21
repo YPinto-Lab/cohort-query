@@ -19,6 +19,11 @@ dependencies = [
     "rich>=13.0",
 ]
 
+[project.optional-dependencies]
+# Scripts/eval/audit/render_report.py renders notes.md as real HTML -- mistune was
+# already present transitively (via nbconvert) but isn't guaranteed to stay that way.
+eval = ["mistune>=3.0"]
+
 [project.scripts]
 cohortquery = "cohortquery.cli.session:main"
 
