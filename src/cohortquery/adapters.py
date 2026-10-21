@@ -282,20 +282,26 @@ class GeminiBackend:
         return fixed
 
     def translate(self, prompt: TranslationPrompt) -> Translation:
+        """A 503/network/malformed-JSON failure is the model being unable to translate
+        too -- it reaches the user the same way (Plan.error), not as a stack trace."""
         start = time.monotonic()
-        response = self._client.models.generate_content(
-            model=self._model,
-            contents=_prompt_text(prompt),
-            config={"system_instruction": SYSTEM_INSTRUCTION,
-                    "response_mime_type": "application/json",
-                    # We pass no tools, so automatic function calling has nothing to do
-                    # -- but it is ON by default, and the SDK then warns on every call
-                    # that AFC belongs in Chat.send_message. Saying "off" states the
-                    # intent and removes the warning at its cause.
-                    "automatic_function_calling": {"disable": True}})
-        _logger.info("translate (%.2fs)\nPROMPT: %s\nRESPONSE: %s",
-                    time.monotonic() - start, prompt.question.text, response.text)
-        return _translation_of(json.loads(_unfenced(response.text)))
+        try:
+            response = self._client.models.generate_content(
+                model=self._model,
+                contents=_prompt_text(prompt),
+                config={"system_instruction": SYSTEM_INSTRUCTION,
+                        "response_mime_type": "application/json",
+                        # We pass no tools, so automatic function calling has nothing to do
+                        # -- but it is ON by default, and the SDK then warns on every call
+                        # that AFC belongs in Chat.send_message. Saying "off" states the
+                        # intent and removes the warning at its cause.
+                        "automatic_function_calling": {"disable": True}})
+            _logger.info("translate (%.2fs)\nPROMPT: %s\nRESPONSE: %s",
+                        time.monotonic() - start, prompt.question.text, response.text)
+            return _translation_of(json.loads(_unfenced(response.text)))
+        except Exception as error:
+            _log_safely("translate (%.2fs) failed: %s", time.monotonic() - start, error)
+            return Translation(interpretation="", queries=(), failure=str(error))
 
 
 def open_gemini(api_key: str, model: str) -> GeminiBackend:
