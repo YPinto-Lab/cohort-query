@@ -356,10 +356,11 @@ def _run_wizard(plan: Plan, plan_dir: Path, steps: list[str]) -> bool:
                 warning = f"Complete {_STEP_LABELS[missing[0]]} before submitting"
                 continue
             breadcrumb = _breadcrumb_text(chain, answers, step)
-            confirmed = _ask_with_nav(questionary.confirm(
-                f"{breadcrumb}\nSubmit this cohort build?", default=True,
-                erase_when_done=True, instruction="(← back to review · Enter submit)"))
-            if confirmed is True:
+            confirmed = _ask_with_nav(questionary.select(
+                f"{breadcrumb}\nSubmit this cohort build?", choices=["Yes", "No"],
+                default="Yes", erase_when_done=True,
+                instruction="(← back to review · ↑↓ choose · Enter confirm)"))
+            if confirmed == "Yes":
                 _submit(plan_dir, answers["sources"], answers["output"], answers["gpu"])
                 return True
             index = max(index - 1, 0)
@@ -498,21 +499,20 @@ def _ask_sources_step(plan: Plan, plan_dir: Path, answers: dict, breadcrumb: str
 
 def _ask_output_step(plan: Plan, plan_dir: Path, answers: dict, breadcrumb: str):
     out = _ask_text_with_nav(questionary.text(
-        f"{breadcrumb}\nWrite to", default=str(answers["output"]), erase_when_done=True,
-        instruction="(← at start = back · → at end = skip · Ctrl-C = back)"))
+        f"{breadcrumb}\nWrite to\n", default=str(answers["output"]), erase_when_done=True))
     if out in (_BACK, _FORWARD):
         return out
     return _BACK if not out else Path(out)
 
 
 def _ask_gpu_step(plan: Plan, plan_dir: Path, answers: dict, breadcrumb: str):
-    gpu = _ask_with_nav(questionary.confirm(
+    gpu = _ask_with_nav(questionary.select(
         f"{breadcrumb}\nUse GPU acceleration for this build?",
-        default=answers["gpu"], erase_when_done=True,
-        instruction=_NAV_HINT.replace("↑↓ choose", "y/n choose")))
+        choices=["Yes", "No"], default="Yes" if answers["gpu"] else "No",
+        erase_when_done=True, instruction=_NAV_HINT))
     if gpu is _FORWARD:
         return _FORWARD
-    return _BACK if gpu is None or gpu is _BACK else gpu
+    return _BACK if gpu is None else gpu == "Yes"
 
 
 _ASK_STEP = {
