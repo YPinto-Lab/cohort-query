@@ -303,7 +303,9 @@ def open_gemini(api_key: str, model: str) -> GeminiBackend:
     require google-genai for anyone using the canned backend."""
     from google import genai
 
-    return GeminiBackend(genai.Client(api_key=api_key), model)
+    # The SDK's default is no timeout: an overloaded model then holds the socket open
+    # and the user stares at a spinner forever. 120s turns that into a visible error.
+    return GeminiBackend(genai.Client(api_key=api_key, http_options={"timeout": 120_000}), model)
 
 
 class LocalEmbedder:
