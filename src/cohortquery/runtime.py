@@ -32,7 +32,7 @@ class Settings:
     db_path: Path
     llm: str = "canned"
     llm_key: str = ""
-    llm_model: str = "gemini-2.5-flash"
+    llm_model: str = "gemini-3.8-flash"
     gpu: bool = False
 
     def __post_init__(self):

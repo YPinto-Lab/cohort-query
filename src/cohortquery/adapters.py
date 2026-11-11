@@ -247,11 +247,11 @@ class GeminiBackend:
     """
 
     # Free-tier quota is counted PER MODEL (GenerateRequestsPerDayPerProjectPerModel),
-    # and gemini-2.5-flash allows 20 requests a DAY. Translation is the hard task and
+    # and the translation model may allow only ~20 requests a DAY. Translation is the hard task and
     # keeps that budget to itself; expansion and repair are trivial and run on a
     # different model, which is both cheaper and a SEPARATE quota pool -- so one
     # question costs one request from each, not two from the same one.
-    HELPER_MODEL = "gemini-2.5-flash-lite"
+    HELPER_MODEL = "gemini-3.5-flash-lite"
 
     def __init__(self, client, model: str):
         self._client = client
