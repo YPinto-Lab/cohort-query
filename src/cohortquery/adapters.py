@@ -247,11 +247,11 @@ class GeminiBackend:
     """
 
     # Free-tier quota is counted PER MODEL (GenerateRequestsPerDayPerProjectPerModel),
-    # and gemini-2.5-flash allows 20 requests a DAY. Translation is the hard task and
+    # and the translation model may allow only ~20 requests a DAY. Translation is the hard task and
     # keeps that budget to itself; expansion and repair are trivial and run on a
     # different model, which is both cheaper and a SEPARATE quota pool -- so one
     # question costs one request from each, not two from the same one.
-    HELPER_MODEL = "gemini-2.5-flash-lite"
+    HELPER_MODEL = "gemini-3.5-flash-lite"
 
     def __init__(self, client, model: str):
         self._client = client
@@ -303,7 +303,9 @@ def open_gemini(api_key: str, model: str) -> GeminiBackend:
     require google-genai for anyone using the canned backend."""
     from google import genai
 
-    return GeminiBackend(genai.Client(api_key=api_key), model)
+    # The SDK's default is no timeout: an overloaded model then holds the socket open
+    # and the user stares at a spinner forever. 120s turns that into a visible error.
+    return GeminiBackend(genai.Client(api_key=api_key, http_options={"timeout": 120_000}), model)
 
 
 class LocalEmbedder:
